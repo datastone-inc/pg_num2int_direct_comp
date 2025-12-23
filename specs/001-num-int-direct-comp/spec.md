@@ -74,7 +74,7 @@ The extension must prevent the query optimizer from incorrectly applying transit
 
 ### User Story 5 - Comprehensive Type Coverage for All Numeric/Integer Pairs (Priority: P3)
 
-The extension provides exact comparison operators for all meaningful combinations of inexact numeric types (numeric/decimal, float4, float8) with all integer types (int2/smallint, int4/integer, int8/bigint, serial, serial8, smallserial).
+The extension provides exact comparison operators for all meaningful combinations of inexact numeric types (numeric/decimal, float4, float8) with all integer types (int2/smallint, int4/integer, int8/bigint, serial, bigserial, smallserial).
 
 **Why this priority**: Completeness improves user experience by avoiding "why doesn't this type combination work?" questions, but users can work around missing combinations with explicit casts to supported types. This is important for polish but not blocking for core functionality.
 
@@ -83,7 +83,7 @@ The extension provides exact comparison operators for all meaningful combination
 **Acceptance Scenarios**:
 
 1. **Given** all combinations of (numeric, float4, float8) × (int2, int4, int8), **When** testing equality operators, **Then** all 9 combinations are supported
-2. **Given** serial types (serial, serial8, smallserial), **When** using them in comparisons, **Then** they behave identically to their underlying integer types
+2. **Given** serial types (serial, bigserial, smallserial), **When** using them in comparisons, **Then** they behave identically to their underlying integer types
 3. **Given** the `decimal` type (alias for numeric), **When** using it in comparisons, **Then** it behaves identically to `numeric`
 
 ---
@@ -93,9 +93,9 @@ The extension provides exact comparison operators for all meaningful combination
 - **Floating-point special values**: What happens when comparing integers with NaN, Infinity, or -Infinity? (Standard: return false for equality, handle ordering per IEEE 754)
 - **Numeric precision boundaries**: How does the system handle numeric values with scale/precision that exceeds integer range? (e.g., numeric(20,0) vs int4)
 - **Overflow scenarios**: What happens when a numeric value exceeds the maximum representable integer value for the comparison type? (e.g., 9223372036854775808::numeric = int8_max)
-- **Performance with large numeric values**: How efficiently does the extension handle numeric values with high precision (e.g., numeric(1000,500))?
+- **Performance with large numeric values**: How efficiently does the extension handle numeric values with high precision (e.g., numeric(1000,500))? *(Performance with high-precision numeric is bounded by PostgreSQL's numeric type implementation. Extension adds minimal overhead (<10%) regardless of precision.)*
 - **NULL handling consistency**: Are NULL semantics consistent across all operator types (=, <>, <, >, <=, >=)?
-- **Type coercion ambiguity**: How does the system handle cases where type resolution might be ambiguous (e.g., literal `10.0` could be numeric or float8)?
+- **Type coercion ambiguity**: How does the system handle cases where type resolution might be ambiguous (e.g., literal `10.0` could be numeric or float8)? *(Note: Type resolution for literals is controlled by PostgreSQL's core type system, not the extension. Users can explicitly cast literals to desired types if needed.)*
 
 ## Requirements *(mandatory)*
 
@@ -108,11 +108,10 @@ The extension provides exact comparison operators for all meaningful combination
 - **FR-005**: Comparisons MUST preserve exact semantics: a numeric value with fractional part (e.g., 10.5) MUST NOT equal an integer value (10)
 - **FR-006**: All operators MUST handle NULL values per SQL standard (NULL compared to any value returns NULL)
 - **FR-007**: Operators MUST handle floating-point special values (NaN, Infinity, -Infinity) per IEEE 754 semantics
-- **FR-008**: Extension MUST support serial types (serial, serial8, smallserial) identically to their underlying integer types
-- **FR-009**: Extension MUST support decimal type (alias for numeric) identically to numeric type
-- **FR-010**: Comparisons involving numeric values outside the representable range of the integer type MUST return false for equality (overflow case)
-- **FR-011**: Feature MUST be compatible with PostgreSQL 12 and later versions
-- **FR-012**: All comparison behaviors MUST be verifiable through automated tests covering normal cases, boundary conditions, NULL handling, and special values
+- **FR-008**: Extension MUST support type aliases (serial, bigserial, smallserial for integer types; decimal for numeric) identically to their underlying base types
+- **FR-009**: Comparisons involving numeric values outside the representable range of the integer type MUST return false for equality. For ordering operators, values exceeding the integer type's maximum are treated as greater than any integer, and values below the minimum are treated as less than any integer (following PostgreSQL's numeric-to-integer cast semantics)
+- **FR-010**: Feature MUST be compatible with PostgreSQL 12 and later versions
+- **FR-011**: All comparison behaviors MUST be verifiable through automated tests covering normal cases, boundary conditions, NULL handling, and special values
 
 ## Success Criteria *(mandatory)*
 
