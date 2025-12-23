@@ -251,12 +251,38 @@ SELECT 999999999999999999999999::numeric = 1000000::int8;  -- Expected: f
 
 -- Type coercion ambiguity (literal 10.0 could be numeric or float8)
 SELECT 10::int4 = 10.0;  -- Should resolve to numeric comparison (PostgreSQL default)
+
+-- Serial type aliases (verify they work identically to underlying integer types)
+CREATE TABLE serial_test (
+  id_small SMALLSERIAL,
+  id_normal SERIAL,
+  id_big BIGSERIAL,
+  value INT4
+);
+
+INSERT INTO serial_test (value) VALUES (1), (100), (10000);
+
+-- SMALLSERIAL should behave like INT2
+SELECT id_small = 1.0::numeric FROM serial_test WHERE id_small = 1;     -- Expected: t
+SELECT id_small = 1.5::float8 FROM serial_test WHERE id_small = 1;      -- Expected: f
+SELECT id_small < 2.0::numeric FROM serial_test WHERE id_small = 1;     -- Expected: t
+
+-- SERIAL should behave like INT4
+SELECT id_normal = 2.0::numeric FROM serial_test WHERE id_normal = 2;   -- Expected: t
+SELECT id_normal = 2.5::float4 FROM serial_test WHERE id_normal = 2;    -- Expected: f
+SELECT id_normal >= 2.0::numeric FROM serial_test WHERE id_normal = 2;  -- Expected: t
+
+-- BIGSERIAL should behave like INT8
+SELECT id_big = 3.0::numeric FROM serial_test WHERE id_big = 3;         -- Expected: t
+SELECT id_big = 3.1::float8 FROM serial_test WHERE id_big = 3;          -- Expected: f
+SELECT id_big <= 4.0::float8 FROM serial_test WHERE id_big = 3;         -- Expected: t
 ```
 
 **Success Criteria**:
 - Precision boundaries correctly detected
 - Overflow/underflow cases return false for equality
 - No crashes or unexpected errors for extreme values
+- Serial type aliases work identically to their underlying integer types (smallserial=int2, serial=int4, bigserial=int8)
 
 ---
 
