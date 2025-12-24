@@ -267,17 +267,75 @@ some_support_func(PG_FUNCTION_ARGS) {
 }
 ```
 
-## 4. Preventing Transitive Inference
+## 4. Merge Join Support (Deferred to v2.0)
 
-**Decision**: Do not add these operators to btree operator families that would enable transitive inference across different type combinations
+**Decision**: Do not add operators to btree operator families in v1.0. Therefore, operators do not have MERGES property.
 
-**Rationale**:
-- PostgreSQL query optimizer applies transitive inference when operators are members of compatible btree operator families
-- The optimizer checks operator family membership and strategy numbers to determine if transitivity is valid
-- By keeping these operators independent (not grouped into cross-type operator families), the planner won't infer `floatcol = 10.0` from `floatcol = intcol AND intcol = 10.0`
-- Each comparison stands alone without family relationships that would allow `A = B AND B = C` to imply `A = C` when A, B, C are different numeric types
+**Rationale for Deferral**:
+- Operators are mathematically transitive for the higher precision type and could be safely added to the higher precision btree families.
+  - TBD add "proof" of this. 
+- This would enable planner inferences, e.g., transitivity, and merge join optimization for large table joins
+- However, it adds implementation complexity, need to add operators to appropriate btree operator families for each type:
+  - numeric × int operators → `numeric_ops` family
+  - float4 × int operators → `float4_ops` family  
+  - float8 × int operators → `float8_ops` family
+  - Additional testing required to validate planner behavior
+  - Need to verify interaction with native PostgreSQL operators in same family
+- Index optimization via `SupportRequestIndexCondition` already provides excellent performance for most use cases
+- Merge joins primarily benefit queries joining very large tables where indexes aren't selective
 
-**Implementation**:
+**Why Operators Are Transitive**:
+- If `A = B` (no fractional part) and `B = C`, then `A = C`
+- If `A = B` returns false (has fractional part), transitive chain correctly propagates inequality
+- Example: `10.5 = 10` → false, so `(10.5 = 10) AND (10 = X)` → false regardless of X
+- Native PostgreSQL's exact numeric comparison is also transitive: `10.5::numeric = 10::numeric` → false
+
+**Merge Join Requirements**:
+- For `intcol = float4col`, both columns would use float4_ops family operators for sorting
+- For `intcol = float8col`, both columns would use float8_ops family operators for sorting
+- Each type combination needs operators added to the appropriate family (numeric_ops, float4_ops, float8_ops)
+- This is exactly how native PostgreSQL handles cross-type comparisons
+- For `intcol = numcol`, both columns would use numeric_ops family operators for sorting
+- The integer column would be implicitly cast to numeric for comparison
+- This is exactly how native PostgreSQL handles `int = numeric` with implicit casting
+
+**v1.0 Implementation**: Operators have only basic properties (COMMUTATOR, NEGATOR, RESTRICT, JOIN). No MERGES property, not in any operator families.
+
+**v2.0 numeric × int operators to numeric_ops btree family
+ALTER OPERATOR FAMILY numeric_ops USING btree ADD
+  OPERATOR 1 < (int4, numeric),
+  OPERATOR 2 <= (int4, numeric),
+  OPERATOR 3 = (int4, numeric),
+  OPERATOR 4 >= (int4, numeric),
+  OPERATOR 5 > (int4, numeric);
+-- Repeat for int2, int8, and reverse directions (numeric, int)
+
+-- Add float4 × int operators to float4_ops btree family
+ALTER OPERATOR FAMILY float4_ops USING btree ADD
+  OPERATOR 1 < (int4, float4),
+  OPERATOR 2 <= (int4, float4),
+  OPERATOR 3 = (int4, float4),
+  OPERATOR 4 >= (int4, float4),
+  OPERATOR 5 > (int4, float4);
+-- Repeat for int2, int8, and reverse directions (float4, int)
+
+-- Add float8 × int operators to float8_ops btree family
+ALTER OPERATOR FAMILY float8_ops USING btree ADD
+  OPERATOR 1 < (int4, float8),
+  OPERATOR 2 <= (int4, float8),
+  OPERATOR 3 = (int4, float8),
+  OPERATOR 4 >= (int4, float8),
+  OPERATOR 5 > (int4, float8);
+-- Repeat for int2, int8, and reverse directions (float8, int)
+
+-- Add MERGES property to operators
+ALTER OPERATOR = (int4, numeric) SET (MERGES);
+ALTER OPERATOR = (int4, float4) SET (MERGES);
+ALTER OPERATOR = (int4, float8) SET (MERGES);
+-- Repeat for all type combinations and comparison operators
+-- Add MERGES property to operators
+ALTER OPERATOR = (int4, numeric) SET (MERGES);
+```
 
 ## 5. Hash Function Support for Hash Joins (Future Enhancement)
 
@@ -400,7 +458,7 @@ The extension implementation strategy is:
 1. **Comparison functions**: C functions using PostgreSQL's `numeric_trunc()` and bounds checking primitives
 2. **Index integration**: `SupportRequestIndexCondition` support functions modeled after LIKE operator
 3. **Performance optimization**: Lazy per-backend OID cache for operator lookups
-4. **Transitivity prevention**: Omit `MERGES` property from operator definitions
+4. **Transitivity prevention**: Operators are NOT in btree operator families, which also means MERGES property cannot be used (MERGES requires btree family membership)
 5. **Testing**: pg_regress framework with categorized test suites
 6. **Type coverage**: Full 9-combination matrix with type-specific precision handling
 

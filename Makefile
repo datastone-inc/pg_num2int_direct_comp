@@ -9,7 +9,10 @@ MODULES = pg_num2int_direct_comp
 # Phase 4 (User Story 2): index_usage
 # Phase 5 (User Story 3): range_boundary
 # Phase 6 (User Story 4): transitivity
-REGRESS = numeric_int_ops float_int_ops index_usage range_boundary transitivity
+# Phase 7 (User Story 5): edge_cases null_handling special_values
+# Phase 9: merge_joins (documents why merge joins are disabled)
+# Phase 10: performance
+REGRESS = numeric_int_ops float_int_ops index_usage range_boundary transitivity edge_cases null_handling special_values merge_joins performance
 
 # Build configuration
 PG_CONFIG = pg_config

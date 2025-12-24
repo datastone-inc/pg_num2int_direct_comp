@@ -54,7 +54,7 @@ Complete reference for all 54 comparison operators provided by pg_num2int_direct
 | float8 | int4 | `float8_lt_int4` | `int4 > float8` | `float8 >= int4` |
 | float8 | int8 | `float8_lt_int8` | `int8 > float8` | `float8 >= int8` |
 
-**Properties**: MERGES (enables merge joins), COMMUTATOR, NEGATOR
+**Properties**: COMMUTATOR, NEGATOR
 
 **Index Support**: Yes (via SupportRequestIndexCondition)
 
@@ -72,7 +72,7 @@ Complete reference for all 54 comparison operators provided by pg_num2int_direct
 | float8 | int4 | `float8_gt_int4` | `int4 < float8` | `float8 <= int4` |
 | float8 | int8 | `float8_gt_int8` | `int8 < float8` | `float8 <= int8` |
 
-**Properties**: MERGES (enables merge joins), COMMUTATOR, NEGATOR
+**Properties**: COMMUTATOR, NEGATOR
 
 **Index Support**: Yes (via SupportRequestIndexCondition)
 
@@ -90,7 +90,7 @@ Complete reference for all 54 comparison operators provided by pg_num2int_direct
 | float8 | int4 | `float8_le_int4` | `int4 >= float8` | `float8 > int4` |
 | float8 | int8 | `float8_le_int8` | `int8 >= float8` | `float8 > int8` |
 
-**Properties**: MERGES (enables merge joins), COMMUTATOR, NEGATOR
+**Properties**: COMMUTATOR, NEGATOR
 
 **Index Support**: Yes (via SupportRequestIndexCondition)
 
@@ -108,7 +108,7 @@ Complete reference for all 54 comparison operators provided by pg_num2int_direct
 | float8 | int4 | `float8_ge_int4` | `int4 <= float8` | `float8 < int4` |
 | float8 | int8 | `float8_ge_int8` | `int8 <= float8` | `float8 < int8` |
 
-**Properties**: MERGES (enables merge joins), COMMUTATOR, NEGATOR
+**Properties**: COMMUTATOR, NEGATOR
 
 **Index Support**: Yes (via SupportRequestIndexCondition)
 
@@ -126,18 +126,6 @@ SELECT * FROM a JOIN b ON a.int_col = b.numeric_col;
 -- Can use Hash Join strategy
 ```
 
-### MERGES
-
-Applied to: `<`, `>`, `<=`, `>=` operators
-
-Enables: Merge joins for ordered JOIN operations
-
-Example:
-```sql
-SELECT * FROM a JOIN b ON a.int_col < b.float_col;
--- Can use Merge Join strategy
-```
-
 ### COMMUTATOR
 
 All operators have commutators (reversed argument order):
@@ -150,6 +138,8 @@ All operators have negators (logical opposites):
 - `=` negates with `<>`
 - `<` negates with `>=`
 - `>` negates with `<=`
+
+**Note on MERGES Property**: Operators do NOT have MERGES property in v1.0 (deferred to v2.0). Operators are not in btree operator families in v1.0. This simplifies the initial implementation while index optimization via support functions already provides excellent performance. v2.0 may add operators to btree families to enable merge join optimization for large table joins.
 
 ## Support Function
 

@@ -118,7 +118,10 @@ The extension provides exact comparison operators for all meaningful combination
 # Future Enhancements (Not Required for v1.0)
 
 - **FE-001**: Hash functions for cross-type equality operators to enable hash join optimization (currently operators do not have HASHES property, hash joins fall back to nested loop joins)
-- **FE-002**: B-tree operator family registration to enable merge joins (currently MERGES property is set but operators are not in any btree opfamily)
+- **FE-002**: B-tree operator family registration to enable merge joins (deferred to v2.0)
+  - **Rationale**: Operators are mathematically transitive and can be safely added to btree operator families (e.g., numeric_ops)
+  - **Why Deferred**: Adds implementation complexity without immediate benefit since index optimization via support functions already provides excellent performance
+  - **v2.0 Benefit**: Would enable merge join strategy for very large table joins where indexes aren't selective
 - **FE-003**: Cost estimation functions to help the query planner choose optimal join strategies
 
 ##

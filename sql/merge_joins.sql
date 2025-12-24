@@ -1,0 +1,120 @@
+-- Test: Merge Join Support for Direct Numeric-Integer Comparison
+-- Purpose: Verify that operators do NOT enable merge joins in v1.0 (deferred to v2.0)
+-- Rationale: v1.0 omits MERGES property and btree family membership to reduce
+--            implementation complexity. Index optimization via support functions
+--            provides excellent performance for most queries.
+--
+-- Note: Operators ARE mathematically transitive and could be added to btree
+--       families in v2.0 to enable merge join optimization for large table joins.
+--
+-- v1.0: operators do NOT have MERGES property (oprcanmerge=false)
+
+-- Create test tables
+CREATE TEMPORARY TABLE merge_int4 (id SERIAL PRIMARY KEY, val INT4);
+CREATE TEMPORARY TABLE merge_numeric (id SERIAL PRIMARY KEY, val NUMERIC);
+CREATE TEMPORARY TABLE merge_float8 (id SERIAL PRIMARY KEY, val FLOAT8);
+
+-- Populate with sequential values
+INSERT INTO merge_int4 (val) SELECT generate_series(1, 10000);
+INSERT INTO merge_numeric (val) SELECT generate_series(1, 10000)::numeric;
+INSERT INTO merge_float8 (val) SELECT generate_series(1, 10000)::float8;
+
+-- Create indexes
+CREATE INDEX idx_merge_int4_val ON merge_int4(val);
+CREATE INDEX idx_merge_numeric_val ON merge_numeric(val);
+CREATE INDEX idx_merge_float8_val ON merge_float8(val);
+
+-- Analyze tables
+ANALYZE merge_int4;
+ANALYZE merge_numeric;
+ANALYZE merge_float8;
+
+-- Test 1: Attempt to force merge join (should NOT use merge join)
+-- Disable hash joins and nested loops to see if merge join is possible
+SET LOCAL enable_hashjoin = off;
+SET LOCAL enable_nestloop = off;
+
+\echo '=== Test 1: Cross-Type Join with Merge Join Forced ==='
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*) 
+FROM merge_int4 i 
+JOIN merge_numeric n ON i.val = n.val
+WHERE i.val < 1000;
+
+-- Expected: Should fall back to nested loop or seq scan since operators
+-- are not in btree operator families (merge join requires opfamily membership)
+
+-- Reset settings
+RESET enable_hashjoin;
+RESET enable_nestloop;
+
+-- Test 2: Verify operators are NOT in btree operator families
+\echo '=== Test 2: Operator Family Membership Check ==='
+SELECT 
+    op.oprname,
+    op.oprleft::regtype,
+    op.oprright::regtype,
+    COALESCE(amop.amopfamily::regclass::text, 'NOT IN FAMILY') as opfamily
+FROM pg_operator op
+LEFT JOIN pg_amop amop ON op.oid = amop.amopopr
+WHERE op.oprname IN ('=', '<', '<=', '>', '>=', '<>')
+  AND (
+    (op.oprleft = 'numeric'::regtype AND op.oprright = 'int4'::regtype) OR
+    (op.oprleft = 'int4'::regtype AND op.oprright = 'numeric'::regtype) OR
+    (op.oprleft = 'float8'::regtype AND op.oprright = 'int4'::regtype) OR
+    (op.oprleft = 'int4'::regtype AND op.oprright = 'float8'::regtype)
+  )
+ORDER BY op.oprname, op.oprleft, op.oprright;
+
+-- Test 3: Explain why merge joins would be incorrect
+\echo '=== Test 3: Why Merge Joins Are Disabled ==='
+\echo 'Merge joins require btree operator family membership.'
+\echo 'Operator families enable transitive inference by the optimizer.'
+\echo 'Example of incorrect inference if enabled:'
+\echo '  Given: numeric_col = int_col AND int_col = 10'
+\echo '  Optimizer would infer: numeric_col = 10'
+\echo '  But this is WRONG when numeric_col = 10.5 and int_col = 10 (10.5 = 10 is false!)'
+\echo 'Therefore, operators intentionally NOT in btree families.'
+
+-- Test 4: Verify normal join strategies still work
+\echo '=== Test 4: Normal Join Strategies ==='
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*) 
+FROM merge_int4 i 
+JOIN merge_numeric n ON i.val = n.val
+WHERE i.val < 100;
+
+SELECT 'int4-numeric join (working)'::text AS test, COUNT(*) AS count
+FROM merge_int4 i 
+JOIN merge_numeric n ON i.val = n.val
+WHERE i.val < 100;
+
+-- Test 5: Verify MERGES property is NOT set (consistent with no family membership)
+\echo '=== Test 5: MERGES Property Check ==='
+SELECT 
+    op.oprname,
+    op.oprleft::regtype,
+    op.oprright::regtype,
+    op.oprcanmerge AS has_merges_property
+FROM pg_operator op
+WHERE op.oprname IN ('<', '<=', '>', '>=')
+  AND (
+    (op.oprleft = 'numeric'::regtype AND op.oprright = 'int4'::regtype) OR
+    (op.oprleft = 'int4'::regtype AND op.oprright = 'numeric'::regtype)
+  )
+ORDER BY op.oprname, op.oprleft;
+
+-- Expected: oprcanmerge should be 'f' (false) for all operators
+
+-- Clean up
+DROP TABLE merge_int4;
+DROP TABLE merge_numeric;
+DROP TABLE merge_float8;
+
+-- Summary
+\echo '=== Summary ==='
+\echo 'Merge joins are NOT supported in v1.0 (deferred to v2.0).'
+\echo 'v1.0 uses index scans and nested loop joins for cross-type comparisons.'
+\echo 'Operators do NOT have MERGES property and are NOT in btree families in v1.0.'
+\echo 'v2.0 enhancement: operators could be added to btree families to enable merge joins.'
+\echo '(Operators ARE transitive; deferral is for complexity management, not correctness.)'

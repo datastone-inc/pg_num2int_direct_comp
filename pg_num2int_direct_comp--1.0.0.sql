@@ -160,8 +160,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -171,8 +170,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -182,8 +180,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -193,8 +190,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 -- Float4 × Integer Equality Operators
@@ -205,8 +201,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -216,8 +211,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -227,8 +221,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 -- Float8 × Integer Equality Operators
@@ -239,8 +232,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -250,8 +242,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -261,8 +252,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 -- ============================================================================
@@ -478,8 +468,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -489,8 +478,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -500,8 +488,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -511,8 +498,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -522,8 +508,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -533,8 +518,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -544,8 +528,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 CREATE OPERATOR = (
@@ -555,8 +538,7 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  MERGES
+  JOIN = eqjoinsel
 );
 
 -- Commutator Inequality Operators

@@ -247,7 +247,6 @@ num2int_support(PG_FUNCTION_ARGS) {
       Node *rightop;
       Var *var_node = NULL;
       Const *const_node = NULL;
-      bool const_is_left = false;
       
       /* Extract left and right operands */
       if (list_length(clause->args) != 2) {
@@ -261,11 +260,9 @@ num2int_support(PG_FUNCTION_ARGS) {
       if (IsA(leftop, Const) && IsA(rightop, Var)) {
         const_node = (Const *) leftop;
         var_node = (Var *) rightop;
-        const_is_left = true;
       } else if (IsA(leftop, Var) && IsA(rightop, Const)) {
         var_node = (Var *) leftop;
         const_node = (Const *) rightop;
-        const_is_left = false;
       } else {
         /* Not Var + Const pattern */
         PG_RETURN_POINTER(NULL);
