@@ -37,6 +37,8 @@ Database administrators need queries using exact numeric-to-integer comparisons 
 1. **Given** a table with a btree index on an int4 column, **When** user executes `EXPLAIN SELECT * FROM table WHERE intcol = 10.0::numeric`, **Then** query plan shows Index Scan or Index Only Scan
 2. **Given** a table with 1 million rows and an indexed bigint column, **When** querying with exact float8 comparison, **Then** execution time is comparable to standard integer index lookup (sub-millisecond range)
 3. **Given** multiple comparison predicates in a WHERE clause, **When** query optimizer evaluates the plan, **Then** the exact comparison operators are recognized as indexable predicates
+4. **Given** an impossible equality condition like `int4col = 10.5::numeric`, **When** query is executed, **Then** returns empty result set efficiently using index (transformed to always-false condition)
+5. **Given** all comparison operators (=, <>, <, <=, >, >=), **When** used with indexed columns, **Then** all operators utilize btree index with appropriate transformations
 
 ---
 
@@ -96,6 +98,7 @@ The extension provides exact comparison operators for all meaningful combination
 - **Performance with large numeric values**: How efficiently does the extension handle numeric values with high precision (e.g., numeric(1000,500))? *(Performance with high-precision numeric is bounded by PostgreSQL's numeric type implementation. Extension adds minimal overhead (<10%) regardless of precision.)*
 - **NULL handling consistency**: Are NULL semantics consistent across all operator types (=, <>, <, >, <=, >=)?
 - **Type coercion ambiguity**: How does the system handle cases where type resolution might be ambiguous (e.g., literal `10.0` could be numeric or float8)? *(Note: Type resolution for literals is controlled by PostgreSQL's core type system, not the extension. Users can explicitly cast literals to desired types if needed.)*
+- **Hash function consistency**: How should hash functions be implemented to support hash joins while maintaining the invariant "if a = b then hash(a) = hash(b)" across different types? *(Future Enhancement: Hash functions for cross-type equality are not yet implemented. Operators currently do not support HASHES property, so hash joins will fall back to nested loop joins. This can be added later without breaking compatibility.)*
 
 ## Requirements *(mandatory)*
 
@@ -112,7 +115,13 @@ The extension provides exact comparison operators for all meaningful combination
 - **FR-009**: Comparisons involving numeric values outside the representable range of the integer type MUST return false for equality. For ordering operators, values exceeding the integer type's maximum are treated as greater than any integer, and values below the minimum are treated as less than any integer (following PostgreSQL's numeric-to-integer cast semantics)
 - **FR-010**: Feature MUST be compatible with PostgreSQL 12 and later versions
 - **FR-011**: All comparison behaviors MUST be verifiable through automated tests covering normal cases, boundary conditions, NULL handling, and special values
+# Future Enhancements (Not Required for v1.0)
 
+- **FE-001**: Hash functions for cross-type equality operators to enable hash join optimization (currently operators do not have HASHES property, hash joins fall back to nested loop joins)
+- **FE-002**: B-tree operator family registration to enable merge joins (currently MERGES property is set but operators are not in any btree opfamily)
+- **FE-003**: Cost estimation functions to help the query planner choose optimal join strategies
+
+##
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes

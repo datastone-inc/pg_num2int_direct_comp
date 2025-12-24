@@ -1,0 +1,57 @@
+# PostgreSQL Extension Build Artifacts
+*.o
+*.so
+*.a
+*.dylib
+*.dll
+
+# PGXS Build Output
+/regression.diffs
+/regression.out
+/results/
+
+# Test Output
+/sql/regression.out
+/expected/regression.out
+
+# Editor and IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Temporary Files
+*.tmp
+*.log
+*.bak
+
+# Environment and Secrets
+.env
+.env.local
+*.pem
+*.key
+*.crt
+
+# Package Manager
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Documentation Build
+doc/*.html
+doc/*.pdf
+
+# Coverage and Profiling
+*.gcov
+*.gcda
+*.gcno
+coverage/
+*.prof
+
+# Debugging
+*.dSYM/
+core
+vgcore.*

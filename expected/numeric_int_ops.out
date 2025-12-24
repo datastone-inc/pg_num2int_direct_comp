@@ -1,0 +1,478 @@
+-- Test exact comparison operators for numeric × integer combinations
+-- This test file covers equality (=) and inequality (<>) operators
+-- Test 1: Basic equality - numeric with no fractional part equals integer
+SELECT 10::numeric = 10::int2 AS "numeric=int2_exact";
+ numeric=int2_exact 
+--------------------
+ t
+(1 row)
+
+SELECT 10::numeric = 10::int4 AS "numeric=int4_exact";
+ numeric=int4_exact 
+--------------------
+ t
+(1 row)
+
+SELECT 10::numeric = 10::int8 AS "numeric=int8_exact";
+ numeric=int8_exact 
+--------------------
+ t
+(1 row)
+
+-- Test 2: Fractional part prevents equality
+SELECT 10.5::numeric = 10::int2 AS "numeric_frac=int2_false";
+ numeric_frac=int2_false 
+-------------------------
+ f
+(1 row)
+
+SELECT 10.5::numeric = 10::int4 AS "numeric_frac=int4_false";
+ numeric_frac=int4_false 
+-------------------------
+ f
+(1 row)
+
+SELECT 10.5::numeric = 10::int8 AS "numeric_frac=int8_false";
+ numeric_frac=int8_false 
+-------------------------
+ f
+(1 row)
+
+-- Test 3: Negative values
+SELECT (-5)::numeric = (-5)::int2 AS "numeric_neg=int2";
+ numeric_neg=int2 
+------------------
+ t
+(1 row)
+
+SELECT (-5)::numeric = (-5)::int4 AS "numeric_neg=int4";
+ numeric_neg=int4 
+------------------
+ t
+(1 row)
+
+SELECT (-5)::numeric = (-5)::int8 AS "numeric_neg=int8";
+ numeric_neg=int8 
+------------------
+ t
+(1 row)
+
+-- Test 4: Zero
+SELECT 0::numeric = 0::int2 AS "numeric_zero=int2";
+ numeric_zero=int2 
+-------------------
+ t
+(1 row)
+
+SELECT 0::numeric = 0::int4 AS "numeric_zero=int4";
+ numeric_zero=int4 
+-------------------
+ t
+(1 row)
+
+SELECT 0::numeric = 0::int8 AS "numeric_zero=int8";
+ numeric_zero=int8 
+-------------------
+ t
+(1 row)
+
+-- Test 5: Inequality operator - different values
+SELECT 10::numeric <> 5::int2 AS "numeric<>int2_diff";
+ numeric<>int2_diff 
+--------------------
+ t
+(1 row)
+
+SELECT 10::numeric <> 5::int4 AS "numeric<>int4_diff";
+ numeric<>int4_diff 
+--------------------
+ t
+(1 row)
+
+SELECT 10::numeric <> 5::int8 AS "numeric<>int8_diff";
+ numeric<>int8_diff 
+--------------------
+ t
+(1 row)
+
+-- Test 6: Inequality with fractional part
+SELECT 10.1::numeric <> 10::int2 AS "numeric_frac<>int2";
+ numeric_frac<>int2 
+--------------------
+ t
+(1 row)
+
+SELECT 10.1::numeric <> 10::int4 AS "numeric_frac<>int4";
+ numeric_frac<>int4 
+--------------------
+ t
+(1 row)
+
+SELECT 10.1::numeric <> 10::int8 AS "numeric_frac<>int8";
+ numeric_frac<>int8 
+--------------------
+ t
+(1 row)
+
+-- Test 7: Inequality returns false for equal values
+SELECT 10::numeric <> 10::int2 AS "numeric<>int2_equal_false";
+ numeric<>int2_equal_false 
+---------------------------
+ f
+(1 row)
+
+SELECT 10::numeric <> 10::int4 AS "numeric<>int4_equal_false";
+ numeric<>int4_equal_false 
+---------------------------
+ f
+(1 row)
+
+SELECT 10::numeric <> 10::int8 AS "numeric<>int8_equal_false";
+ numeric<>int8_equal_false 
+---------------------------
+ f
+(1 row)
+
+-- Test 8: Commutative property (reversed operands)
+SELECT 10::int2 = 10::numeric AS "int2=numeric_commute";
+ int2=numeric_commute 
+----------------------
+ t
+(1 row)
+
+SELECT 10::int4 = 10::numeric AS "int4=numeric_commute";
+ int4=numeric_commute 
+----------------------
+ t
+(1 row)
+
+SELECT 10::int8 = 10::numeric AS "int8=numeric_commute";
+ int8=numeric_commute 
+----------------------
+ t
+(1 row)
+
+-- Test 9: Large values within integer ranges
+SELECT 32767::numeric = 32767::int2 AS "numeric=int2_max";
+ numeric=int2_max 
+------------------
+ t
+(1 row)
+
+SELECT 2147483647::numeric = 2147483647::int4 AS "numeric=int4_max";
+ numeric=int4_max 
+------------------
+ t
+(1 row)
+
+SELECT 9223372036854775807::numeric = 9223372036854775807::int8 AS "numeric=int8_max";
+ numeric=int8_max 
+------------------
+ t
+(1 row)
+
+-- Test 10: Minimum integer values
+SELECT (-32768)::numeric = (-32768)::int2 AS "numeric=int2_min";
+ numeric=int2_min 
+------------------
+ t
+(1 row)
+
+SELECT (-2147483648)::numeric = (-2147483648)::int4 AS "numeric=int4_min";
+ numeric=int4_min 
+------------------
+ t
+(1 row)
+
+SELECT (-9223372036854775808)::numeric = (-9223372036854775808)::int8 AS "numeric=int8_min";
+ numeric=int8_min 
+------------------
+ t
+(1 row)
+
+-- Test 11: Decimal type (alias for numeric)
+SELECT 10.0::decimal = 10::int4 AS "decimal=int4";
+ decimal=int4 
+--------------
+ t
+(1 row)
+
+SELECT 10.5::decimal <> 10::int4 AS "decimal_frac<>int4";
+ decimal_frac<>int4 
+--------------------
+ t
+(1 row)
+
+-- ============================================================================
+-- Range Comparison Tests (<, >, <=, >=)
+-- ============================================================================
+-- Test 12: Less than operator (<)
+SELECT 5::numeric < 10::int2 AS "numeric_lt_int2_true";
+ numeric_lt_int2_true 
+----------------------
+ t
+(1 row)
+
+SELECT 10::numeric < 10::int2 AS "numeric_lt_int2_equal_false";
+ numeric_lt_int2_equal_false 
+-----------------------------
+ f
+(1 row)
+
+SELECT 15::numeric < 10::int2 AS "numeric_lt_int2_false";
+ numeric_lt_int2_false 
+-----------------------
+ f
+(1 row)
+
+SELECT 5::numeric < 10::int4 AS "numeric_lt_int4_true";
+ numeric_lt_int4_true 
+----------------------
+ t
+(1 row)
+
+SELECT 10::numeric < 10::int4 AS "numeric_lt_int4_equal_false";
+ numeric_lt_int4_equal_false 
+-----------------------------
+ f
+(1 row)
+
+SELECT 15::numeric < 10::int4 AS "numeric_lt_int4_false";
+ numeric_lt_int4_false 
+-----------------------
+ f
+(1 row)
+
+SELECT 5::numeric < 10::int8 AS "numeric_lt_int8_true";
+ numeric_lt_int8_true 
+----------------------
+ t
+(1 row)
+
+SELECT 10::numeric < 10::int8 AS "numeric_lt_int8_equal_false";
+ numeric_lt_int8_equal_false 
+-----------------------------
+ f
+(1 row)
+
+SELECT 15::numeric < 10::int8 AS "numeric_lt_int8_false";
+ numeric_lt_int8_false 
+-----------------------
+ f
+(1 row)
+
+-- Test 13: Greater than operator (>)
+SELECT 15::numeric > 10::int2 AS "numeric_gt_int2_true";
+ numeric_gt_int2_true 
+----------------------
+ t
+(1 row)
+
+SELECT 10::numeric > 10::int2 AS "numeric_gt_int2_equal_false";
+ numeric_gt_int2_equal_false 
+-----------------------------
+ f
+(1 row)
+
+SELECT 5::numeric > 10::int2 AS "numeric_gt_int2_false";
+ numeric_gt_int2_false 
+-----------------------
+ f
+(1 row)
+
+SELECT 15::numeric > 10::int4 AS "numeric_gt_int4_true";
+ numeric_gt_int4_true 
+----------------------
+ t
+(1 row)
+
+SELECT 10::numeric > 10::int4 AS "numeric_gt_int4_equal_false";
+ numeric_gt_int4_equal_false 
+-----------------------------
+ f
+(1 row)
+
+SELECT 5::numeric > 10::int4 AS "numeric_gt_int4_false";
+ numeric_gt_int4_false 
+-----------------------
+ f
+(1 row)
+
+SELECT 15::numeric > 10::int8 AS "numeric_gt_int8_true";
+ numeric_gt_int8_true 
+----------------------
+ t
+(1 row)
+
+SELECT 10::numeric > 10::int8 AS "numeric_gt_int8_equal_false";
+ numeric_gt_int8_equal_false 
+-----------------------------
+ f
+(1 row)
+
+SELECT 5::numeric > 10::int8 AS "numeric_gt_int8_false";
+ numeric_gt_int8_false 
+-----------------------
+ f
+(1 row)
+
+-- Test 14: Less than or equal operator (<=)
+SELECT 5::numeric <= 10::int2 AS "numeric_le_int2_less";
+ numeric_le_int2_less 
+----------------------
+ t
+(1 row)
+
+SELECT 10::numeric <= 10::int2 AS "numeric_le_int2_equal";
+ numeric_le_int2_equal 
+-----------------------
+ t
+(1 row)
+
+SELECT 15::numeric <= 10::int2 AS "numeric_le_int2_false";
+ numeric_le_int2_false 
+-----------------------
+ f
+(1 row)
+
+SELECT 5::numeric <= 10::int4 AS "numeric_le_int4_less";
+ numeric_le_int4_less 
+----------------------
+ t
+(1 row)
+
+SELECT 10::numeric <= 10::int4 AS "numeric_le_int4_equal";
+ numeric_le_int4_equal 
+-----------------------
+ t
+(1 row)
+
+SELECT 15::numeric <= 10::int4 AS "numeric_le_int4_false";
+ numeric_le_int4_false 
+-----------------------
+ f
+(1 row)
+
+SELECT 5::numeric <= 10::int8 AS "numeric_le_int8_less";
+ numeric_le_int8_less 
+----------------------
+ t
+(1 row)
+
+SELECT 10::numeric <= 10::int8 AS "numeric_le_int8_equal";
+ numeric_le_int8_equal 
+-----------------------
+ t
+(1 row)
+
+SELECT 15::numeric <= 10::int8 AS "numeric_le_int8_false";
+ numeric_le_int8_false 
+-----------------------
+ f
+(1 row)
+
+-- Test 15: Greater than or equal operator (>=)
+SELECT 15::numeric >= 10::int2 AS "numeric_ge_int2_greater";
+ numeric_ge_int2_greater 
+-------------------------
+ t
+(1 row)
+
+SELECT 10::numeric >= 10::int2 AS "numeric_ge_int2_equal";
+ numeric_ge_int2_equal 
+-----------------------
+ t
+(1 row)
+
+SELECT 5::numeric >= 10::int2 AS "numeric_ge_int2_false";
+ numeric_ge_int2_false 
+-----------------------
+ f
+(1 row)
+
+SELECT 15::numeric >= 10::int4 AS "numeric_ge_int4_greater";
+ numeric_ge_int4_greater 
+-------------------------
+ t
+(1 row)
+
+SELECT 10::numeric >= 10::int4 AS "numeric_ge_int4_equal";
+ numeric_ge_int4_equal 
+-----------------------
+ t
+(1 row)
+
+SELECT 5::numeric >= 10::int4 AS "numeric_ge_int4_false";
+ numeric_ge_int4_false 
+-----------------------
+ f
+(1 row)
+
+SELECT 15::numeric >= 10::int8 AS "numeric_ge_int8_greater";
+ numeric_ge_int8_greater 
+-------------------------
+ t
+(1 row)
+
+SELECT 10::numeric >= 10::int8 AS "numeric_ge_int8_equal";
+ numeric_ge_int8_equal 
+-----------------------
+ t
+(1 row)
+
+SELECT 5::numeric >= 10::int8 AS "numeric_ge_int8_false";
+ numeric_ge_int8_false 
+-----------------------
+ f
+(1 row)
+
+-- Test 16: Range operators with negative values
+SELECT (-10)::numeric < (-5)::int4 AS "numeric_neg_lt_int4";
+ numeric_neg_lt_int4 
+---------------------
+ t
+(1 row)
+
+SELECT (-5)::numeric > (-10)::int4 AS "numeric_neg_gt_int4";
+ numeric_neg_gt_int4 
+---------------------
+ t
+(1 row)
+
+SELECT (-10)::numeric <= (-10)::int4 AS "numeric_neg_le_int4";
+ numeric_neg_le_int4 
+---------------------
+ t
+(1 row)
+
+SELECT (-10)::numeric >= (-10)::int4 AS "numeric_neg_ge_int4";
+ numeric_neg_ge_int4 
+---------------------
+ t
+(1 row)
+
+-- Test 17: Range operators with fractional parts (strict comparison)
+SELECT 10.5::numeric < 11::int4 AS "numeric_frac_lt_ceil_true";
+ numeric_frac_lt_ceil_true 
+---------------------------
+ t
+(1 row)
+
+SELECT 10.5::numeric < 10::int4 AS "numeric_frac_lt_floor_false";
+ numeric_frac_lt_floor_false 
+-----------------------------
+ f
+(1 row)
+
+SELECT 10.5::numeric > 10::int4 AS "numeric_frac_gt_floor_true";
+ numeric_frac_gt_floor_true 
+----------------------------
+ t
+(1 row)
+
+SELECT 10.5::numeric > 11::int4 AS "numeric_frac_gt_ceil_false";
+ numeric_frac_gt_ceil_false 
+----------------------------
+ f
+(1 row)
+

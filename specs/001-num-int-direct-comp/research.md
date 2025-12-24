@@ -81,20 +81,34 @@ numeric_gt_int4(PG_FUNCTION_ARGS) {
 
 **Decision**: Implement index support using a single generic `num2int_support()` function via `SupportRequestIndexCondition`, similar to PostgreSQL's LIKE operator implementation
 
+**Critical Discovery**: Shell operators (created by COMMUTATOR clause) cannot have support functions! Both directions must be implemented with actual function bodies.
+
 **Rationale**:
 - `SupportRequestIndexCondition` is PostgreSQL's standard mechanism for enabling index-optimized predicates
-- LIKE operator (`pattern_ops`) provides proven pattern for type-crossing index access
+- LIKE operator (`like_support.c`) provides proven pattern for type-crossing index access
+- Support function **MUST return a List of OpExpr nodes** (not a single OpExpr), following PostgreSQL's `match_pattern_prefix()` pattern
+- Support function uses `list_make1()` to wrap the transformed OpExpr in a List
 - A single generic support function handles all type combinations by inspecting operator OID and operand types
 - Reduces code duplication - one support function instead of 54 separate functions
 - Uses lazy OID cache to identify which operator is being invoked
 - Allows query planner to recognize `intcol = 10.0::numeric` as indexable predicate
-- Returns transformed node that planner can use for index scan instead of seq scan
+- Returns transformed clause that planner can use for index scan instead of seq scan
+
+**Implementation Requirements**:
+1. **Both operator directions need real functions**: For `int4 = numeric`, must implement BOTH:
+   - `numeric = int4` with function `numeric_eq_int4()` + SUPPORT clause
+   - `int4 = numeric` with function `int4_eq_numeric()` + SUPPORT clause (commutator)
+2. **COMMUTATOR alone creates shell operators**: Shell operators have no function, therefore no support function attachment point
+3. **Support function return type**: Must return `List *` containing transformed OpExpr nodes
+4. **Use PostgreSQL's casting functions**: Use built-in `int2(numeric)` (OID 1783), `int4(numeric)` (OID 1744), `int8(numeric)` (OID 1779) for safe type conversion with rounding
+5. **Set lossy flag**: `req->lossy = false` for exact transformations
 
 **Alternatives Considered**:
 - **Separate support function per operator**: Would require 54 functions with nearly identical logic. Rejected due to excessive duplication.
 - **Custom operator class**: Would require defining complete btree operator families. Rejected as unnecessarily complex since integer types already have btree support.
 - **Planner hooks**: Would be fragile across PostgreSQL versions. Rejected for maintainability.
 - **No index support**: Would make extension unusable for large tables. Rejected per User Story 2 requirements.
+- **Shell operators with support**: Attempted but failed - shell operators have no function implementation, so SUPPORT clause cannot be attached.
 
 **Implementation Pattern**:
 ```c
@@ -102,26 +116,95 @@ numeric_gt_int4(PG_FUNCTION_ARGS) {
 Datum
 num2int_support(PG_FUNCTION_ARGS) {
   Node *rawreq = (Node *) PG_GETARG_POINTER(0);
+  Node *ret = NULL;
   
   if (IsA(rawreq, SupportRequestIndexCondition)) {
     SupportRequestIndexCondition *req = (SupportRequestIndexCondition *) rawreq;
     
+    // Set lossy flag - our transformation is exact
+    req->lossy = false;
+    
     // Initialize OID cache if needed
-    init_oid_cache();
+    init_oid_cache(&oid_cache);
     
     // Extract the comparison: intcol = <numeric_constant>
     if (is_opclause(req->node)) {
       OpExpr *clause = (OpExpr *) req->node;
       Oid opno = clause->opno;
       
-      // Identify which type combination based on operator OID
-      // Check if numeric/float arg is const and within int range
-      // If yes, transform to standard integer comparison
-      // Return modified clause that planner can use with existing btree index
+      // Extract Var and Const nodes
+      Var *var_node;
+      Const *const_node;
+      // ... identify which is which
+      
+      // Check if this is one of our operators
+      if (opno == oid_cache.int4_eq_numeric_oid || /* other operators... */) {
+        // Convert numeric constant to integer using PostgreSQL's casting functions
+        // For int4: OidFunctionCall1(1744, NumericGetDatum(num))  // int4(numeric)
+        // For int2: OidFunctionCall1(1783, NumericGetDatum(num))  // int2(numeric)
+        // For int8: OidFunctionCall1(1779, NumericGetDatum(num))  // int8(numeric)
+        
+        // Create new Const with converted integer value
+        Const *new_const = makeConst(INT4OID, -1, InvalidOid, sizeof(int32),
+                                     Int32GetDatum(int_val), false, true);
+        
+        // Build new OpExpr using standard int = int operator
+        Var *new_var = (Var *) copyObject(var_node);
+        OpExpr *new_clause = (OpExpr *) make_opclause(
+            oid_cache.int4_eq_int4_oid,  // Standard int4 = int4 operator (OID 96)
+            BOOLOID, false,
+            (Expr *) new_var,
+            (Expr *) new_const,
+            InvalidOid, InvalidOid);
+        
+        // CRITICAL: Return a List containing the transformed OpExpr
+        ret = (Node *) list_make1(new_clause);
+      }
     }
   }
   
-  PG_RETURN_POINTER(NULL);
+  PG_RETURN_POINTER(ret);
+}
+```
+
+**SQL Function Declarations** (both directions required):
+```sql
+-- Forward direction with support
+CREATE FUNCTION numeric_eq_int4(numeric, int4)
+RETURNS boolean LANGUAGE C STRICT IMMUTABLE
+AS '$libdir/pg_num2int_direct_comp', 'numeric_eq_int4'
+SUPPORT num2int_support;
+
+CREATE OPERATOR = (
+  LEFTARG = numeric, RIGHTARG = int4,
+  FUNCTION = numeric_eq_int4,
+  COMMUTATOR = =,
+  NEGATOR = <>
+);
+
+-- Commutator direction also needs real function + support
+CREATE FUNCTION int4_eq_numeric(int4, numeric)
+RETURNS boolean LANGUAGE C STRICT IMMUTABLE
+AS '$libdir/pg_num2int_direct_comp', 'int4_eq_numeric'
+SUPPORT num2int_support;
+
+CREATE OPERATOR = (
+  LEFTARG = int4, RIGHTARG = numeric,
+  FUNCTION = int4_eq_numeric,
+  COMMUTATOR = =,
+  NEGATOR = <>
+);
+```
+
+**C Commutator Functions** (swap arguments and reuse core logic):
+```c
+// Commutator function: int4 = numeric → calls numeric = int4 logic with swapped args
+Datum
+int4_eq_numeric(PG_FUNCTION_ARGS) {
+  int32 i4 = PG_GETARG_INT32(0);
+  Numeric num = PG_GETARG_NUMERIC(1);
+  // Reuse existing comparison function with swapped args
+  PG_RETURN_BOOL(numeric_cmp_int4_internal(num, i4) == 0);
 }
 ```
 
@@ -195,30 +278,69 @@ some_support_func(PG_FUNCTION_ARGS) {
 - Each comparison stands alone without family relationships that would allow `A = B AND B = C` to imply `A = C` when A, B, C are different numeric types
 
 **Implementation**:
+
+## 5. Hash Function Support for Hash Joins (Future Enhancement)
+
+**Decision**: Defer hash function implementation to v2.0; operators will not have HASHES property in v1.0
+
+**Rationale**:
+- Hash joins require hash functions where "if a = b then hash(a) = hash(b)" across types
+- This is implementable but adds complexity (~100 lines per type combination)
+- Index scan optimization via support functions already provides excellent performance
+- Hash joins are beneficial for large table joins, but most queries will use indexes
+- Can be added in a minor version without breaking compatibility
+
+**Implementation Approach (Future)**:
+```c
+// Hash function for numeric values in cross-type equality
+Datum numeric_hash_for_int_eq(PG_FUNCTION_ARGS) {
+    Numeric num = PG_GETARG_NUMERIC(0);
+    
+    // Check if value has fractional part
+    Numeric trunc_num = DatumGetNumeric(
+        DirectFunctionCall2(numeric_trunc, NumericGetDatum(num), Int32GetDatum(0))
+    );
+    
+    bool has_fraction = !DatumGetBool(
+        DirectFunctionCall2(numeric_eq, NumericGetDatum(num), NumericGetDatum(trunc_num))
+    );
+    
+    if (has_fraction) {
+        // Has fractional part - use standard numeric hash
+        return DirectFunctionCall1(hash_numeric, NumericGetDatum(num));
+    }
+    
+    // No fractional part - convert to int64 and hash as integer
+    // This ensures 10::int4 and 10.0::numeric hash to the same value
+    int64 as_int = DatumGetInt64(
+        DirectFunctionCall1(numeric_int8, NumericGetDatum(trunc_num))
+    );
+    return DirectFunctionCall1(hashint8, Int64GetDatum(as_int));
+}
+```
+
+**SQL Registration (Future)**:
 ```sql
--- Operator definition as standalone (not added to cross-type operator family)
+-- Register hash function with operator
+CREATE FUNCTION numeric_hash_for_int_eq(numeric) 
+RETURNS int4 AS '$libdir/pg_num2int_direct_comp' LANGUAGE C STRICT IMMUTABLE;
+
 CREATE OPERATOR = (
-  LEFTARG = float8,
+  LEFTARG = numeric,
   RIGHTARG = int4,
-  FUNCTION = float8_eq_int4,
-  COMMUTATOR = =,        -- Safe: equality is commutative
-  NEGATOR = <>,          -- Safe: logical negation
-  RESTRICT = eqsel,      -- Selectivity estimator
-  JOIN = eqjoinsel,      -- Join selectivity estimator
-  HASHES                 -- Safe: enables hash joins without transitivity
-  -- Note: SUPPORT property is set on the function, not the operator
-  -- MERGES property would be used on ordering operators (<, >, <=, >=)
-  -- Not added to btree operator family to prevent transitivity
+  FUNCTION = numeric_eq_int4,
+  COMMUTATOR = =,
+  NEGATOR = <>,
+  RESTRICT = eqsel,
+  JOIN = eqjoinsel,
+  HASHES  -- Can be added in v2.0 once hash functions implemented
+  -- Note: not added to btree opfamily to prevent transitivity
 );
 ```
 
-**PostgreSQL References**:
-- `src/backend/optimizer/util/clauses.c` - Transitive inference logic
-- Operator catalog (`pg_operator`) - Properties that enable/disable inference
+## 6. Preventing Transitive Inference
 
-## 5. Test Strategy with pg_regress
-
-**Decision**: Organize tests by functionality (operators, index usage, NULL handling, special values, edge cases) using pg_regress framework
+**Decision**: Do not add these operators to btree operator families that would enable transitive inference across different type combinations
 
 **Rationale**:
 - pg_regress is PostgreSQL's standard testing framework (constitutional requirement)
@@ -265,6 +387,12 @@ SELECT * FROM test_int4 WHERE value = 500.0::numeric;
 - float4 (32-bit IEEE 754): 24-bit mantissa → exactly represents integers up to 2^24 (16,777,216)
 - float8 (64-bit IEEE 754): 53-bit mantissa → exactly represents integers up to 2^53 (9,007,199,254,740,992)
 
+**Critical Implementation Detail**: Float comparison functions must detect when a float value cannot exactly represent an integer, even when the integer-to-float conversion produces the same rounded value as the original float. For example:
+- `9007199254740993::float8` rounds to `9007199254740992` (loses precision)
+- `9007199254740993::int8` converts to `9007199254740992::float8` (same rounding)
+- These should NOT compare as equal because the float cannot represent the exact integer
+- Solution: Check both fractional parts AND verify integer-to-float conversion preserves exact value
+
 ## Summary of Technical Approach
 
 The extension implementation strategy is:
@@ -277,3 +405,204 @@ The extension implementation strategy is:
 6. **Type coverage**: Full 9-combination matrix with type-specific precision handling
 
 All decisions align with the constitution's requirements for code style (K&R C), testing (pg_regress), build system (PGXS), and documentation standards.
+## 7. Implementation Discoveries and Critical Lessons
+
+**Discoveries Made During Phase 4 (Index Optimization)**:
+
+### 7.1 Shell Operators Cannot Have Support Functions
+
+**Problem Encountered**: Initially attempted to use COMMUTATOR clause to automatically create reverse operators:
+```sql
+CREATE OPERATOR = (
+  LEFTARG = numeric, RIGHTARG = int4,
+  FUNCTION = numeric_eq_int4,
+  COMMUTATOR = =,  -- Automatically creates int4 = numeric
+  SUPPORT num2int_support
+);
+```
+
+**Root Cause**: The COMMUTATOR clause creates a "shell operator" - an operator entry in `pg_operator` with no associated function implementation. Shell operators exist purely as metadata placeholders for the optimizer.
+
+**Impact**: Shell operators have no `oprcode` (function OID), therefore the SUPPORT clause cannot be attached. When PostgreSQL plans a query like `WHERE intcol = 100::numeric`, it looks up the `int4 = numeric` operator, finds it's a shell, and has no support function to call.
+
+**Solution**: Both operator directions must be implemented with actual C functions:
+```sql
+-- Forward direction
+CREATE FUNCTION numeric_eq_int4(numeric, int4) ...
+SUPPORT num2int_support;
+
+CREATE OPERATOR = (
+  LEFTARG = numeric, RIGHTARG = int4,
+  FUNCTION = numeric_eq_int4,
+  COMMUTATOR = =
+);
+
+-- Reverse direction (commutator) - MUST have real function
+CREATE FUNCTION int4_eq_numeric(int4, numeric) ...
+SUPPORT num2int_support;
+
+CREATE OPERATOR = (
+  LEFTARG = int4, RIGHTARG = numeric,
+  FUNCTION = int4_eq_numeric,
+  COMMUTATOR = =
+);
+```
+
+**C Implementation**: Commutator functions simply swap arguments and reuse core comparison logic:
+```c
+Datum int4_eq_numeric(PG_FUNCTION_ARGS) {
+  int32 i4 = PG_GETARG_INT32(0);
+  Numeric num = PG_GETARG_NUMERIC(1);
+  PG_RETURN_BOOL(numeric_cmp_int4_internal(num, i4) == 0);
+}
+```
+
+**Lesson**: For index-optimized operators, every direction needs a real function implementation. COMMUTATOR alone is insufficient.
+
+### 7.2 Support Functions Return Lists, Not Single Nodes
+
+**Problem Encountered**: Initial implementation returned a single `OpExpr *`:
+```c
+OpExpr *new_clause = make_opclause(...);
+ret = (Node *) new_clause;  // WRONG - causes segfault
+PG_RETURN_POINTER(ret);
+```
+
+**Symptom**: Server crashed during EXPLAIN after support function returned successfully. Logs showed transformation completed but then PostgreSQL terminated abnormally.
+
+**Root Cause**: PostgreSQL's index condition API expects support functions to return a `List *` of condition nodes, not a bare node pointer. This is documented in `src/backend/utils/adt/like_support.c` but easy to miss.
+
+**Correct Implementation**:
+```c
+OpExpr *new_clause = make_opclause(...);
+ret = (Node *) list_make1(new_clause);  // Wrap in List
+PG_RETURN_POINTER(ret);
+```
+
+**PostgreSQL Pattern** (from `like_support.c:375-380`):
+```c
+if (pstatus == Pattern_Prefix_Exact) {
+    expr = make_opclause(eqopr, BOOLOID, false,
+                         (Expr *) leftop, (Expr *) prefix,
+                         InvalidOid, indexcollation);
+    result = list_make1(expr);  // ← Always wrap in list
+    return result;
+}
+```
+
+**Lesson**: `SupportRequestIndexCondition` returns a List because some transformations generate multiple conditions (e.g., LIKE 'abc%' → `col >= 'abc' AND col < 'abd'`). Even single-condition cases must use `list_make1()`.
+
+### 7.3 Numeric Type Conversion Must Use PostgreSQL's Cast Functions
+
+**Problem Encountered**: Attempted to use `numeric_int4_opt_error()` for conversion:
+```c
+int32 val = numeric_int4_opt_error(num, &is_valid);
+// is_valid=0 even for exact integers like 100.0!
+```
+
+**Root Cause**: The `_opt_error` variants fail (return `is_valid=false`) if the numeric has ANY fractional digits, even `.0`. This is by design - they're for detecting precision loss.
+
+**Symptom**: Transformation failed for all numeric constants, even exact integers. Logs showed `Converted to int4: 100, is_valid=0`.
+
+**Solution**: Use PostgreSQL's standard casting functions via `OidFunctionCall1`:
+```c
+// For int2: OID 1783
+Datum result = OidFunctionCall1(1783, NumericGetDatum(num));
+int16 val = DatumGetInt16(result);
+
+// For int4: OID 1744
+Datum result = OidFunctionCall1(1744, NumericGetDatum(num));
+int32 val = DatumGetInt32(result);
+
+// For int8: OID 1779  
+Datum result = OidFunctionCall1(1779, NumericGetDatum(num));
+int64 val = DatumGetInt64(result);
+```
+
+**Behavior**: These functions perform rounding (banker's rounding):
+- `100.0::numeric::int4` → `100`
+- `100.5::numeric::int4` → `101` (rounds to even)
+- `100.4::numeric::int4` → `100`
+- `-100.5::numeric::int4` → `-101`
+
+**Lesson**: For index optimization, use the same casting behavior as regular PostgreSQL casts. The `_opt_error` functions are too strict for this use case.
+
+**Handling All Comparison Operators**: The support function must handle ALL comparison operators (=, <>, <, <=, >, >=) for complete index optimization:
+
+1. **Equality with fractional values** (e.g., `int4col = 10.5`): Return always-false condition `int4col > PG_INT32_MAX` to use index
+2. **Inequality with fractional values** (e.g., `int4col <> 10.5`): Return NULL (use original condition, all rows match)
+3. **Range operators with fractional values**: Transform with intelligent rounding:
+   - `int4col < 10.5` → `int4col <= 10` (round down for <)
+   - `int4col <= 10.5` → `int4col <= 10` (round down)
+   - `int4col > 10.5` → `int4col >= 11` (round up for >)
+   - `int4col >= 10.5` → `int4col >= 11` (round up)
+4. **Out of range values**: Return always-false (for = and range) or NULL (for <>)
+
+This pattern applies to ALL type combinations: numeric/float4/float8 with int2/int4/int8.
+
+### 7.4 OID Cache Should Only Store Operator OIDs
+
+**Important Clarification**: Type OIDs for built-in types are available as **PostgreSQL constants** and don't need caching:
+- Use `INT2OID` (21), `INT4OID` (23), `INT8OID` (20)
+- Use `FLOAT4OID` (700), `FLOAT8OID` (701), `NUMERICOID` (1700)
+- These constants are defined in `postgres.h` and are stable
+
+**The OID cache should only contain**:
+1. **Cross-type operator OIDs**: All 54 comparison operators (9 type pairs × 6 operators) - these vary by extension installation
+2. **Standard int equality OIDs**: `int2_eq_int2_oid` (94), `int4_eq_int4_oid` (96), `int8_eq_int8_oid` (410) - needed for building transformed clauses
+
+**Cast function OIDs are also constants** (can be hardcoded):
+- `int2(numeric)` = 1783, `int4(numeric)` = 1744, `int8(numeric)` = 1779
+
+**Implementation Note**: Define symbolic constants to avoid magic numbers throughout the code. PostgreSQL does not define these in its headers (pg_proc_d.h, pg_operator_d.h), so we use the NUM2INT_ prefix to avoid potential future conflicts:
+```c
+/* PostgreSQL built-in cast function OIDs (stable across versions) */
+#define NUM2INT_CAST_NUMERIC_INT2 1783  /* int2(numeric) */
+#define NUM2INT_CAST_NUMERIC_INT4 1744  /* int4(numeric) */
+#define NUM2INT_CAST_NUMERIC_INT8 1779  /* int8(numeric) */
+
+/* Standard btree operator OIDs for transformed clauses */
+#define NUM2INT_INT2EQ_OID   94   /* int2 = int2 */
+#define NUM2INT_INT4EQ_OID   96   /* int4 = int4 */
+#define NUM2INT_INT8EQ_OID  410   /* int8 = int8 */
+#define NUM2INT_INT2LT_OID   95   /* int2 < int2 */
+#define NUM2INT_INT4LT_OID   97   /* int4 < int4 */
+#define NUM2INT_INT8LT_OID  412   /* int8 < int8 */
+#define NUM2INT_INT2GT_OID  520   /* int2 > int2 */
+#define NUM2INT_INT4GT_OID  521   /* int4 > int4 */
+#define NUM2INT_INT8GT_OID  413   /* int8 > int8 */
+#define NUM2INT_INT2LE_OID  522   /* int2 <= int2 */
+#define NUM2INT_INT4LE_OID  523   /* int4 <= int4 */
+#define NUM2INT_INT8LE_OID  414   /* int8 <= int8 */
+#define NUM2INT_INT2GE_OID  524   /* int2 >= int2 */
+#define NUM2INT_INT4GE_OID  525   /* int4 >= int4 */
+#define NUM2INT_INT8GE_OID  415   /* int8 >= int8 */
+#define NUM2INT_INT2NE_OID  519   /* int2 <> int2 */
+#define NUM2INT_INT4NE_OID  518   /* int4 <> int4 */
+#define NUM2INT_INT8NE_OID  411   /* int8 <> int8 */
+```
+
+The support function needs standard int equality operators to build the transformed clause using existing btree indexes.
+
+### 7.5 Node Copying is Required
+
+**Implementation Detail**: When building the transformed OpExpr, the Var node must be copied:
+```c
+Var *new_var = (Var *) copyObject(var_node);  // Don't reuse original pointer
+```
+
+**Rationale**: The original OpExpr node may be used elsewhere in the plan tree. Sharing node pointers can cause issues during plan optimization or execution. Always use `copyObject()` for nodes that will be modified or used in new contexts.
+
+**Lesson**: PostgreSQL's planner expects independent node trees for different clauses. Use `copyObject()` from `nodes/nodeFuncs.h` to ensure clean copies.
+
+## Summary of Implementation Requirements
+
+Based on implementation experience:
+
+1. **Bidirectional function implementations**: Every operator needs both directions with real C functions (COMMUTATOR alone insufficient)
+2. **Support function return type**: Must return `List *` via `list_make1()`, not bare node pointers
+3. **Type conversion**: Use `OidFunctionCall1()` with PostgreSQL's standard cast function OIDs (1783, 1744, 1779)
+4. **OID cache coverage**: Include type OIDs, cross-type operator OIDs, and standard int equality OIDs
+5. **Node copying**: Use `copyObject()` for Var nodes in transformed clauses
+6. **Lossy flag**: Set `req->lossy = false` for exact transformations
+7. **Reference implementation**: Study `src/backend/utils/adt/like_support.c` for complete pattern

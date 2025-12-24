@@ -1,0 +1,117 @@
+-- Test index usage for exact comparison operators
+-- Verify that btree index scans are used instead of sequential scans
+-- Tests all 9 type combinations: numeric/float4/float8 × int2/int4/int8
+
+-- Load extension
+CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
+
+-- Disable sequential scans to force index usage if possible
+SET enable_seqscan = off;
+
+-- ============================================================================
+-- Test Group 1: numeric × int2
+-- ============================================================================
+CREATE TABLE test_int2 (
+  id serial PRIMARY KEY,
+  val int2
+);
+CREATE INDEX idx_int2_val ON test_int2(val);
+INSERT INTO test_int2 (val) SELECT i::int2 FROM generate_series(1, 1000) i;
+ANALYZE test_int2;
+
+-- Test 1a: numeric = int2
+EXPLAIN (COSTS OFF) SELECT * FROM test_int2 WHERE val = 100::numeric;
+-- Test 1b: int2 = numeric (commutator)
+EXPLAIN (COSTS OFF) SELECT * FROM test_int2 WHERE 100::numeric = val;
+
+-- ============================================================================
+-- Test Group 2: numeric × int4
+-- ============================================================================
+CREATE TABLE test_int4 (
+  id serial PRIMARY KEY,
+  val int4
+);
+CREATE INDEX idx_int4_val ON test_int4(val);
+INSERT INTO test_int4 (val) SELECT i FROM generate_series(1, 10000) i;
+ANALYZE test_int4;
+
+-- Test 2a: numeric = int4
+EXPLAIN (COSTS OFF) SELECT * FROM test_int4 WHERE val = 100::numeric;
+-- Test 2b: int4 = numeric (commutator)
+EXPLAIN (COSTS OFF) SELECT * FROM test_int4 WHERE 100::numeric = val;
+
+-- ============================================================================
+-- Test Group 3: numeric × int8
+-- ============================================================================
+CREATE TABLE test_int8 (
+  id serial PRIMARY KEY,
+  val int8
+);
+CREATE INDEX idx_int8_val ON test_int8(val);
+INSERT INTO test_int8 (val) SELECT i FROM generate_series(1, 10000) i;
+ANALYZE test_int8;
+
+-- Test 3a: numeric = int8
+EXPLAIN (COSTS OFF) SELECT * FROM test_int8 WHERE val = 100::numeric;
+-- Test 3b: int8 = numeric (commutator)
+EXPLAIN (COSTS OFF) SELECT * FROM test_int8 WHERE 100::numeric = val;
+
+-- ============================================================================
+-- Test Group 4: float4 × int2
+-- ============================================================================
+-- Test 4a: float4 = int2
+EXPLAIN (COSTS OFF) SELECT * FROM test_int2 WHERE val = 100::float4;
+-- Test 4b: int2 = float4 (commutator)
+EXPLAIN (COSTS OFF) SELECT * FROM test_int2 WHERE 100::float4 = val;
+
+-- ============================================================================
+-- Test Group 5: float4 × int4
+-- ============================================================================
+-- Test 5a: float4 = int4
+EXPLAIN (COSTS OFF) SELECT * FROM test_int4 WHERE val = 100::float4;
+-- Test 5b: int4 = float4 (commutator)
+EXPLAIN (COSTS OFF) SELECT * FROM test_int4 WHERE 100::float4 = val;
+
+-- ============================================================================
+-- Test Group 6: float4 × int8
+-- ============================================================================
+-- Test 6a: float4 = int8
+EXPLAIN (COSTS OFF) SELECT * FROM test_int8 WHERE val = 100::float4;
+-- Test 6b: int8 = float4 (commutator)
+EXPLAIN (COSTS OFF) SELECT * FROM test_int8 WHERE 100::float4 = val;
+
+-- ============================================================================
+-- Test Group 7: float8 × int2
+-- ============================================================================
+-- Test 7a: float8 = int2
+EXPLAIN (COSTS OFF) SELECT * FROM test_int2 WHERE val = 100::float8;
+-- Test 7b: int2 = float8 (commutator)
+EXPLAIN (COSTS OFF) SELECT * FROM test_int2 WHERE 100::float8 = val;
+
+-- ============================================================================
+-- Test Group 8: float8 × int4
+-- ============================================================================
+-- Test 8a: float8 = int4
+EXPLAIN (COSTS OFF) SELECT * FROM test_int4 WHERE val = 100::float8;
+-- Test 8b: int4 = float8 (commutator)
+EXPLAIN (COSTS OFF) SELECT * FROM test_int4 WHERE 100::float8 = val;
+
+-- ============================================================================
+-- Test Group 9: float8 × int8
+-- ============================================================================
+-- Test 9a: float8 = int8
+EXPLAIN (COSTS OFF) SELECT * FROM test_int8 WHERE val = 100::float8;
+-- Test 9b: int8 = float8 (commutator)
+EXPLAIN (COSTS OFF) SELECT * FROM test_int8 WHERE 100::float8 = val;
+
+-- ============================================================================
+-- Verify actual query results for sample combinations
+-- ============================================================================
+SELECT * FROM test_int2 WHERE val = 100::numeric ORDER BY id LIMIT 1;
+SELECT * FROM test_int4 WHERE 100::numeric = val ORDER BY id LIMIT 1;
+SELECT * FROM test_int8 WHERE val = 100::float8 ORDER BY id LIMIT 1;
+
+-- Cleanup
+DROP TABLE test_int2;
+DROP TABLE test_int4;
+DROP TABLE test_int8;

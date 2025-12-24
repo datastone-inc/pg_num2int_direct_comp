@@ -1,0 +1,5 @@
+# pg_num2int_direct_comp extension
+comment = 'Exact comparison operators for numeric/float and integer types'
+default_version = '1.0.0'
+module_pathname = '$libdir/pg_num2int_direct_comp'
+relocatable = true

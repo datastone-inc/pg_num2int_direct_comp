@@ -1,0 +1,82 @@
+/*
+ * Range boundary tests: verify fractional value handling with range operators
+ * 
+ * Tests the index optimization support function's intelligent rounding:
+ * - intcol > 10.5::numeric should become intcol >= 11
+ * - intcol < 10.5::numeric should become intcol <= 10
+ * - intcol >= 10.5::numeric should become intcol >= 11
+ * - intcol <= 10.5::numeric should become intcol <= 10
+ */
+
+-- Setup test table
+CREATE TEMP TABLE boundary_test (id int4 PRIMARY KEY, val text);
+INSERT INTO boundary_test VALUES 
+  (9, 'nine'),
+  (10, 'ten'),
+  (11, 'eleven'),
+  (12, 'twelve');
+
+-- Test 1: > with fractional numeric (should find 11, 12)
+SELECT id FROM boundary_test WHERE id > 10.5::numeric ORDER BY id;
+
+-- Test 2: < with fractional numeric (should find 9, 10)
+SELECT id FROM boundary_test WHERE id < 10.5::numeric ORDER BY id;
+
+-- Test 3: >= with fractional numeric (should find 11, 12)
+SELECT id FROM boundary_test WHERE id >= 10.5::numeric ORDER BY id;
+
+-- Test 4: <= with fractional numeric (should find 9, 10)
+SELECT id FROM boundary_test WHERE id <= 10.5::numeric ORDER BY id;
+
+-- Test 5: > with integer numeric (should find 11, 12)
+SELECT id FROM boundary_test WHERE id > 10::numeric ORDER BY id;
+
+-- Test 6: < with integer numeric (should find 9)
+SELECT id FROM boundary_test WHERE id < 10::numeric ORDER BY id;
+
+-- Test 7: >= with integer numeric (should find 10, 11, 12)
+SELECT id FROM boundary_test WHERE id >= 10::numeric ORDER BY id;
+
+-- Test 8: <= with integer numeric (should find 9, 10)
+SELECT id FROM boundary_test WHERE id <= 10::numeric ORDER BY id;
+
+-- Test 9: Verify EXPLAIN shows Index Scan for fractional values
+EXPLAIN (COSTS OFF) SELECT id FROM boundary_test WHERE id > 10.5::numeric;
+
+-- Test 10: Verify EXPLAIN shows Index Scan for integer values
+EXPLAIN (COSTS OFF) SELECT id FROM boundary_test WHERE id >= 10::numeric;
+
+-- Test 11: Float4 fractional > (should find 11, 12)
+SELECT id FROM boundary_test WHERE id > 10.5::float4 ORDER BY id;
+
+-- Test 12: Float4 fractional < (should find 9, 10)
+SELECT id FROM boundary_test WHERE id < 10.5::float4 ORDER BY id;
+
+-- Test 13: Float8 fractional >= (should find 11, 12)
+SELECT id FROM boundary_test WHERE id >= 10.5::float8 ORDER BY id;
+
+-- Test 14: Float8 fractional <= (should find 9, 10)
+SELECT id FROM boundary_test WHERE id <= 10.5::float8 ORDER BY id;
+
+-- Test 15: Negative fractional values (should find -11, -12)
+CREATE TEMP TABLE neg_boundary (id int4 PRIMARY KEY);
+INSERT INTO neg_boundary VALUES (-12), (-11), (-10), (-9);
+SELECT id FROM neg_boundary WHERE id < -10.5::numeric ORDER BY id;
+
+-- Test 16: Negative fractional values (should find -10, -9)
+SELECT id FROM neg_boundary WHERE id > -10.5::numeric ORDER BY id;
+
+-- Test 17: Verify int2 with fractional
+CREATE TEMP TABLE smallint_boundary (id int2 PRIMARY KEY);
+INSERT INTO smallint_boundary VALUES (9::int2), (10::int2), (11::int2);
+SELECT id FROM smallint_boundary WHERE id > 9.5::numeric ORDER BY id;
+
+-- Test 18: Verify int8 with fractional
+CREATE TEMP TABLE bigint_boundary (id int8 PRIMARY KEY);
+INSERT INTO bigint_boundary VALUES (9::int8), (10::int8), (11::int8);
+SELECT id FROM bigint_boundary WHERE id >= 9.7::numeric ORDER BY id;
+
+DROP TABLE boundary_test;
+DROP TABLE neg_boundary;
+DROP TABLE smallint_boundary;
+DROP TABLE bigint_boundary;
