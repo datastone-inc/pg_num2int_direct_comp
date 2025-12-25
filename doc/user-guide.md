@@ -83,12 +83,12 @@ SELECT * FROM large_table WHERE id <= 10000.0::float8;
 Join tables on mixed numeric/integer columns:
 
 ```sql
--- Exact equality join
+-- Exact equality join (uses indexed nested loop or hash join)
 SELECT a.*, b.* 
 FROM measurements a
 JOIN thresholds b ON a.value_int = b.threshold_numeric;
 
--- Range join
+-- Range join (uses indexed nested loop)
 SELECT a.*, b.* 
 FROM sensor_data a
 JOIN alert_ranges b 
@@ -96,23 +96,53 @@ JOIN alert_ranges b
  AND a.reading_int < b.max_threshold_float;
 ```
 
+### Pattern 6: Hash Joins for Large Tables
+
+For large table equijoins, planner automatically uses hash joins:
+
+```sql
+-- Large table join - planner chooses hash join
+CREATE TABLE sales (id SERIAL, amount NUMERIC(10,2));
+CREATE TABLE targets (id SERIAL, threshold INT4);
+
+-- Planner uses Hash Join for large tables
+EXPLAIN SELECT COUNT(*) 
+FROM sales s 
+JOIN targets t ON s.amount = t.threshold;
+```
+
+### Pattern 7: Commutator Operators
+
+All operators work in both directions:
+
+```sql
+-- Both directions work identically
+SELECT 10::int4 = 100.0::numeric;  -- int = numeric
+SELECT 100.0::numeric = 10::int4;  -- numeric = int (commutator)
+
+-- Works with all operators
+SELECT 10::int4 < 20.5::float8;    -- int < float
+SELECT 20.5::float8 > 10::int4;    -- float > int (commutator)
+```
+
 ## Supported Operators
 
 ### Equality Operators
 
-| Operator | Description | Example |
-|----------|-------------|---------|
-| `=` | Exact equality | `10::int4 = 10.0::numeric` → true |
-| `<>` | Exact inequality | `10::int4 <> 10.5::numeric` → true |
+| Operator | Description | Example | Properties |
+|----------|-------------|---------|------------|
+| `=` | Exact equality | `10::int4 = 10.0::numeric` → true | HASHES, COMMUTATOR, NEGATOR |
+| `<>` | Exact inequality | `10::int4 <> 10.5::numeric` → true | HASHES, COMMUTATOR, NEGATOR |
+| `<>` | Exact inequality | `10::int4 <> 10.5::numeric` → true | HASHES, COMMUTATOR, NEGATOR |
 
 ### Ordering Operators
 
-| Operator | Description | Example |
-|----------|-------------|---------|
-| `<` | Less than | `9::int4 < 10.5::numeric` → true |
-| `>` | Greater than | `11::int4 > 10.5::numeric` → true |
-| `<=` | Less than or equal | `10::int4 <= 10.0::numeric` → true |
-| `>=` | Greater than or equal | `10::int4 >= 10.0::numeric` → true |
+| Operator | Description | Example | Properties |
+|----------|-------------|---------|------------|
+| `<` | Less than | `9::int4 < 10.5::numeric` → true | COMMUTATOR, NEGATOR |
+| `>` | Greater than | `11::int4 > 10.5::numeric` → true | COMMUTATOR, NEGATOR |
+| `<=` | Less than or equal | `10::int4 <= 10.0::numeric` → true | COMMUTATOR, NEGATOR |
+| `>=` | Greater than or equal | `10::int4 >= 10.0::numeric` → true | COMMUTATOR, NEGATOR |
 
 ## Type Coverage
 
@@ -192,38 +222,44 @@ SELECT 10.001::numeric = 10::int4;  -- false (has fractional part)
 
 ### Index Usage
 
-Extension operators are index-friendly:
+Extension operators are index-friendly via btree operator family membership:
 
 ```sql
 -- Create index
 CREATE INDEX idx_value ON measurements(value_int);
 
--- Query uses index
+-- Query uses index via indexed nested loop join
 EXPLAIN SELECT * FROM measurements WHERE value_int = 100.0::numeric;
--- Shows: Index Scan using idx_value
+-- Shows: Index Scan using idx_value with Index Cond
 ```
 
 ### Join Strategies
 
-Operators support hash joins and merge joins:
+Operators support **indexed nested loop joins** and **hash joins**:
 
 ```sql
--- Hash join (equality)
-SELECT /*+ HashJoin(a b) */ * 
+-- Indexed nested loop join (with selective predicate)
+EXPLAIN SELECT * 
 FROM table_a a 
-JOIN table_b b ON a.int_col = b.numeric_col;
+JOIN table_b b ON a.int_col = b.numeric_col
+WHERE a.int_col < 1000;
+-- Shows: Nested Loop with Index Cond on both sides
 
--- Merge join (ordering)
-SELECT /*+ MergeJoin(a b) */ * 
-FROM table_a a 
-JOIN table_b b ON a.int_col >= b.float_col;
+-- Hash join (for large table equijoins)
+SET enable_nestloop = off;
+EXPLAIN SELECT * 
+FROM large_table_a a 
+JOIN large_table_b b ON a.int_col = b.numeric_col;
+-- Shows: Hash Join with Hash Cond
 ```
+
+**Note**: Merge joins are not supported due to transitive inference constraints. Indexed nested loop joins provide equivalent or better performance for most queries.
 
 ### Overhead
 
-- **Index scans**: <1% overhead vs native integer comparisons
-- **Table scans**: <10% overhead vs native integer comparisons
-- **Large tables**: Sub-millisecond response for selective predicates
+- **Indexed joins**: Sub-millisecond on 1M+ row tables
+- **Hash joins**: Efficient for large table equijoins
+- **Direct comparisons**: <10% overhead vs native integer comparisons
 
 ## Best Practices
 

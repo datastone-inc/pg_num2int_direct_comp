@@ -28,6 +28,7 @@
 #include "nodes/nodeFuncs.h"
 #include "nodes/makefuncs.h"
 #include "optimizer/optimizer.h"
+#include "utils/fmgrprotos.h"
 #include "utils/lsyscache.h"
 #include "utils/numeric.h"
 #include "fmgr.h"
@@ -963,6 +964,86 @@ float8_cmp_int8_internal(float8 fval, int64 ival) {
   if (fval < ival_as_float8) return -1;
   if (fval > ival_as_float8) return 1;
   return 0;
+}
+
+/*
+ * Btree support function wrappers
+ * 
+ * These SQL-callable wrappers expose the internal comparison functions
+ * for btree operator family support function registration.
+ * Each returns int4: -1 for <, 0 for =, 1 for >
+ */
+
+PG_FUNCTION_INFO_V1(numeric_cmp_int2);
+Datum
+numeric_cmp_int2(PG_FUNCTION_ARGS) {
+  Numeric num = PG_GETARG_NUMERIC(0);
+  int16 val = PG_GETARG_INT16(1);
+  PG_RETURN_INT32(numeric_cmp_int2_internal(num, val));
+}
+
+PG_FUNCTION_INFO_V1(numeric_cmp_int4);
+Datum
+numeric_cmp_int4(PG_FUNCTION_ARGS) {
+  Numeric num = PG_GETARG_NUMERIC(0);
+  int32 val = PG_GETARG_INT32(1);
+  PG_RETURN_INT32(numeric_cmp_int4_internal(num, val));
+}
+
+PG_FUNCTION_INFO_V1(numeric_cmp_int8);
+Datum
+numeric_cmp_int8(PG_FUNCTION_ARGS) {
+  Numeric num = PG_GETARG_NUMERIC(0);
+  int64 val = PG_GETARG_INT64(1);
+  PG_RETURN_INT32(numeric_cmp_int8_internal(num, val));
+}
+
+PG_FUNCTION_INFO_V1(float4_cmp_int2);
+Datum
+float4_cmp_int2(PG_FUNCTION_ARGS) {
+  float4 fval = PG_GETARG_FLOAT4(0);
+  int16 ival = PG_GETARG_INT16(1);
+  PG_RETURN_INT32(float4_cmp_int2_internal(fval, ival));
+}
+
+PG_FUNCTION_INFO_V1(float4_cmp_int4);
+Datum
+float4_cmp_int4(PG_FUNCTION_ARGS) {
+  float4 fval = PG_GETARG_FLOAT4(0);
+  int32 ival = PG_GETARG_INT32(1);
+  PG_RETURN_INT32(float4_cmp_int4_internal(fval, ival));
+}
+
+PG_FUNCTION_INFO_V1(float4_cmp_int8);
+Datum
+float4_cmp_int8(PG_FUNCTION_ARGS) {
+  float4 fval = PG_GETARG_FLOAT4(0);
+  int64 ival = PG_GETARG_INT64(1);
+  PG_RETURN_INT32(float4_cmp_int8_internal(fval, ival));
+}
+
+PG_FUNCTION_INFO_V1(float8_cmp_int2);
+Datum
+float8_cmp_int2(PG_FUNCTION_ARGS) {
+  float8 fval = PG_GETARG_FLOAT8(0);
+  int16 ival = PG_GETARG_INT16(1);
+  PG_RETURN_INT32(float8_cmp_int2_internal(fval, ival));
+}
+
+PG_FUNCTION_INFO_V1(float8_cmp_int4);
+Datum
+float8_cmp_int4(PG_FUNCTION_ARGS) {
+  float8 fval = PG_GETARG_FLOAT8(0);
+  int32 ival = PG_GETARG_INT32(1);
+  PG_RETURN_INT32(float8_cmp_int4_internal(fval, ival));
+}
+
+PG_FUNCTION_INFO_V1(float8_cmp_int8);
+Datum
+float8_cmp_int8(PG_FUNCTION_ARGS) {
+  float8 fval = PG_GETARG_FLOAT8(0);
+  int64 ival = PG_GETARG_INT64(1);
+  PG_RETURN_INT32(float8_cmp_int8_internal(fval, ival));
 }
 
 /*
@@ -1981,5 +2062,172 @@ int8_ge_float8(PG_FUNCTION_ARGS) {
   float8 fval = PG_GETARG_FLOAT8(1);
   int cmp = float8_cmp_int8_internal(fval, ival);
   PG_RETURN_BOOL(cmp <= 0);
+}
+
+/* ============================================================================
+ * Hash Functions for Cross-Type Equality
+ * ============================================================================
+ * These wrapper functions ensure that equal values hash consistently across
+ * types. For example, 10::int4 and 10.0::numeric must produce the same hash.
+ * 
+ * Strategy: Cast integers to the higher-precision type (numeric/float) and
+ * use the existing hash functions. This ensures:
+ *   hash_int2_as_numeric(10) = hash_numeric(10.0)
+ *   hash_int4_as_float8(10) = hashfloat8(10.0)
+ */
+
+/* Numeric hash wrappers - cast int to numeric, then hash */
+PG_FUNCTION_INFO_V1(hash_int2_as_numeric);
+Datum
+hash_int2_as_numeric(PG_FUNCTION_ARGS) {
+  int16 ival = PG_GETARG_INT16(0);
+  Numeric num = int64_to_numeric((int64) ival);
+  return DirectFunctionCall1(hash_numeric, NumericGetDatum(num));
+}
+
+PG_FUNCTION_INFO_V1(hash_int2_as_numeric_extended);
+Datum
+hash_int2_as_numeric_extended(PG_FUNCTION_ARGS) {
+  int16 ival = PG_GETARG_INT16(0);
+  int64 seed = PG_GETARG_INT64(1);
+  Numeric num = int64_to_numeric((int64) ival);
+  return DirectFunctionCall2(hash_numeric_extended, NumericGetDatum(num), Int64GetDatum(seed));
+}
+
+PG_FUNCTION_INFO_V1(hash_int4_as_numeric);
+Datum
+hash_int4_as_numeric(PG_FUNCTION_ARGS) {
+  int32 ival = PG_GETARG_INT32(0);
+  Numeric num = int64_to_numeric((int64) ival);
+  return DirectFunctionCall1(hash_numeric, NumericGetDatum(num));
+}
+
+PG_FUNCTION_INFO_V1(hash_int4_as_numeric_extended);
+Datum
+hash_int4_as_numeric_extended(PG_FUNCTION_ARGS) {
+  int32 ival = PG_GETARG_INT32(0);
+  int64 seed = PG_GETARG_INT64(1);
+  Numeric num = int64_to_numeric((int64) ival);
+  return DirectFunctionCall2(hash_numeric_extended, NumericGetDatum(num), Int64GetDatum(seed));
+}
+
+PG_FUNCTION_INFO_V1(hash_int8_as_numeric);
+Datum
+hash_int8_as_numeric(PG_FUNCTION_ARGS) {
+  int64 ival = PG_GETARG_INT64(0);
+  Numeric num = int64_to_numeric(ival);
+  return DirectFunctionCall1(hash_numeric, NumericGetDatum(num));
+}
+
+PG_FUNCTION_INFO_V1(hash_int8_as_numeric_extended);
+Datum
+hash_int8_as_numeric_extended(PG_FUNCTION_ARGS) {
+  int64 ival = PG_GETARG_INT64(0);
+  int64 seed = PG_GETARG_INT64(1);
+  Numeric num = int64_to_numeric(ival);
+  return DirectFunctionCall2(hash_numeric_extended, NumericGetDatum(num), Int64GetDatum(seed));
+}
+
+/* Float hash wrappers - cast int to float, then hash */
+PG_FUNCTION_INFO_V1(hash_int2_as_float4);
+Datum
+hash_int2_as_float4(PG_FUNCTION_ARGS) {
+  int16 ival = PG_GETARG_INT16(0);
+  float4 fval = (float4) ival;
+  return DirectFunctionCall1(hashfloat4, Float4GetDatum(fval));
+}
+
+PG_FUNCTION_INFO_V1(hash_int2_as_float4_extended);
+Datum
+hash_int2_as_float4_extended(PG_FUNCTION_ARGS) {
+  int16 ival = PG_GETARG_INT16(0);
+  int64 seed = PG_GETARG_INT64(1);
+  float4 fval = (float4) ival;
+  return DirectFunctionCall2(hashfloat4extended, Float4GetDatum(fval), Int64GetDatum(seed));
+}
+
+PG_FUNCTION_INFO_V1(hash_int4_as_float4);
+Datum
+hash_int4_as_float4(PG_FUNCTION_ARGS) {
+  int32 ival = PG_GETARG_INT32(0);
+  float4 fval = (float4) ival;
+  return DirectFunctionCall1(hashfloat4, Float4GetDatum(fval));
+}
+
+PG_FUNCTION_INFO_V1(hash_int4_as_float4_extended);
+Datum
+hash_int4_as_float4_extended(PG_FUNCTION_ARGS) {
+  int32 ival = PG_GETARG_INT32(0);
+  int64 seed = PG_GETARG_INT64(1);
+  float4 fval = (float4) ival;
+  return DirectFunctionCall2(hashfloat4extended, Float4GetDatum(fval), Int64GetDatum(seed));
+}
+
+PG_FUNCTION_INFO_V1(hash_int8_as_float4);
+Datum
+hash_int8_as_float4(PG_FUNCTION_ARGS) {
+  int64 ival = PG_GETARG_INT64(0);
+  float4 fval = (float4) ival;
+  return DirectFunctionCall1(hashfloat4, Float4GetDatum(fval));
+}
+
+PG_FUNCTION_INFO_V1(hash_int8_as_float4_extended);
+Datum
+hash_int8_as_float4_extended(PG_FUNCTION_ARGS) {
+  int64 ival = PG_GETARG_INT64(0);
+  int64 seed = PG_GETARG_INT64(1);
+  float4 fval = (float4) ival;
+  return DirectFunctionCall2(hashfloat4extended, Float4GetDatum(fval), Int64GetDatum(seed));
+}
+
+PG_FUNCTION_INFO_V1(hash_int2_as_float8);
+Datum
+hash_int2_as_float8(PG_FUNCTION_ARGS) {
+  int16 ival = PG_GETARG_INT16(0);
+  float8 fval = (float8) ival;
+  return DirectFunctionCall1(hashfloat8, Float8GetDatum(fval));
+}
+
+PG_FUNCTION_INFO_V1(hash_int2_as_float8_extended);
+Datum
+hash_int2_as_float8_extended(PG_FUNCTION_ARGS) {
+  int16 ival = PG_GETARG_INT16(0);
+  int64 seed = PG_GETARG_INT64(1);
+  float8 fval = (float8) ival;
+  return DirectFunctionCall2(hashfloat8extended, Float8GetDatum(fval), Int64GetDatum(seed));
+}
+
+PG_FUNCTION_INFO_V1(hash_int4_as_float8);
+Datum
+hash_int4_as_float8(PG_FUNCTION_ARGS) {
+  int32 ival = PG_GETARG_INT32(0);
+  float8 fval = (float8) ival;
+  return DirectFunctionCall1(hashfloat8, Float8GetDatum(fval));
+}
+
+PG_FUNCTION_INFO_V1(hash_int4_as_float8_extended);
+Datum
+hash_int4_as_float8_extended(PG_FUNCTION_ARGS) {
+  int32 ival = PG_GETARG_INT32(0);
+  int64 seed = PG_GETARG_INT64(1);
+  float8 fval = (float8) ival;
+  return DirectFunctionCall2(hashfloat8extended, Float8GetDatum(fval), Int64GetDatum(seed));
+}
+
+PG_FUNCTION_INFO_V1(hash_int8_as_float8);
+Datum
+hash_int8_as_float8(PG_FUNCTION_ARGS) {
+  int64 ival = PG_GETARG_INT64(0);
+  float8 fval = (float8) ival;
+  return DirectFunctionCall1(hashfloat8, Float8GetDatum(fval));
+}
+
+PG_FUNCTION_INFO_V1(hash_int8_as_float8_extended);
+Datum
+hash_int8_as_float8_extended(PG_FUNCTION_ARGS) {
+  int64 ival = PG_GETARG_INT64(0);
+  int64 seed = PG_GETARG_INT64(1);
+  float8 fval = (float8) ival;
+  return DirectFunctionCall2(hashfloat8extended, Float8GetDatum(fval), Int64GetDatum(seed));
 }
 

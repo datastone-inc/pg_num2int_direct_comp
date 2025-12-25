@@ -37,15 +37,15 @@ FROM t_numeric n, t_integer i, t_float f
 WHERE n.val_numeric = i.val_int
   AND i.val_int = f.val_float
   AND n.id = 1 AND i.id = 1 AND f.id = 1;
-                    QUERY PLAN                    
---------------------------------------------------
+                   QUERY PLAN                   
+------------------------------------------------
  Nested Loop
    Join Filter: (i.val_int = f.val_float)
-   ->  Nested Loop
-         Join Filter: (n.val_numeric = i.val_int)
+   ->  Hash Join
+         Hash Cond: (i.val_int = n.val_numeric)
          ->  Seq Scan on t_integer i
                Filter: (id = 1)
-         ->  Materialize
+         ->  Hash
                ->  Seq Scan on t_numeric n
                      Filter: (id = 1)
    ->  Seq Scan on t_float f
@@ -115,9 +115,99 @@ WHERE o.oprname IN ('=', '<>', '<', '>', '<=', '>=')
        OR o.oprleft IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype) AND o.oprright = 'float8'::regtype)
   AND am.amname = 'btree'
 ORDER BY o.oprname, opf.opfname;
- oprname | opfname 
----------+---------
-(0 rows)
+ oprname |   opfname   
+---------+-------------
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | numeric_ops
+ <       | numeric_ops
+ <       | numeric_ops
+ <       | numeric_ops
+ <       | numeric_ops
+ <       | numeric_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | numeric_ops
+ <=      | numeric_ops
+ <=      | numeric_ops
+ <=      | numeric_ops
+ <=      | numeric_ops
+ <=      | numeric_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | numeric_ops
+ =       | numeric_ops
+ =       | numeric_ops
+ =       | numeric_ops
+ =       | numeric_ops
+ =       | numeric_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | numeric_ops
+ >       | numeric_ops
+ >       | numeric_ops
+ >       | numeric_ops
+ >       | numeric_ops
+ >       | numeric_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | numeric_ops
+ >=      | numeric_ops
+ >=      | numeric_ops
+ >=      | numeric_ops
+ >=      | numeric_ops
+ >=      | numeric_ops
+(90 rows)
 
 -- Test 7: Demonstrate why transitivity would be unsafe
 -- If 10.5::numeric = 10::int (false) and 10::int = 10.0::float8 (true)

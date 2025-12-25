@@ -9,8 +9,9 @@ This extension adds comparison operators (=, <>, <, >, <=, >=) for comparing ine
 ### Key Features
 
 - **Exact Precision**: `16777216::bigint = 16777217::float4` correctly returns `false` (detects float4 precision loss)
-- **Index Optimization**: Queries like `WHERE intcol = 10.0::numeric` use btree indexes efficiently
-- **Complete Coverage**: 54 operators covering all combinations of (numeric, float4, float8) × (int2, int4, int8)
+- **Index Optimization**: Queries like `WHERE intcol = 10.0::numeric` use btree indexes via indexed nested loop joins
+- **Hash Join Support**: Large table joins use hash joins when appropriate
+- **Complete Coverage**: 72 operators (54 forward + 18 commutator) covering all combinations of (numeric, float4, float8) × (int2, int4, int8)
 - **Type Alias Support**: Works with serial, bigserial, smallserial, and decimal types
 
 ## Installation
@@ -78,7 +79,21 @@ SELECT * FROM inventory WHERE quantity > 10.5::float8;
 -- Returns: (2, 11), (3, 12)
 ```
 
-### Example 5: Type Aliases
+### Example 5: Hash Joins for Large Tables
+
+```sql
+-- Hash joins work automatically for large table joins
+CREATE TABLE sales (id SERIAL, amount NUMERIC(10,2));
+CREATE TABLE targets (id SERIAL, threshold INT4);
+INSERT INTO sales SELECT generate_series(1, 1000000), random() * 1000;
+INSERT INTO targets SELECT generate_series(1, 1000000), (random() * 1000)::int4;
+
+-- Planner chooses hash join for large equijoin
+EXPLAIN SELECT COUNT(*) FROM sales s JOIN targets t ON s.amount = t.threshold;
+-- Result: Hash Join (when tables are large)
+```
+
+### Example 6: Type Aliases
 
 ```sql
 -- Serial types work automatically
@@ -110,9 +125,10 @@ SELECT 10::int4 = 10.0::decimal;  -- true (decimal is alias for numeric)
 
 ## Performance
 
-- Index lookups: Sub-millisecond on 1M+ row tables
-- Overhead: <10% vs native integer comparisons
-- Optimized: Uses PostgreSQL's built-in numeric primitives
+- **Index lookups**: Sub-millisecond on 1M+ row tables using indexed nested loop joins
+- **Hash joins**: Efficient for large table equijoins
+- **Overhead**: <10% vs native integer comparisons
+- **Optimized**: Uses PostgreSQL's built-in numeric primitives and hash functions
 
 ## Support
 

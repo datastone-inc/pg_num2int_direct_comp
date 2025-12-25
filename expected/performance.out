@@ -80,10 +80,10 @@ SELECT COUNT(*) FROM perf_int4 i JOIN perf_numeric n ON i.val = n.val WHERE i.va
                                 QUERY PLAN                                
 --------------------------------------------------------------------------
  Aggregate
-   ->  Nested Loop
-         Join Filter: (i.val = n.val)
+   ->  Hash Join
+         Hash Cond: (n.val = i.val)
          ->  Seq Scan on perf_numeric n
-         ->  Materialize
+         ->  Hash
                ->  Index Only Scan using idx_perf_int4_val on perf_int4 i
                      Index Cond: (val < 1000)
 (7 rows)

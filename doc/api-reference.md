@@ -1,6 +1,6 @@
 # API Reference
 
-Complete reference for all 54 comparison operators provided by pg_num2int_direct_comp.
+Complete reference for all 72 comparison operators (54 forward + 18 commutator) provided by pg_num2int_direct_comp.
 
 ## Operator Matrix
 
@@ -239,13 +239,27 @@ WHERE floatcol = intcol AND intcol = 10.0::numeric
 
 This is intentional to maintain exact comparison semantics.
 
-### No Cross-Type Operator Families
+### Operator Family Membership
 
-Operators do not participate in cross-type operator families, meaning:
-- Cannot be used as index operators for mixed-type indexes
-- Cannot be used in CREATE INDEX ON table USING btree (mixed_expression)
+**Btree Families** (enables indexed nested loop joins):
+- Operators added to `numeric_ops` btree family for numeric × int comparisons
+- Operators added to `float_ops` btree family for float4/float8 × int comparisons
+- Each type pair has a dedicated comparison support function (FUNCTION 1)
+- Enables queries like `WHERE int_col = numeric_val` to use btree indexes with Index Cond
 
-This is a safety feature to prevent incorrect query optimization.
+**Hash Families** (enables hash joins):
+- Operators added to `numeric_ops` hash family for numeric × int comparisons
+- Operators added to `float_ops` hash family for float4/float8 × int comparisons
+- Integer hash wrapper functions cast to higher-precision type before hashing
+- Ensures equal values hash identically: `hash(10::int4) = hash(10.0::numeric)`
+- All equality operators have HASHES property
+
+**Not in integer_ops**:
+Operators are intentionally NOT added to `integer_ops` family to prevent invalid transitive inferences. For example, if operators were in `integer_ops`, the planner could incorrectly infer:
+- Given: `int_col = 10` AND `10 = 10.5::numeric`
+- Invalid inference: `int_col = 10.5`
+
+By only being in higher-precision families, operators enable efficient join strategies while maintaining correctness.
 
 ## See Also
 

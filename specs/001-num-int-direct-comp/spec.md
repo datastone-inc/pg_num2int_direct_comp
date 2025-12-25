@@ -3,7 +3,7 @@
 **Feature Branch**: `001-num-int-direct-comp`  
 **Created**: 2025-12-23  
 **Status**: Draft  
-**Input**: User description: "Create a PostgreSQL extension pg_num2int_direct_comp that adds comparison operators for the inexact numeric types (numeric, decimal, float4, float8) with integral types (int2, int4, int8, serial, serial8, etc). The comparisons are exact, e.g., 16777216::bigint = 16777217::float should return false even though it is true with the builtin PostgreSQL cast and compare. The comparisons should allow btree index SARG predicate access, e.g., intcol = 10.0, should allow index only SARG. The comparisons should not allow transitivity, e.g., floatcol = intcol AND intcol = 10.0 does not imply by transitivity that floatcol = 10.0."
+**Input**: User description: "Create a PostgreSQL extension pg_num2int_direct_comp that adds comparison operators for the inexact numeric types (numeric, decimal, float4, float8) with integral types (int2, int4, int8, serial, serial8, etc). The comparisons are exact, e.g., 16777216::bigint = 16777217::float should return false even though it is true with the builtin PostgreSQL cast and compare. The comparisons should allow btree index SARG predicate access, e.g., intcol = 10.0, should allow index only SARG. In v1.0, operators are not added to btree operator families, so transitive inference is not enabled (deferred to v2.0 where operators will be added to numeric_ops, float4_ops, float8_ops families to enable merge joins)."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -58,19 +58,22 @@ Users need to perform range queries comparing floating-point and integer values 
 
 ---
 
-### User Story 4 - Non-Transitive Comparison Semantics (Priority: P2)
+### User Story 4 - Indexed Nested Loop Join Optimization (Priority: P1)
 
-The extension must prevent the query optimizer from incorrectly applying transitivity rules that would break exact comparison semantics. When a query contains `floatcol = intcol AND intcol = 10.0`, the optimizer must NOT infer `floatcol = 10.0` because float-to-int and int-to-numeric comparisons use different exact comparison logic.
+The extension operators are added to btree operator families (`numeric_ops` and `float_ops`) in v1.0, enabling PostgreSQL to use indexed nested loop joins for cross-type predicates. When joining tables with conditions like `int_table.col = numeric_table.col`, the query planner can use the btree index on the numeric column to efficiently look up matching rows.
 
-**Why this priority**: Query optimizer correctness is critical for data integrity, but this is a defensive requirement (preventing incorrect optimization) rather than enabling new functionality. Most queries won't trigger transitive inference, so this affects correctness in edge cases rather than common usage.
+**Note**: Operators are added ONLY to the higher-precision families (numeric_ops, float_ops), NOT to integer_ops, to avoid problematic transitive inference from the integer side. Merge joins are NOT supported because PostgreSQL's merge join algorithm requires operators in the same family on both sides of the join.
 
-**Independent Test**: Can be tested by constructing queries with chained comparisons involving multiple type combinations, examining EXPLAIN output to verify no transitive predicates are inferred, and running queries to confirm results match non-optimized execution.
+**Why this priority**: Indexed nested loop optimization is critical for join performance. Without btree family membership, cross-type joins would use hash joins that cannot utilize indexes on the joined columns.
+
+**Independent Test**: Can be tested by creating indexed tables with int and numeric columns, running EXPLAIN on join queries, and verifying the plan shows "Index Only Scan" with "Index Cond" on both sides rather than Hash Join.
 
 **Acceptance Scenarios**:
 
-1. **Given** a query `SELECT * FROM t WHERE floatcol = intcol AND intcol = 10.0`, **When** examining the query plan, **Then** the optimizer does not introduce an inferred predicate `floatcol = 10.0`
-2. **Given** query results with and without optimizer hints disabling transitivity, **When** comparing result sets, **Then** both produce identical results
-3. **Given** complex multi-table joins with mixed-type comparisons, **When** executing queries, **Then** no incorrect rows are returned due to transitive inference
+1. **Given** indexed tables with int4 and numeric columns, **When** executing `SELECT * FROM int_table i JOIN numeric_table n ON i.val = n.val WHERE i.val < 100`, **Then** query plan shows Nested Loop with Index Only Scan on both sides
+2. **Given** the same join query, **When** examining the numeric table's index scan, **Then** the plan shows `Index Cond: (val = i.val)` proving cross-type index usage
+3. **Given** query results with exact comparisons, **When** comparing result sets, **Then** results match PostgreSQL's native exact comparison semantics (10.5::numeric = 10::numeric returns false)
+4. **Given** complex multi-table joins with mixed-type comparisons, **When** executing queries, **Then** correct rows are returned based on exact comparison semantics and indexes are utilized
 
 ---
 
@@ -98,7 +101,7 @@ The extension provides exact comparison operators for all meaningful combination
 - **Performance with large numeric values**: How efficiently does the extension handle numeric values with high precision (e.g., numeric(1000,500))? *(Performance with high-precision numeric is bounded by PostgreSQL's numeric type implementation. Extension adds minimal overhead (<10%) regardless of precision.)*
 - **NULL handling consistency**: Are NULL semantics consistent across all operator types (=, <>, <, >, <=, >=)?
 - **Type coercion ambiguity**: How does the system handle cases where type resolution might be ambiguous (e.g., literal `10.0` could be numeric or float8)? *(Note: Type resolution for literals is controlled by PostgreSQL's core type system, not the extension. Users can explicitly cast literals to desired types if needed.)*
-- **Hash function consistency**: How should hash functions be implemented to support hash joins while maintaining the invariant "if a = b then hash(a) = hash(b)" across different types? *(Future Enhancement: Hash functions for cross-type equality are not yet implemented. Operators currently do not support HASHES property, so hash joins will fall back to nested loop joins. This can be added later without breaking compatibility.)*
+- **Hash function consistency**: How should hash functions be implemented to support hash joins while maintaining the invariant "if a = b then hash(a) = hash(b)" across different types? *(Implemented in v1.0: Hash functions cast integers to the higher-precision type (numeric/float) before hashing, leveraging PostgreSQL's existing hash functions. This ensures equal values hash identically.)*
 
 ## Requirements *(mandatory)*
 
@@ -115,14 +118,36 @@ The extension provides exact comparison operators for all meaningful combination
 - **FR-009**: Comparisons involving numeric values outside the representable range of the integer type MUST return false for equality. For ordering operators, values exceeding the integer type's maximum are treated as greater than any integer, and values below the minimum are treated as less than any integer (following PostgreSQL's numeric-to-integer cast semantics)
 - **FR-010**: Feature MUST be compatible with PostgreSQL 12 and later versions
 - **FR-011**: All comparison behaviors MUST be verifiable through automated tests covering normal cases, boundary conditions, NULL handling, and special values
-# Future Enhancements (Not Required for v1.0)
 
-- **FE-001**: Hash functions for cross-type equality operators to enable hash join optimization (currently operators do not have HASHES property, hash joins fall back to nested loop joins)
-- **FE-002**: B-tree operator family registration to enable merge joins (deferred to v2.0)
-  - **Rationale**: Operators are mathematically transitive and can be safely added to btree operator families (e.g., numeric_ops)
-  - **Why Deferred**: Adds implementation complexity without immediate benefit since index optimization via support functions already provides excellent performance
-  - **v2.0 Benefit**: Would enable merge join strategy for very large table joins where indexes aren't selective
-- **FE-003**: Cost estimation functions to help the query planner choose optimal join strategies
+## Implemented in v1.0
+
+- **Btree operator family membership**: Operators added to `numeric_ops` and `float_ops` families, enabling indexed nested loop joins
+  - Provides major performance benefit for selective joins with indexes
+  - Safe because operators only in higher-precision families (not in `integer_ops`)
+
+- **Hash operator family membership**: Operators added to `numeric_ops` and `float_ops` hash families, enabling hash joins
+  - Hash functions cast integers to the higher-precision type before hashing
+  - Ensures `hash(10::int4) = hash(10.0::numeric)` for equal values
+  - Leverages PostgreSQL's existing hash functions (`hash_numeric`, `hashfloat4`, `hashfloat8`)
+  - Operators have HASHES property, allowing planner to choose hash joins for large table joins
+
+# Future Enhancements (Not Required)
+
+- **FE-001**: Cost estimation functions to help the query planner choose optimal join strategies
+
+# Not Possible
+
+- **Merge joins**: Cannot be enabled because operators must only be in higher-precision families to avoid invalid transitive inferences in `integer_ops`
+  - See research.md section 4 for detailed rationale
+
+## Not Possible in v1.0 (or any version)
+
+- **Merge joins**: Cannot be implemented due to PostgreSQL architectural limitation
+  - **Reason**: Merge join requires operators in the same family on both sides of join
+  - **Constraint**: We cannot add operators to `integer_ops` family (would cause invalid transitive inference)
+  - **Example of problem**: If in `integer_ops`, planner could infer `int_col = 10.5` from `int_col = 10 AND int_col = numeric_col AND numeric_col = 10.5`, which is incorrect
+  - **Alternative**: Indexed nested loop joins provide similar or better performance for selective queries
+  - See research.md section 4.3 for detailed explanation
 
 ##
 ## Success Criteria *(mandatory)*
@@ -134,6 +159,7 @@ The extension provides exact comparison operators for all meaningful combination
 - **SC-003**: Query plans for predicates like `WHERE intcol = 10.0::numeric` utilize available indexes rather than requiring full table scans
 - **SC-004**: Feature works correctly on PostgreSQL 12, 13, 14, 15, and 16
 - **SC-005**: All defined behaviors pass automated verification (100% test pass rate)
-- **SC-006**: Queries with chained comparisons (e.g., `floatcol = intcol AND intcol = 10.0`) produce correct results without incorrect transitive inference
+- **SC-006**: Cross-type join queries (e.g., `int_table.col = numeric_table.col`) use indexed nested loop joins with Index Cond on both sides (enabled by btree family membership)
+- **SC-006b**: Queries with chained comparisons produce correct results following exact comparison semantics
 - **SC-007**: User documentation includes at least 5 practical examples demonstrating exact comparison behavior and query optimization
 - **SC-008**: Performance overhead of exact comparison operators is within 10% of standard comparison operators for equivalent queries

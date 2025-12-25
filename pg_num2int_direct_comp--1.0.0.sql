@@ -160,7 +160,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -170,7 +171,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -180,7 +182,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -190,7 +193,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 -- Float4 × Integer Equality Operators
@@ -201,7 +205,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -211,7 +216,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -221,7 +227,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 -- Float8 × Integer Equality Operators
@@ -232,7 +239,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -242,7 +250,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -252,7 +261,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 -- ============================================================================
@@ -468,7 +478,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -478,7 +489,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -488,7 +500,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -498,7 +511,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -508,7 +522,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -518,7 +533,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -528,7 +544,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 CREATE OPERATOR = (
@@ -538,7 +555,8 @@ CREATE OPERATOR = (
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
-  JOIN = eqjoinsel
+  JOIN = eqjoinsel,
+  HASHES
 );
 
 -- Commutator Inequality Operators
@@ -1810,3 +1828,381 @@ CREATE OPERATOR >= (
   JOIN = scalargejoinsel
 );
 
+-- ============================================================================
+-- Btree Operator Family Registration for Merge Join Support
+-- ============================================================================
+
+-- First, create SQL-callable wrappers for btree comparison functions
+-- These are needed as support functions in btree operator families
+
+CREATE OR REPLACE FUNCTION numeric_cmp_int2(numeric, int2)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'numeric_cmp_int2'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION numeric_cmp_int4(numeric, int4)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'numeric_cmp_int4'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION numeric_cmp_int8(numeric, int8)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'numeric_cmp_int8'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION float4_cmp_int2(float4, int2)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'float4_cmp_int2'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION float4_cmp_int4(float4, int4)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'float4_cmp_int4'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION float4_cmp_int8(float4, int8)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'float4_cmp_int8'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION float8_cmp_int2(float8, int2)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'float8_cmp_int2'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION float8_cmp_int4(float8, int4)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'float8_cmp_int4'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION float8_cmp_int8(float8, int8)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'float8_cmp_int8'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+-- ============================================================================
+-- Hash Support Functions (For Hash Joins)
+-- ============================================================================
+-- These functions ensure consistent hashing across types by casting integers
+-- to the higher-precision type (numeric/float) before hashing.
+-- This guarantees: hash(10::int4) = hash(10.0::numeric)
+
+-- Hash int as numeric (for numeric_ops hash family)
+CREATE OR REPLACE FUNCTION hash_int2_as_numeric(int2)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'hash_int2_as_numeric'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int2_as_numeric_extended(int2, int8)
+RETURNS int8
+AS 'MODULE_PATHNAME', 'hash_int2_as_numeric_extended'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int4_as_numeric(int4)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'hash_int4_as_numeric'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int4_as_numeric_extended(int4, int8)
+RETURNS int8
+AS 'MODULE_PATHNAME', 'hash_int4_as_numeric_extended'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int8_as_numeric(int8)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'hash_int8_as_numeric'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int8_as_numeric_extended(int8, int8)
+RETURNS int8
+AS 'MODULE_PATHNAME', 'hash_int8_as_numeric_extended'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+-- Hash int as float4 (for float_ops hash family)
+CREATE OR REPLACE FUNCTION hash_int2_as_float4(int2)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'hash_int2_as_float4'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int2_as_float4_extended(int2, int8)
+RETURNS int8
+AS 'MODULE_PATHNAME', 'hash_int2_as_float4_extended'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int4_as_float4(int4)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'hash_int4_as_float4'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int4_as_float4_extended(int4, int8)
+RETURNS int8
+AS 'MODULE_PATHNAME', 'hash_int4_as_float4_extended'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int8_as_float4(int8)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'hash_int8_as_float4'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int8_as_float4_extended(int8, int8)
+RETURNS int8
+AS 'MODULE_PATHNAME', 'hash_int8_as_float4_extended'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+-- Hash int as float8 (for float_ops hash family)
+CREATE OR REPLACE FUNCTION hash_int2_as_float8(int2)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'hash_int2_as_float8'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int2_as_float8_extended(int2, int8)
+RETURNS int8
+AS 'MODULE_PATHNAME', 'hash_int2_as_float8_extended'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int4_as_float8(int4)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'hash_int4_as_float8'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int4_as_float8_extended(int4, int8)
+RETURNS int8
+AS 'MODULE_PATHNAME', 'hash_int4_as_float8_extended'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int8_as_float8(int8)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'hash_int8_as_float8'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION hash_int8_as_float8_extended(int8, int8)
+RETURNS int8
+AS 'MODULE_PATHNAME', 'hash_int8_as_float8_extended'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+-- Add numeric × int operators to numeric_ops btree family
+-- This enables merge join optimization and transitive inference
+ALTER OPERATOR FAMILY numeric_ops USING btree ADD
+  -- numeric <op> int2 with support function
+  FUNCTION 1 (numeric, int2) numeric_cmp_int2(numeric, int2),
+  OPERATOR 1 < (numeric, int2),
+  OPERATOR 2 <= (numeric, int2),
+  OPERATOR 3 = (numeric, int2),
+  OPERATOR 4 >= (numeric, int2),
+  OPERATOR 5 > (numeric, int2),
+  
+  -- numeric <op> int4 with support function
+  FUNCTION 1 (numeric, int4) numeric_cmp_int4(numeric, int4),
+  OPERATOR 1 < (numeric, int4),
+  OPERATOR 2 <= (numeric, int4),
+  OPERATOR 3 = (numeric, int4),
+  OPERATOR 4 >= (numeric, int4),
+  OPERATOR 5 > (numeric, int4),
+  
+  -- numeric <op> int8 with support function
+  FUNCTION 1 (numeric, int8) numeric_cmp_int8(numeric, int8),
+  OPERATOR 1 < (numeric, int8),
+  OPERATOR 2 <= (numeric, int8),
+  OPERATOR 3 = (numeric, int8),
+  OPERATOR 4 >= (numeric, int8),
+  OPERATOR 5 > (numeric, int8),
+  
+  -- int2 <op> numeric (commutator direction - reuse same comparison function)
+  FUNCTION 1 (int2, numeric) numeric_cmp_int2(numeric, int2),
+  OPERATOR 1 < (int2, numeric),
+  OPERATOR 2 <= (int2, numeric),
+  OPERATOR 3 = (int2, numeric),
+  OPERATOR 4 >= (int2, numeric),
+  OPERATOR 5 > (int2, numeric),
+  
+  -- int4 <op> numeric (commutator direction)
+  FUNCTION 1 (int4, numeric) numeric_cmp_int4(numeric, int4),
+  OPERATOR 1 < (int4, numeric),
+  OPERATOR 2 <= (int4, numeric),
+  OPERATOR 3 = (int4, numeric),
+  OPERATOR 4 >= (int4, numeric),
+  OPERATOR 5 > (int4, numeric),
+  
+  -- int8 <op> numeric (commutator direction)
+  FUNCTION 1 (int8, numeric) numeric_cmp_int8(numeric, int8),
+  OPERATOR 1 < (int8, numeric),
+  OPERATOR 2 <= (int8, numeric),
+  OPERATOR 3 = (int8, numeric),
+  OPERATOR 4 >= (int8, numeric),
+  OPERATOR 5 > (int8, numeric);
+
+-- Add float4 × int operators to float_ops btree family
+ALTER OPERATOR FAMILY float_ops USING btree ADD
+  -- float4 <op> int2 with support function
+  FUNCTION 1 (float4, int2) float4_cmp_int2(float4, int2),
+  OPERATOR 1 < (float4, int2),
+  OPERATOR 2 <= (float4, int2),
+  OPERATOR 3 = (float4, int2),
+  OPERATOR 4 >= (float4, int2),
+  OPERATOR 5 > (float4, int2),
+  
+  -- float4 <op> int4 with support function
+  FUNCTION 1 (float4, int4) float4_cmp_int4(float4, int4),
+  OPERATOR 1 < (float4, int4),
+  OPERATOR 2 <= (float4, int4),
+  OPERATOR 3 = (float4, int4),
+  OPERATOR 4 >= (float4, int4),
+  OPERATOR 5 > (float4, int4),
+  
+  -- float4 <op> int8 with support function
+  FUNCTION 1 (float4, int8) float4_cmp_int8(float4, int8),
+  OPERATOR 1 < (float4, int8),
+  OPERATOR 2 <= (float4, int8),
+  OPERATOR 3 = (float4, int8),
+  OPERATOR 4 >= (float4, int8),
+  OPERATOR 5 > (float4, int8),
+  
+  -- int2 <op> float4 (commutator direction)
+  FUNCTION 1 (int2, float4) float4_cmp_int2(float4, int2),
+  OPERATOR 1 < (int2, float4),
+  OPERATOR 2 <= (int2, float4),
+  OPERATOR 3 = (int2, float4),
+  OPERATOR 4 >= (int2, float4),
+  OPERATOR 5 > (int2, float4),
+  
+  -- int4 <op> float4 (commutator direction)
+  FUNCTION 1 (int4, float4) float4_cmp_int4(float4, int4),
+  OPERATOR 1 < (int4, float4),
+  OPERATOR 2 <= (int4, float4),
+  OPERATOR 3 = (int4, float4),
+  OPERATOR 4 >= (int4, float4),
+  OPERATOR 5 > (int4, float4),
+  
+  -- int8 <op> float4 (commutator direction)
+  FUNCTION 1 (int8, float4) float4_cmp_int8(float4, int8),
+  OPERATOR 1 < (int8, float4),
+  OPERATOR 2 <= (int8, float4),
+  OPERATOR 3 = (int8, float4),
+  OPERATOR 4 >= (int8, float4),
+  OPERATOR 5 > (int8, float4);
+
+-- Add float8 × int operators to float_ops btree family
+ALTER OPERATOR FAMILY float_ops USING btree ADD
+  -- float8 <op> int2 with support function
+  FUNCTION 1 (float8, int2) float8_cmp_int2(float8, int2),
+  OPERATOR 1 < (float8, int2),
+  OPERATOR 2 <= (float8, int2),
+  OPERATOR 3 = (float8, int2),
+  OPERATOR 4 >= (float8, int2),
+  OPERATOR 5 > (float8, int2),
+  
+  -- float8 <op> int4 with support function
+  FUNCTION 1 (float8, int4) float8_cmp_int4(float8, int4),
+  OPERATOR 1 < (float8, int4),
+  OPERATOR 2 <= (float8, int4),
+  OPERATOR 3 = (float8, int4),
+  OPERATOR 4 >= (float8, int4),
+  OPERATOR 5 > (float8, int4),
+  
+  -- float8 <op> int8 with support function
+  FUNCTION 1 (float8, int8) float8_cmp_int8(float8, int8),
+  OPERATOR 1 < (float8, int8),
+  OPERATOR 2 <= (float8, int8),
+  OPERATOR 3 = (float8, int8),
+  OPERATOR 4 >= (float8, int8),
+  OPERATOR 5 > (float8, int8),
+  
+  -- int2 <op> float8 (commutator direction)
+  FUNCTION 1 (int2, float8) float8_cmp_int2(float8, int2),
+  OPERATOR 1 < (int2, float8),
+  OPERATOR 2 <= (int2, float8),
+  OPERATOR 3 = (int2, float8),
+  OPERATOR 4 >= (int2, float8),
+  OPERATOR 5 > (int2, float8),
+  
+  -- int4 <op> float8 (commutator direction)
+  FUNCTION 1 (int4, float8) float8_cmp_int4(float8, int4),
+  OPERATOR 1 < (int4, float8),
+  OPERATOR 2 <= (int4, float8),
+  OPERATOR 3 = (int4, float8),
+  OPERATOR 4 >= (int4, float8),
+  OPERATOR 5 > (int4, float8),
+  
+  -- int8 <op> float8 (commutator direction)
+  FUNCTION 1 (int8, float8) float8_cmp_int8(float8, int8),
+  OPERATOR 1 < (int8, float8),
+  OPERATOR 2 <= (int8, float8),
+  OPERATOR 3 = (int8, float8),
+  OPERATOR 4 >= (int8, float8),
+  OPERATOR 5 > (int8, float8);
+
+-- ============================================================================
+-- Hash Operator Family Support (Enables Hash Joins)
+-- ============================================================================
+--
+-- Adding our cross-type equality operators to hash operator families enables
+-- hash joins for queries like: SELECT ... FROM numeric_table JOIN int_table
+-- ON numeric_col = int_col
+--
+-- Hash families only need OPERATOR entries (no custom functions needed).
+-- PostgreSQL will implicitly cast integers to numeric/float and use the
+-- existing hash_numeric/hashfloat4/hashfloat8 functions, ensuring:
+--   hash_numeric(10::int4) = hash_numeric(10.0::numeric)
+--
+-- This approach adds operators to higher-precision families (numeric_ops,
+-- float_ops) for the same reason as btree: to avoid enabling invalid 
+-- transitive inferences in integer_ops.
+-- ============================================================================
+
+-- Add numeric = int operators to numeric_ops hash family
+ALTER OPERATOR FAMILY numeric_ops USING hash ADD
+  -- Hash functions for integer types (cast to numeric before hashing)
+  FUNCTION 1 (int2, int2) hash_int2_as_numeric(int2),
+  FUNCTION 2 (int2, int2) hash_int2_as_numeric_extended(int2, int8),
+  FUNCTION 1 (int4, int4) hash_int4_as_numeric(int4),
+  FUNCTION 2 (int4, int4) hash_int4_as_numeric_extended(int4, int8),
+  FUNCTION 1 (int8, int8) hash_int8_as_numeric(int8),
+  FUNCTION 2 (int8, int8) hash_int8_as_numeric_extended(int8, int8),
+  
+  -- numeric = int2 (both directions)
+  OPERATOR 1 = (numeric, int2),
+  OPERATOR 1 = (int2, numeric),
+  
+  -- numeric = int4 (both directions)
+  OPERATOR 1 = (numeric, int4),
+  OPERATOR 1 = (int4, numeric),
+  
+  -- numeric = int8 (both directions)
+  OPERATOR 1 = (numeric, int8),
+  OPERATOR 1 = (int8, numeric);
+
+-- Add float4 = int operators to float_ops hash family
+-- Note: We use float8 hash functions for consistency since PostgreSQL's
+-- float_ops family already ensures hashfloat4(x) = hashfloat8(x)
+ALTER OPERATOR FAMILY float_ops USING hash ADD
+  -- Hash functions for integer types (cast to float8 before hashing for consistency)
+  FUNCTION 1 (int2, int2) hash_int2_as_float8(int2),
+  FUNCTION 2 (int2, int2) hash_int2_as_float8_extended(int2, int8),
+  FUNCTION 1 (int4, int4) hash_int4_as_float8(int4),
+  FUNCTION 2 (int4, int4) hash_int4_as_float8_extended(int4, int8),
+  FUNCTION 1 (int8, int8) hash_int8_as_float8(int8),
+  FUNCTION 2 (int8, int8) hash_int8_as_float8_extended(int8, int8),
+  
+  -- float4 = int2 (both directions)
+  OPERATOR 1 = (float4, int2),
+  OPERATOR 1 = (int2, float4),
+  
+  -- float4 = int4 (both directions)
+  OPERATOR 1 = (float4, int4),
+  OPERATOR 1 = (int4, float4),
+  
+  -- float4 = int8 (both directions)
+  OPERATOR 1 = (float4, int8),
+  OPERATOR 1 = (int8, float4),
+  
+  -- float8 = int2 (both directions)
+  OPERATOR 1 = (float8, int2),
+  OPERATOR 1 = (int2, float8),
+  
+  -- float8 = int4 (both directions)
+  OPERATOR 1 = (float8, int4),
+  OPERATOR 1 = (int4, float8),
+  
+  -- float8 = int8 (both directions)
+  OPERATOR 1 = (float8, int8),
+  OPERATOR 1 = (int8, float8);

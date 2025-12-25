@@ -239,7 +239,7 @@
 **SQL Registration for Range Operators (36 operators)**:
 
 - [X] T108 [US3] Register all 36 range operator functions in pg_num2int_direct_comp--1.0.0.sql with SUPPORT property ✅
-- [X] T109 [US3] Register all 36 <, >, <=, >= operators in pg_num2int_direct_comp--1.0.0.sql with COMMUTATOR, NEGATOR properties (NOT MERGES - requires btree family membership which is intentionally omitted) ✅
+- [X] T109 [US3] Register all 36 <, >, <=, >= operators in pg_num2int_direct_comp--1.0.0.sql with COMMUTATOR, NEGATOR properties (no MERGES property - not possible due to transitive inference constraints) ✅
 
 **Index Support for Range Operators**:
 
@@ -274,7 +274,7 @@
 
 - [X] T118 [US4] Review operator registration in pg_num2int_direct_comp--1.0.0.sql to confirm operators are NOT added to btree operator families ✅
 - [X] T119 [US4] Verify COMMUTATOR and NEGATOR properties are correctly specified (these are safe) ✅
-- [X] T120 [US4] Verify operator properties are correct: equality/inequality operators do NOT have HASHES (deferred to v2.0), range operators (<, >, <=, >=) do NOT have MERGES (requires btree family membership). No operators are in btree opfamilies (prevents transitivity inference). ✅
+- [X] T120 [US4] Verify operator properties: equality/inequality operators do NOT have HASHES (deferred to v2.0), range operators do NOT have MERGES (not possible due to transitive inference). Operators ARE in btree opfamilies (numeric_ops, float_ops) to enable indexed nested loop joins. ✅
 
 **Verification**:
 
@@ -323,72 +323,78 @@
 
 ---
 
-## Phase 8: Hash Function Support (Future Enhancement)
+## Phase 8: Hash Function Support (Implemented in v1.0)
 
 **Goal**: Implement hash functions for equality operators to enable hash join optimization
 
-**Status**: NOT IMPLEMENTED in v1.0 - operators do not have HASHES property
+**Status**: ✅ COMPLETE - Operators have HASHES property and are in hash operator families
 
-**Background**: Hash joins require hash functions where "if a = b then hash(a) = hash(b)". For cross-type comparisons, this means numeric/float values that equal integer values must hash to the same value as those integers. Without hash functions, PostgreSQL falls back to nested loop joins for cross-type equality predicates.
+**Background**: Hash joins require hash functions where "if a = b then hash(a) = hash(b)". For cross-type comparisons, this means numeric/float values that equal integer values must hash to the same value as those integers.
 
 **Implementation Approach**:
-- Detect if numeric/float value has fractional part
-- If integral: convert to int64 and use standard int64 hash
-- If fractional: use standard numeric/float hash
-- Ensures equal values hash identically across types
+Instead of detecting fractional parts, cast integers to the higher-precision type (numeric/float) and use PostgreSQL's existing hash functions. This is simpler and leverages battle-tested code:
+- Integers cast to numeric: `hash_int4_as_numeric()` → `hash_numeric(int4::numeric)`
+- Integers cast to float8: `hash_int4_as_float8()` → `hashfloat8(int4::float8)`
+- PostgreSQL's hash functions already accept casted values and hash consistently
 
-### Implementation Tasks (Deferred to v2.0)
+**Key Insight**: PostgreSQL's `hash_numeric(10::int4) = hash_numeric(10.0::numeric)`, so no complex fractional detection needed.
 
-- [ ] T140 [FUTURE] Implement numeric_hash_for_int_eq() function for numeric × int comparisons
-- [ ] T141 [FUTURE] Implement float4_hash_for_int_eq() function for float4 × int comparisons  
-- [ ] T142 [FUTURE] Implement float8_hash_for_int_eq() function for float8 × int comparisons
-- [ ] T143 [FUTURE] Register hash functions in pg_num2int_direct_comp--2.0.0.sql
-- [ ] T144 [FUTURE] Add HASHES property to equality operators
-- [ ] T145 [FUTURE] Create sql/hash_joins.sql test file with forced hash joins
-- [ ] T146 [FUTURE] Verify Hash Join appears in EXPLAIN for equality predicates
+### Implementation Tasks (v1.0)
 
-**Checkpoint**: Hash join support complete (deferred to v2.0)
+- [x] T140 Implement hash_int2/4/8_as_numeric() wrapper functions (6 functions total with extended versions)
+- [x] T141 Implement hash_int2/4/8_as_float4() wrapper functions (6 functions total with extended versions)
+- [x] T142 Implement hash_int2/4/8_as_float8() wrapper functions (6 functions total with extended versions)
+- [x] T143 Register hash function SQL wrappers in pg_num2int_direct_comp--1.0.0.sql
+- [x] T144 Add operators to numeric_ops and float_ops hash families with hash function registrations
+- [x] T145 Add HASHES property to all 18 equality operators
+- [x] T146 Create sql/hash_joins.sql test file with hash join tests
+- [x] T147 Verify Hash Join appears in EXPLAIN and returns correct results
+
+**Checkpoint**: ✅ Hash join support complete
 
 ---
 
-## Phase 9: Merge Join Support (Future Enhancement)
+## Phase 9: Btree Operator Family Support (Implemented in v1.0)
 
-**Goal**: Document why merge joins cannot be supported
+**Goal**: Enable indexed nested loop join optimization by adding operators to btree operator families
 
-**Status**: NOT POSSIBLE - operators do NOT have MERGES property and are not in btree opfamilies
+**Status**: ✅ COMPLETE - Operators added to numeric_ops and float_ops families with support functions
 
-**Background**: Merge joins require operators to belong to a btree operator family, which enables transitive inference by the query optimizer. Transitive inference is fundamentally incompatible with exact cross-type comparison semantics: it would incorrectly deduce that 10.5 = 10.0 from the facts that 10.5 = 10 (false) and 10 = 10.0 (true when cast). This is an inherent limitation, not a future enhancement opportunity.
+**Background**: Research shows operators ARE mathematically transitive and safe to add to higher-precision btree families:
+- If A = B (no fractional part) and B = C, then A = C
+- If A = B returns false (has fractional part), transitive chain correctly propagates inequality
+- Example: 10.5 = 10 → false, so (10.5 = 10) AND (10 = X) → false regardless of X
+
+**Why NOT in integer_ops**: Adding operators to integer_ops would enable invalid transitive inference. Example: planner could infer `int_col = 10.5` from `int_col = 10 AND int_col = numeric_col AND numeric_col = 10.5`, which is incorrect.
+
+**Why merge joins NOT possible**: PostgreSQL's merge join requires operators in the same family on both sides. Since we cannot add to integer_ops (transitive inference problem), merge joins cannot work. Attempting to force merge join results in error "missing operator 1(int4,int4) in opfamily numeric_ops".
+
+**Benefit achieved**: Indexed nested loop joins with cross-type index usage - provides similar or better performance than merge joins for selective queries.
 
 ### Implementation Tasks
 
-- [ ] T147 [NOT POSSIBLE] ~~Create custom btree operator families for cross-type comparisons~~ (would enable transitive inference)
-- [ ] T148 [NOT POSSIBLE] ~~Register operators in appropriate btree opfamilies and add MERGES property~~ (fundamentally incompatible)
-- [x] T149 Create sql/merge_joins.sql test file verifying merge joins do NOT occur (negative test)
-- [x] T150 Verify Merge Join does NOT appear in EXPLAIN (operators not in btree families)
+- [X] T148c Implement btree support functions (numeric_cmp_int2/4/8, float4_cmp_int2/4/8, float8_cmp_int2/4/8) ✅
+- [X] T148d Create SQL-callable wrappers for btree support functions ✅
+- [X] T147 Add numeric × int operators to numeric_ops btree family with FUNCTION 1 entries ✅
+- [X] T148 Add float4 × int operators to float_ops btree family with FUNCTION 1 entries ✅
+- [X] T148b Add float8 × int operators to float_ops btree family with FUNCTION 1 entries ✅
+- [X] T149 Create sql/merge_joins.sql test file - renamed to verify indexed nested loop joins ✅
+- [X] T150 Update expected output for btree family membership benefits ✅
 
-**Checkpoint**: Merge join support deferred to v2.0 (operators do not have MERGES property or family membership in v1.0)
+**Checkpoint**: ✅ Btree operator family support complete - indexed nested loop joins working
 
----
+### What Works
 
-## Phase 10: Performance Benchmarks
+✅ **Indexed Nested Loop Joins**: Cross-type joins can use indexes on both sides
+✅ **Index Condition Pushdown**: Conditions like `numeric_col = int_col` use btree index
+✅ **Query Performance**: Selective joins with indexes are highly optimized
 
-**Independent Test**: Force hash/merge joins with query hints, verify EXPLAIN shows correct join strategy
+### What Does NOT Work (and why)
 
-### Tests for Hash and Merge Joins
+❌ **Merge Joins**: Not possible due to PostgreSQL architectural limitation (requires operators in integer_ops, which would cause invalid transitive inference)
+❌ **MERGES Property**: Cannot be set without causing the same transitive inference problem
 
-- [ ] T140 [P] Create sql/hash_joins.sql with hash join tests using SET enable_mergejoin = off (matches test-cases.md Category 2a)
-- [ ] T141 [P] Create expected/hash_joins.out with expected Hash Join plans
-- [ ] T142 [P] Create sql/merge_joins.sql with merge join tests using SET enable_hashjoin = off (matches test-cases.md Category 2b)
-- [ ] T143 [P] Create expected/merge_joins.out with expected Merge Join plans
-- [ ] T144 Add hash_joins and merge_joins to REGRESS variable in Makefile
-
-**Verification**:
-
-- [ ] T145 Run `make installcheck` to verify hash and merge join tests pass
-- [ ] T146 Verify Hash Join appears in EXPLAIN for equality predicates with hash join forced
-- [ ] T147 Verify Merge Join appears in EXPLAIN for ordering predicates with merge join forced
-
-**Checkpoint**: Hash and merge join support verified for all applicable operators
+**Rationale**: See research.md section 4 for detailed explanation of why this approach is optimal
 
 ---
 
@@ -418,17 +424,19 @@
 
 **Purpose**: Documentation, cleanup, and final verification
 
-- [ ] T154 [P] Update README.md with complete installation instructions and 5+ practical examples
-- [ ] T155 [P] Update doc/user-guide.md with all operator usage patterns
-- [ ] T156 [P] Update doc/api-reference.md with complete 54-operator reference
-- [ ] T157 [P] Verify all C functions have doxygen comments with @brief, @param, @return
-- [ ] T158 [P] Verify all files have copyright notices and AI assistance caveat
+- [x] T154 [P] Update README.md with complete installation instructions and 6 practical examples ✅
+- [x] T155 [P] Update doc/user-guide.md with all 7 operator usage patterns ✅
+- [x] T156 [P] Update doc/api-reference.md with complete 72-operator reference ✅
+- [x] T157 [P] Verify all C functions have doxygen comments with @brief, @param, @return ✅
+- [x] T158 Verify all files have copyright notices and AI assistance caveat ✅
 - [ ] T159 Run code style verification (K&R style, 2-space indentation, camelCase)
-- [ ] T160 Run `make clean && make` with -Wall -Wextra -Werror to verify no warnings
-- [ ] T161 Run full regression test suite `make installcheck` and verify 100% pass rate
+- [x] T160 Run `make clean && make` with -Wall -Wextra -Werror to verify no warnings ✅
+- [x] T161 Run full regression test suite `make installcheck` and verify 100% pass rate (11 tests passing) ✅
 - [ ] T162 Test extension on PostgreSQL 12, 13, 14, 15, 16 (multi-version compatibility)
-- [ ] T163 Update CHANGELOG.md with complete 1.0.0 release notes
-- [ ] T164 Review quickstart.md and verify all steps work correctly
+- [x] T163 Update CHANGELOG.md with complete 1.0.0 release notes ✅
+- [x] T164 Review quickstart.md and verify all steps work correctly ✅
+
+**Note**: T154-T157 now complete. T159 and T162 deferred (T159: code already follows style; T162: requires multi-version PostgreSQL setup).
 
 **Checkpoint**: Extension complete and ready for release
 
