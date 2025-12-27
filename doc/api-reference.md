@@ -1,6 +1,8 @@
 # API Reference
 
-Complete reference for all 72 comparison operators (54 forward + 18 commutator) provided by pg_num2int_direct_comp.
+Complete reference for all 108 comparison operators provided by pg_num2int_direct_comp.
+
+This includes 6 comparison types (=, <>, <, >, <=, >=) × 9 type pairs (numeric/float4/float8 with int2/int4/int8) × 2 directions (forward and commutator), for a total of 108 operators.
 
 ## Operator Matrix
 

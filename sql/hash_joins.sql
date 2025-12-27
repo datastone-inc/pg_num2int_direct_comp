@@ -16,6 +16,28 @@ SELECT COUNT(*) FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val;
 
 SELECT COUNT(*) FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val;
 
+\echo '=== Test 1b: Hash Aggregate with GROUP BY ==='
+EXPLAIN (COSTS OFF)
+SELECT i.val, COUNT(*) FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val GROUP BY i.val;
+
+SELECT i.val, COUNT(*) FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val GROUP BY i.val ORDER BY i.val LIMIT 10;
+
+EXPLAIN (COSTS OFF)
+SELECT i.val, n.val, COUNT(*) FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val GROUP BY i.val, n.val;
+
+SELECT i.val, n.val, COUNT(*) FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val GROUP BY i.val, n.val ORDER BY i.val LIMIT 10;
+
+\echo '=== Test 1c: Hash Aggregate with DISTINCT ==='
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT i.val FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val;
+
+SELECT DISTINCT i.val FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val ORDER BY i.val LIMIT 10;
+
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT i.val, n.val FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val;
+
+SELECT DISTINCT i.val, n.val FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val ORDER BY i.val LIMIT 10;
+
 \echo '=== Test 2: Hash Join with float8 = int8 ==='
 CREATE TEMP TABLE hash_float8 (val float8);
 CREATE TEMP TABLE hash_int8 (val int8);
@@ -27,6 +49,28 @@ SELECT COUNT(*) FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val;
 
 SELECT COUNT(*) FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val;
 
+\echo '=== Test 2b: Hash Aggregate with GROUP BY ==='
+EXPLAIN (COSTS OFF)
+SELECT i.val, COUNT(*) FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val GROUP BY i.val;
+
+SELECT i.val, COUNT(*) FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val GROUP BY i.val ORDER BY i.val LIMIT 10;
+
+EXPLAIN (COSTS OFF)
+SELECT i.val, f.val, COUNT(*) FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val GROUP BY i.val, f.val;
+
+SELECT i.val, f.val, COUNT(*) FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val GROUP BY i.val, f.val ORDER BY i.val LIMIT 10;
+
+\echo '=== Test 2c: Hash Aggregate with DISTINCT ==='
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT i.val FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val;
+
+SELECT DISTINCT i.val FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val ORDER BY i.val LIMIT 10;
+
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT i.val, f.val FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val;
+
+SELECT DISTINCT i.val, f.val FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val ORDER BY i.val LIMIT 10;
+
 \echo '=== Test 3: Hash Join with float4 = int2 ==='
 CREATE TEMP TABLE hash_float4 (val float4);
 CREATE TEMP TABLE hash_int2 (val int2);
@@ -37,6 +81,28 @@ EXPLAIN (COSTS OFF)
 SELECT COUNT(*) FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val;
 
 SELECT COUNT(*) FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val;
+
+\echo '=== Test 3c: Hash Aggregate with DISTINCT ==='
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT i.val FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val;
+
+SELECT DISTINCT i.val FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val ORDER BY i.val LIMIT 10;
+
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT i.val, f.val FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val;
+
+SELECT DISTINCT i.val, f.val FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val ORDER BY i.val LIMIT 10;
+
+\echo '=== Test 3b: Hash Aggregate with GROUP BY ==='
+EXPLAIN (COSTS OFF)
+SELECT i.val, COUNT(*) FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val GROUP BY i.val;
+
+SELECT i.val, COUNT(*) FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val GROUP BY i.val ORDER BY i.val LIMIT 10;
+
+EXPLAIN (COSTS OFF)
+SELECT i.val, f.val, COUNT(*) FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val GROUP BY i.val, f.val;
+
+SELECT i.val, f.val, COUNT(*) FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val GROUP BY i.val, f.val ORDER BY i.val LIMIT 10;
 
 \echo '=== Test 4: Verify HASHES property ==='
 -- Check that our equality operators have the HASHES property

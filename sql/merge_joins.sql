@@ -1,14 +1,10 @@
--- Test: Merge Join Support for Direct Numeric-Integer Comparison
--- Purpose: Verify that operators enable merge joins now that they're in btree families
--- Rationale: Operators ARE mathematically transitive and safe to add to btree families.
---            Research confirms: if A = B (no fractional part) and B = C, then A = C.
---            If A = B returns false (has fractional part), transitive chain correctly
---            propagates inequality. Example: 10.5 = 10 → false, so (10.5 = 10) AND (10 = X)
---            → false regardless of X. This matches PostgreSQL's native exact numeric 
---            comparison: 10.5::numeric = 10::numeric → false.
+-- Test: Merge Join NOT Supported for Cross-Type Comparisons
+-- Purpose: Demonstrate that merge joins are NOT currently supported
 --
--- Implementation: Operators added to numeric_ops, float4_ops, float8_ops btree families
---                 to enable merge join optimization for large table joins.
+-- What happens: When merge join is forced, PostgreSQL falls back to hash or nested loop
+--
+-- Note: This is v1.0 behavior. Future versions may enable merge joins by adding
+--       operators to integer_ops family after further analysis.
 
 -- Load extension
 CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
@@ -33,27 +29,46 @@ ANALYZE merge_int4;
 ANALYZE merge_numeric;
 ANALYZE merge_float8;
 
--- Test 1: Verify btree family membership enables optimized joins
--- With cross-type operators in btree families, PostgreSQL can use indexed nested loops
-\echo '=== Test 1: Optimized Cross-Type Join ==='
+-- Test 1: Force merge join and observe fallback
+\echo '=== Test 1: Merge Join NOT Used (Falls Back to Hash Join) ==='
+SET enable_nestloop = off;
+SET enable_hashjoin = on;
+SET enable_mergejoin = on;
+
 EXPLAIN (COSTS OFF)
 SELECT COUNT(*) 
 FROM merge_int4 i 
-JOIN merge_numeric n ON i.val = n.val
-WHERE i.val < 1000;
+JOIN merge_numeric n ON i.val = n.val;
 
--- Expected: Should use Nested Loop with index scans on both sides
--- This is enabled by btree family membership
+-- Expected: Hash Join (NOT Merge Join)
+-- Reason: Cannot use merge join because operators not in integer_ops family
 
--- Test 2: Verify operators ARE in btree operator families
-\echo '=== Test 2: Operator Family Membership Check ==='
+-- Test 2: Try to force merge join by disabling hash
+\echo '=== Test 2: Disable Hash, Still No Merge Join ==='
+SET enable_hashjoin = off;
+
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*) 
+FROM merge_int4 i 
+JOIN merge_numeric n ON i.val = n.val;
+
+-- Expected: Nested Loop (still NOT Merge Join)
+-- PostgreSQL cannot use merge join for cross-type comparison
+
+RESET enable_nestloop;
+RESET enable_hashjoin;
+RESET enable_mergejoin;
+
+-- Test 3: Verify operators ARE in btree operator families (but not integer_ops)
+\echo '=== Test 3: Operator Family Membership Check ==='
 SELECT 
     op.oprname,
     op.oprleft::regtype,
     op.oprright::regtype,
-    amop.amopfamily::regclass::text as opfamily
+    opf.opfname as opfamily
 FROM pg_operator op
 JOIN pg_amop amop ON op.oid = amop.amopopr
+JOIN pg_opfamily opf ON amop.amopfamily = opf.oid
 WHERE op.oprname IN ('=', '<', '<=', '>', '>=', '<>')
   AND (
     (op.oprleft = 'numeric'::regtype AND op.oprright = 'int4'::regtype) OR
@@ -63,40 +78,39 @@ WHERE op.oprname IN ('=', '<', '<=', '>', '>=', '<>')
   )
 ORDER BY op.oprname, op.oprleft, op.oprright;
 
--- Test 3: Explain why btree family membership is safe
-\echo '=== Test 3: Why Btree Family Membership Is Safe ==='
-\echo 'Btree family membership enables indexed nested loop optimization.'
-\echo 'Operators ARE mathematically transitive for exact comparison semantics:'
-\echo '  - If 10.5 = 10 → false (has fractional part)'
-\echo '  - Then (10.5 = 10) AND (10 = X) → false regardless of X'
-\echo '  - Transitive chain correctly propagates inequality'
-\echo 'This matches PostgreSQL native behavior: 10.5::numeric = 10::numeric → false'
-\echo 'Operators added to numeric_ops and float_ops families for optimization.'
-\echo 'Note: NOT added to integer_ops to avoid problematic transitive inference from int side.'
+-- Expected: Operators in numeric_ops and float_ops, NOT in integer_ops
 
--- Test 4: Verify normal join strategies still work
-\echo '=== Test 4: Normal Join Strategies ==='
-EXPLAIN (COSTS OFF)
-SELECT COUNT(*) 
-FROM merge_int4 i 
-JOIN merge_numeric n ON i.val = n.val
-WHERE i.val < 100;
+-- Test 4: Verify operators NOT in integer_ops family
+\echo '=== Test 4: Operators NOT in integer_ops Family ==='
+SELECT 
+    op.oprname,
+    op.oprleft::regtype,
+    op.oprright::regtype,
+    opf.opfname as opfamily
+FROM pg_operator op
+JOIN pg_amop amop ON op.oid = amop.amopopr
+JOIN pg_opfamily opf ON amop.amopfamily = opf.oid
+WHERE op.oprname = '='
+  AND opf.opfname = 'integer_ops'
+  AND (
+    (op.oprleft = 'numeric'::regtype AND op.oprright IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype)) OR
+    (op.oprright = 'numeric'::regtype AND op.oprleft IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype))
+  );
 
-SELECT 'int4-numeric join (working)'::text AS test, COUNT(*) AS count
-FROM merge_int4 i 
-JOIN merge_numeric n ON i.val = n.val
-WHERE i.val < 100;
+-- Expected: No rows (operators not in integer_ops)
+-- This is why merge joins don't work
 
 -- Test 5: Verify btree support functions are registered
 \echo '=== Test 5: Btree Support Function Check ==='
 SELECT 
-    amprocfamily::regclass AS family,
+    opf.opfname::text AS family,
     amproclefttype::regtype AS lefttype,
     amprocrighttype::regtype AS righttype,
     amprocnum AS support_func_num,
     amproc::regproc AS support_func
 FROM pg_amproc
-WHERE amprocfamily IN ('numeric_ops'::regclass, 'float_ops'::regclass)
+JOIN pg_opfamily opf ON amprocfamily = opf.oid
+WHERE opf.opfname IN ('numeric_ops', 'float_ops')
   AND (amproclefttype = 'numeric'::regtype OR amproclefttype = 'float4'::regtype OR amproclefttype = 'float8'::regtype)
   AND amprocrighttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype)
 ORDER BY family, lefttype, righttype;
@@ -110,8 +124,8 @@ DROP TABLE merge_float8;
 
 -- Summary
 \echo '=== Summary ==='
-\echo 'Merge joins are NOT supported in v1.0 (deferred to v2.0).'
-\echo 'v1.0 uses index scans and nested loop joins for cross-type comparisons.'
-\echo 'Operators do NOT have MERGES property and are NOT in btree families in v1.0.'
-\echo 'v2.0 enhancement: operators could be added to btree families to enable merge joins.'
-\echo '(Operators ARE transitive; deferral is for complexity management, not correctness.)'
+\echo 'Merge joins are NOT supported in v1.0.'
+\echo 'Reason: Cross-type operators only in numeric_ops/float_ops, not in integer_ops.'
+\echo 'PostgreSQL requires operators in integer_ops to merge join from the integer side.'
+\echo 'v1.0 provides: Hash joins and indexed nested loop joins (see index_nested_loop.sql).'
+\echo 'Future: May enable merge joins by carefully adding to integer_ops family.'

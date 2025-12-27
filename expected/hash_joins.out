@@ -27,6 +27,122 @@ SELECT COUNT(*) FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val;
    100
 (1 row)
 
+\echo '=== Test 1b: Hash Aggregate with GROUP BY ==='
+=== Test 1b: Hash Aggregate with GROUP BY ===
+EXPLAIN (COSTS OFF)
+SELECT i.val, COUNT(*) FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val GROUP BY i.val;
+                  QUERY PLAN                  
+----------------------------------------------
+ HashAggregate
+   Group Key: i.val
+   ->  Hash Join
+         Hash Cond: (i.val = n.val)
+         ->  Seq Scan on hash_int4 i
+         ->  Hash
+               ->  Seq Scan on hash_numeric n
+(7 rows)
+
+SELECT i.val, COUNT(*) FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val GROUP BY i.val ORDER BY i.val LIMIT 10;
+ val | count 
+-----+-------
+   1 |     1
+   2 |     1
+   3 |     1
+   4 |     1
+   5 |     1
+   6 |     1
+   7 |     1
+   8 |     1
+   9 |     1
+  10 |     1
+(10 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT i.val, n.val, COUNT(*) FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val GROUP BY i.val, n.val;
+                  QUERY PLAN                  
+----------------------------------------------
+ HashAggregate
+   Group Key: i.val, n.val
+   ->  Hash Join
+         Hash Cond: (i.val = n.val)
+         ->  Seq Scan on hash_int4 i
+         ->  Hash
+               ->  Seq Scan on hash_numeric n
+(7 rows)
+
+SELECT i.val, n.val, COUNT(*) FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val GROUP BY i.val, n.val ORDER BY i.val LIMIT 10;
+ val | val | count 
+-----+-----+-------
+   1 |   1 |     1
+   2 |   2 |     1
+   3 |   3 |     1
+   4 |   4 |     1
+   5 |   5 |     1
+   6 |   6 |     1
+   7 |   7 |     1
+   8 |   8 |     1
+   9 |   9 |     1
+  10 |  10 |     1
+(10 rows)
+
+\echo '=== Test 1c: Hash Aggregate with DISTINCT ==='
+=== Test 1c: Hash Aggregate with DISTINCT ===
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT i.val FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val;
+                  QUERY PLAN                  
+----------------------------------------------
+ HashAggregate
+   Group Key: i.val
+   ->  Hash Join
+         Hash Cond: (i.val = n.val)
+         ->  Seq Scan on hash_int4 i
+         ->  Hash
+               ->  Seq Scan on hash_numeric n
+(7 rows)
+
+SELECT DISTINCT i.val FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val ORDER BY i.val LIMIT 10;
+ val 
+-----
+   1
+   2
+   3
+   4
+   5
+   6
+   7
+   8
+   9
+  10
+(10 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT i.val, n.val FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val;
+                  QUERY PLAN                  
+----------------------------------------------
+ HashAggregate
+   Group Key: i.val, n.val
+   ->  Hash Join
+         Hash Cond: (i.val = n.val)
+         ->  Seq Scan on hash_int4 i
+         ->  Hash
+               ->  Seq Scan on hash_numeric n
+(7 rows)
+
+SELECT DISTINCT i.val, n.val FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val ORDER BY i.val LIMIT 10;
+ val | val 
+-----+-----
+   1 |   1
+   2 |   2
+   3 |   3
+   4 |   4
+   5 |   5
+   6 |   6
+   7 |   7
+   8 |   8
+   9 |   9
+  10 |  10
+(10 rows)
+
 \echo '=== Test 2: Hash Join with float8 = int8 ==='
 === Test 2: Hash Join with float8 = int8 ===
 CREATE TEMP TABLE hash_float8 (val float8);
@@ -51,6 +167,122 @@ SELECT COUNT(*) FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val;
     50
 (1 row)
 
+\echo '=== Test 2b: Hash Aggregate with GROUP BY ==='
+=== Test 2b: Hash Aggregate with GROUP BY ===
+EXPLAIN (COSTS OFF)
+SELECT i.val, COUNT(*) FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val GROUP BY i.val;
+                QUERY PLAN                 
+-------------------------------------------
+ HashAggregate
+   Group Key: i.val
+   ->  Hash Join
+         Hash Cond: (f.val = i.val)
+         ->  Seq Scan on hash_float8 f
+         ->  Hash
+               ->  Seq Scan on hash_int8 i
+(7 rows)
+
+SELECT i.val, COUNT(*) FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val GROUP BY i.val ORDER BY i.val LIMIT 10;
+ val | count 
+-----+-------
+   1 |     1
+   2 |     1
+   3 |     1
+   4 |     1
+   5 |     1
+   6 |     1
+   7 |     1
+   8 |     1
+   9 |     1
+  10 |     1
+(10 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT i.val, f.val, COUNT(*) FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val GROUP BY i.val, f.val;
+                QUERY PLAN                 
+-------------------------------------------
+ HashAggregate
+   Group Key: i.val, f.val
+   ->  Hash Join
+         Hash Cond: (f.val = i.val)
+         ->  Seq Scan on hash_float8 f
+         ->  Hash
+               ->  Seq Scan on hash_int8 i
+(7 rows)
+
+SELECT i.val, f.val, COUNT(*) FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val GROUP BY i.val, f.val ORDER BY i.val LIMIT 10;
+ val | val | count 
+-----+-----+-------
+   1 |   1 |     1
+   2 |   2 |     1
+   3 |   3 |     1
+   4 |   4 |     1
+   5 |   5 |     1
+   6 |   6 |     1
+   7 |   7 |     1
+   8 |   8 |     1
+   9 |   9 |     1
+  10 |  10 |     1
+(10 rows)
+
+\echo '=== Test 2c: Hash Aggregate with DISTINCT ==='
+=== Test 2c: Hash Aggregate with DISTINCT ===
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT i.val FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val;
+                QUERY PLAN                 
+-------------------------------------------
+ HashAggregate
+   Group Key: i.val
+   ->  Hash Join
+         Hash Cond: (f.val = i.val)
+         ->  Seq Scan on hash_float8 f
+         ->  Hash
+               ->  Seq Scan on hash_int8 i
+(7 rows)
+
+SELECT DISTINCT i.val FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val ORDER BY i.val LIMIT 10;
+ val 
+-----
+   1
+   2
+   3
+   4
+   5
+   6
+   7
+   8
+   9
+  10
+(10 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT i.val, f.val FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val;
+                QUERY PLAN                 
+-------------------------------------------
+ HashAggregate
+   Group Key: i.val, f.val
+   ->  Hash Join
+         Hash Cond: (f.val = i.val)
+         ->  Seq Scan on hash_float8 f
+         ->  Hash
+               ->  Seq Scan on hash_int8 i
+(7 rows)
+
+SELECT DISTINCT i.val, f.val FROM hash_float8 f JOIN hash_int8 i ON f.val = i.val ORDER BY i.val LIMIT 10;
+ val | val 
+-----+-----
+   1 |   1
+   2 |   2
+   3 |   3
+   4 |   4
+   5 |   5
+   6 |   6
+   7 |   7
+   8 |   8
+   9 |   9
+  10 |  10
+(10 rows)
+
 \echo '=== Test 3: Hash Join with float4 = int2 ==='
 === Test 3: Hash Join with float4 = int2 ===
 CREATE TEMP TABLE hash_float4 (val float4);
@@ -74,6 +306,122 @@ SELECT COUNT(*) FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val;
 -------
     20
 (1 row)
+
+\echo '=== Test 3c: Hash Aggregate with DISTINCT ==='
+=== Test 3c: Hash Aggregate with DISTINCT ===
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT i.val FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val;
+                 QUERY PLAN                  
+---------------------------------------------
+ HashAggregate
+   Group Key: i.val
+   ->  Hash Join
+         Hash Cond: (i.val = f.val)
+         ->  Seq Scan on hash_int2 i
+         ->  Hash
+               ->  Seq Scan on hash_float4 f
+(7 rows)
+
+SELECT DISTINCT i.val FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val ORDER BY i.val LIMIT 10;
+ val 
+-----
+   1
+   2
+   3
+   4
+   5
+   6
+   7
+   8
+   9
+  10
+(10 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT DISTINCT i.val, f.val FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val;
+                 QUERY PLAN                  
+---------------------------------------------
+ HashAggregate
+   Group Key: i.val, f.val
+   ->  Hash Join
+         Hash Cond: (i.val = f.val)
+         ->  Seq Scan on hash_int2 i
+         ->  Hash
+               ->  Seq Scan on hash_float4 f
+(7 rows)
+
+SELECT DISTINCT i.val, f.val FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val ORDER BY i.val LIMIT 10;
+ val | val 
+-----+-----
+   1 |   1
+   2 |   2
+   3 |   3
+   4 |   4
+   5 |   5
+   6 |   6
+   7 |   7
+   8 |   8
+   9 |   9
+  10 |  10
+(10 rows)
+
+\echo '=== Test 3b: Hash Aggregate with GROUP BY ==='
+=== Test 3b: Hash Aggregate with GROUP BY ===
+EXPLAIN (COSTS OFF)
+SELECT i.val, COUNT(*) FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val GROUP BY i.val;
+                 QUERY PLAN                  
+---------------------------------------------
+ HashAggregate
+   Group Key: i.val
+   ->  Hash Join
+         Hash Cond: (i.val = f.val)
+         ->  Seq Scan on hash_int2 i
+         ->  Hash
+               ->  Seq Scan on hash_float4 f
+(7 rows)
+
+SELECT i.val, COUNT(*) FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val GROUP BY i.val ORDER BY i.val LIMIT 10;
+ val | count 
+-----+-------
+   1 |     1
+   2 |     1
+   3 |     1
+   4 |     1
+   5 |     1
+   6 |     1
+   7 |     1
+   8 |     1
+   9 |     1
+  10 |     1
+(10 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT i.val, f.val, COUNT(*) FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val GROUP BY i.val, f.val;
+                 QUERY PLAN                  
+---------------------------------------------
+ HashAggregate
+   Group Key: i.val, f.val
+   ->  Hash Join
+         Hash Cond: (i.val = f.val)
+         ->  Seq Scan on hash_int2 i
+         ->  Hash
+               ->  Seq Scan on hash_float4 f
+(7 rows)
+
+SELECT i.val, f.val, COUNT(*) FROM hash_float4 f JOIN hash_int2 i ON f.val = i.val GROUP BY i.val, f.val ORDER BY i.val LIMIT 10;
+ val | val | count 
+-----+-----+-------
+   1 |   1 |     1
+   2 |   2 |     1
+   3 |   3 |     1
+   4 |   4 |     1
+   5 |   5 |     1
+   6 |   6 |     1
+   7 |   7 |     1
+   8 |   8 |     1
+   9 |   9 |     1
+  10 |  10 |     1
+(10 rows)
 
 \echo '=== Test 4: Verify HASHES property ==='
 === Test 4: Verify HASHES property ===

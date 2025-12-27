@@ -10,10 +10,11 @@ MODULES = pg_num2int_direct_comp
 # Phase 5 (User Story 3): range_boundary
 # Phase 6 (User Story 4): transitivity
 # Phase 7 (User Story 5): edge_cases null_handling special_values
-# Phase 8: hash_joins (hash join optimization)
-# Phase 9: merge_joins (documents why merge joins are disabled)
-# Phase 10: performance
-REGRESS = numeric_int_ops float_int_ops index_usage range_boundary transitivity edge_cases null_handling special_values hash_joins merge_joins performance
+# Phase 8: index_nested_loop (indexed nested loop optimization - works in v1.0)
+# Phase 9: hash_joins (hash join optimization)
+# Phase 10: merge_joins (documents why merge joins are not supported in v1.0)
+# Phase 11: performance
+REGRESS = numeric_int_ops float_int_ops index_usage range_boundary transitivity edge_cases null_handling special_values index_nested_loop hash_joins merge_joins performance
 
 # Build configuration
 PG_CONFIG = pg_config
