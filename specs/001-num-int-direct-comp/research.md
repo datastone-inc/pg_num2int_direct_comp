@@ -313,21 +313,20 @@ WHERE int_col = 10
 
 **Solution**: Keep operators ONLY in `numeric_ops` and `float_ops`, NOT in `integer_ops`
 
-### 4.3 Why MERGES Property Is Not Possible
 
-**Decision**: Do NOT add MERGES property to operators, even though they're in btree families
+### 4.3 Merge Join Implementation Path (Planned for v1.0.0)
 
-**Reason**: PostgreSQL's merge join algorithm requires **same-family membership on both sides**:
-- For merge join on `int_col = numeric_col`, PostgreSQL needs to sort both sides
-- To sort int_col in the context of the join, it looks for int operators in the join's operator family
-- Since we cannot add to `integer_ops` (transitive inference problem), merge joins cannot work
-- Attempting to force merge join results in error: "missing operator 1(int4,int4) in opfamily numeric_ops"
+**Decision**: Merge join support is planned for v1.0.0. This will require adding cross-type operators to the `integer_ops` family, with careful safeguards to prevent invalid transitive inference by the planner.
 
-**Why this limitation exists**:
-- Merge join requires both input relations to be sorted by the same sort order
-- The sort order is defined by the btree operator family
-- PostgreSQL needs operators for both sides of the join within the same family
-- We can only safely put operators in the higher-precision family, not both
+**Implementation Plan**:
+- Add cross-type operators to `integer_ops` with custom support functions and planner hooks to ensure only valid inferences are made.
+- Thoroughly test for edge cases where the planner could incorrectly infer `int_col = 10.5` from `int_col = 10 AND int_col = numeric_col AND numeric_col = 10.5`.
+- Document all constraints and provide regression tests for transitivity and merge join correctness.
+
+**Why this is challenging**:
+- Merge join requires both input relations to be sorted by the same operator family.
+- Adding to `integer_ops` risks planner making invalid inferences unless carefully controlled.
+- The implementation will include additional planner logic and documentation to ensure correctness.
 
 ### 4.4 Benefit of Btree Family Membership: Indexed Nested Loop Joins
 

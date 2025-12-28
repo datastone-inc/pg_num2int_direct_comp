@@ -239,7 +239,7 @@
 **SQL Registration for Range Operators (36 operators)**:
 
 - [X] T108 [US3] Register all 36 range operator functions in pg_num2int_direct_comp--1.0.0.sql with SUPPORT property ✅
-- [X] T109 [US3] Register all 36 <, >, <=, >= operators in pg_num2int_direct_comp--1.0.0.sql with COMMUTATOR, NEGATOR properties (no MERGES property - not possible due to transitive inference constraints) ✅
+- [X] T109 [US3] Register all 36 <, >, <=, >= operators in pg_num2int_direct_comp--1.0.0.sql with COMMUTATOR, NEGATOR properties (MERGES property planned for v1.0.0 with merge join support) ✅
 
 **Index Support for Range Operators**:
 
@@ -274,7 +274,7 @@
 
 - [X] T118 [US4] Review operator registration in pg_num2int_direct_comp--1.0.0.sql to confirm operators are NOT added to btree operator families ✅
 - [X] T119 [US4] Verify COMMUTATOR and NEGATOR properties are correctly specified (these are safe) ✅
-- [X] T120 [US4] Verify operator properties: equality/inequality operators do NOT have HASHES (deferred to v2.0), range operators do NOT have MERGES (not possible due to transitive inference). Operators ARE in btree opfamilies (numeric_ops, float_ops) to enable indexed nested loop joins. ✅
+- [X] T120 [US4] Verify operator properties: equality/inequality operators do NOT have HASHES (deferred to v2.0), range operators do NOT have MERGES (planned for v1.0.0 with merge join support). Operators ARE in btree opfamilies (numeric_ops, float_ops) to enable indexed nested loop joins. ✅
 
 **Verification**:
 
@@ -367,7 +367,7 @@ Instead of detecting fractional parts, cast integers to the higher-precision typ
 
 **Why NOT in integer_ops**: Adding operators to integer_ops would enable invalid transitive inference. Example: planner could infer `int_col = 10.5` from `int_col = 10 AND int_col = numeric_col AND numeric_col = 10.5`, which is incorrect.
 
-**Why merge joins NOT possible**: PostgreSQL's merge join requires operators in the same family on both sides. Since we cannot add to integer_ops (transitive inference problem), merge joins cannot work. Attempting to force merge join results in error "missing operator 1(int4,int4) in opfamily numeric_ops".
+**Merge join support (planned)**: Merge join requires operators in the same family on both sides. Support is planned for v1.0.0 by adding cross-type operators to integer_ops with safeguards to prevent invalid transitive inference. See research.md section 4 for implementation plan.
 
 **Benefit achieved**: Indexed nested loop joins with cross-type index usage - provides similar or better performance than merge joins for selective queries.
 
@@ -391,8 +391,8 @@ Instead of detecting fractional parts, cast integers to the higher-precision typ
 
 ### What Does NOT Work (and why)
 
-❌ **Merge Joins**: Not possible due to PostgreSQL architectural limitation (requires operators in integer_ops, which would cause invalid transitive inference)
-❌ **MERGES Property**: Cannot be set without causing the same transitive inference problem
+⏳ **Merge Joins**: Planned for v1.0.0 by adding cross-type operators to integer_ops with planner safeguards
+⏳ **MERGES Property**: Planned for v1.0.0 with merge join support
 
 **Rationale**: See research.md section 4 for detailed explanation of why this approach is optimal
 

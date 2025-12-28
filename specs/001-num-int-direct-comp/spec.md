@@ -135,19 +135,13 @@ The extension provides exact comparison operators for all meaningful combination
 
 - **FE-001**: Cost estimation functions to help the query planner choose optimal join strategies
 
-# Not Possible
 
-- **Merge joins**: Cannot be enabled because operators must only be in higher-precision families to avoid invalid transitive inferences in `integer_ops`
-  - See research.md section 4 for detailed rationale
+# Merge Join Support (Planned for v1.0.0)
 
-## Not Possible in v1.0 (or any version)
-
-- **Merge joins**: Cannot be implemented due to PostgreSQL architectural limitation
-  - **Reason**: Merge join requires operators in the same family on both sides of join
-  - **Constraint**: We cannot add operators to `integer_ops` family (would cause invalid transitive inference)
-  - **Example of problem**: If in `integer_ops`, planner could infer `int_col = 10.5` from `int_col = 10 AND int_col = numeric_col AND numeric_col = 10.5`, which is incorrect
-  - **Alternative**: Indexed nested loop joins provide similar or better performance for selective queries
-  - See research.md section 4.3 for detailed explanation
+- **Merge joins**: Not yet implemented, but planned for v1.0.0. This will require adding operators to the `integer_ops` family with careful handling to avoid invalid transitive inference (see research.md section 4 for rationale and implementation path).
+  - **Constraint**: Adding to `integer_ops` must avoid planner inferring `int_col = 10.5` from `int_col = 10 AND int_col = numeric_col AND numeric_col = 10.5`.
+  - **Current alternative**: Indexed nested loop joins provide similar or better performance for selective queries.
+  - See research.md section 4.3 for implementation details and planned safeguards.
 
 ##
 ## Success Criteria *(mandatory)*
