@@ -25,7 +25,7 @@ EXPLAIN (COSTS OFF) SELECT COUNT(*) FROM perf_int4 WHERE val = 50000::numeric;
 ------------------------------------------------------------
  Aggregate
    ->  Index Only Scan using idx_perf_int4_val on perf_int4
-         Index Cond: (val = '50000'::numeric)
+         Index Cond: (val = 50000)
 (3 rows)
 
 EXPLAIN (COSTS OFF) SELECT COUNT(*) FROM perf_int4 WHERE val = 50000::float8;
@@ -162,15 +162,15 @@ SELECT * FROM perf_int4 WHERE val = 12345::numeric;
                    QUERY PLAN                    
 -------------------------------------------------
  Index Scan using idx_perf_int4_val on perf_int4
-   Index Cond: (val = '12345'::numeric)
+   Index Cond: (val = 12345)
 (2 rows)
 
 EXPLAIN (COSTS OFF, ANALYZE OFF)
 SELECT * FROM perf_int4 WHERE val >= 80000::float8 AND val <= 80100::float8;
-                                      QUERY PLAN                                       
----------------------------------------------------------------------------------------
- Seq Scan on perf_int4
-   Filter: ((val >= '80000'::double precision) AND (val <= '80100'::double precision))
+                    QUERY PLAN                     
+---------------------------------------------------
+ Index Scan using idx_perf_int4_val on perf_int4
+   Index Cond: ((val >= 80000) AND (val <= 80100))
 (2 rows)
 
 -- Clean up

@@ -143,7 +143,7 @@ typedef struct OperatorOidCache {
   Oid int8_ne_float4_oid;
   Oid int8_ne_float8_oid;
   
-  /* Less than operators (<) - 9 operators */
+  /* Less than operators (<) - 18 operators (forward + commutator) */
   Oid numeric_lt_int2_oid;
   Oid numeric_lt_int4_oid;
   Oid numeric_lt_int8_oid;
@@ -153,8 +153,18 @@ typedef struct OperatorOidCache {
   Oid float8_lt_int2_oid;
   Oid float8_lt_int4_oid;
   Oid float8_lt_int8_oid;
+  /* Commutator less than operators (int X < numeric/float) */
+  Oid int2_lt_numeric_oid;
+  Oid int2_lt_float4_oid;
+  Oid int2_lt_float8_oid;
+  Oid int4_lt_numeric_oid;
+  Oid int4_lt_float4_oid;
+  Oid int4_lt_float8_oid;
+  Oid int8_lt_numeric_oid;
+  Oid int8_lt_float4_oid;
+  Oid int8_lt_float8_oid;
   
-  /* Greater than operators (>) - 9 operators */
+  /* Greater than operators (>) - 18 operators (forward + commutator) */
   Oid numeric_gt_int2_oid;
   Oid numeric_gt_int4_oid;
   Oid numeric_gt_int8_oid;
@@ -164,8 +174,18 @@ typedef struct OperatorOidCache {
   Oid float8_gt_int2_oid;
   Oid float8_gt_int4_oid;
   Oid float8_gt_int8_oid;
+  /* Commutator greater than operators (int X > numeric/float) */
+  Oid int2_gt_numeric_oid;
+  Oid int2_gt_float4_oid;
+  Oid int2_gt_float8_oid;
+  Oid int4_gt_numeric_oid;
+  Oid int4_gt_float4_oid;
+  Oid int4_gt_float8_oid;
+  Oid int8_gt_numeric_oid;
+  Oid int8_gt_float4_oid;
+  Oid int8_gt_float8_oid;
   
-  /* Less than or equal operators (<=) - 9 operators */
+  /* Less than or equal operators (<=) - 18 operators (forward + commutator) */
   Oid numeric_le_int2_oid;
   Oid numeric_le_int4_oid;
   Oid numeric_le_int8_oid;
@@ -175,8 +195,18 @@ typedef struct OperatorOidCache {
   Oid float8_le_int2_oid;
   Oid float8_le_int4_oid;
   Oid float8_le_int8_oid;
+  /* Commutator less than or equal operators (int X <= numeric/float) */
+  Oid int2_le_numeric_oid;
+  Oid int2_le_float4_oid;
+  Oid int2_le_float8_oid;
+  Oid int4_le_numeric_oid;
+  Oid int4_le_float4_oid;
+  Oid int4_le_float8_oid;
+  Oid int8_le_numeric_oid;
+  Oid int8_le_float4_oid;
+  Oid int8_le_float8_oid;
   
-  /* Greater than or equal operators (>=) - 9 operators */
+  /* Greater than or equal operators (>=) - 18 operators (forward + commutator) */
   Oid numeric_ge_int2_oid;
   Oid numeric_ge_int4_oid;
   Oid numeric_ge_int8_oid;
@@ -186,6 +216,16 @@ typedef struct OperatorOidCache {
   Oid float8_ge_int2_oid;
   Oid float8_ge_int4_oid;
   Oid float8_ge_int8_oid;
+  /* Commutator greater than or equal operators (int X >= numeric/float) */
+  Oid int2_ge_numeric_oid;
+  Oid int2_ge_float4_oid;
+  Oid int2_ge_float8_oid;
+  Oid int4_ge_numeric_oid;
+  Oid int4_ge_float4_oid;
+  Oid int4_ge_float8_oid;
+  Oid int8_ge_numeric_oid;
+  Oid int8_ge_float4_oid;
+  Oid int8_ge_float8_oid;
 } OperatorOidCache;
 
 /* Function declarations */

@@ -1,6 +1,9 @@
 -- Test exact comparison operators for numeric × integer combinations
 -- This test file covers equality (=) and inequality (<>) operators
 
+-- Load extension (needed for first test in the sequence)
+CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
+
 -- Test 1: Basic equality - numeric with no fractional part equals integer
 SELECT 10::numeric = 10::int2 AS "numeric=int2_exact";
 SELECT 10::numeric = 10::int4 AS "numeric=int4_exact";

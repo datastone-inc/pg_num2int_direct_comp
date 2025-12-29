@@ -398,19 +398,17 @@ Instead of detecting fractional parts, cast integers to the higher-precision typ
 
 **Goal**: Enable indexed nested loop join and merge join optimization by adding operators to btree operator families
 
-**Status**: ✅ COMPLETE - All btree family registrations implemented. Future remediation tasks may modify.
+**Status**: ✅ COMPLETE - All btree family registrations implemented.
 
 **Current State**:
 - ✅ int×numeric operators in numeric_ops btree family
+- ✅ int×numeric operators in integer_ops btree family (T167-T172) - enables merge joins
+- ✅ MERGES property set on int×numeric equality operators (T180)
 - ✅ int×float4 operators in float_ops btree family (T148)
 - ✅ int×float8 operators in float_ops btree family (T148b)
-- ❌ int×numeric operators NOT in integer_ops (needed for merge joins) → T167-T172
-- ❌ MERGES property not set on int×numeric equality operators → T180
 
-**Future Remediation** (tracked separately):
-- T167-T172: Add int×numeric to integer_ops for merge join support
-- T173-T179: Consider removing int×float from float_ops per spec US5 deferral
-- T180: Add MERGES property to int×numeric equality operators
+**Deferred** (per spec US5):
+- T173-T179: Consider removing int×float from float_ops (currently kept for indexed nested loop joins)
 
 **Background**: Research shows int×numeric operators ARE mathematically transitive and safe to add to both btree families:
 - If A = B (no fractional part) and B = C, then A = C
@@ -421,23 +419,22 @@ Instead of detecting fractional parts, cast integers to the higher-precision typ
 - [X] T148c Implement btree support functions (numeric_cmp_int2/4/8, float4_cmp_int2/4/8, float8_cmp_int2/4/8) ✅
 - [X] T148d Create SQL-callable wrappers for btree support functions ✅
 - [X] T147 Add numeric × int operators to numeric_ops btree family with FUNCTION 1 entries ✅
-- [X] T148 Add float4 × int operators to float_ops btree family ✅ (implemented in pg_num2int_direct_comp--1.0.0.sql lines 2035-2083; note: T176-T177 may remove per spec US5 deferral)
-- [X] T148b Add float8 × int operators to float_ops btree family ✅ (implemented in pg_num2int_direct_comp--1.0.0.sql lines 2085-2131; note: T176-T177 may remove per spec US5 deferral)
+- [X] T148 Add float4 × int operators to float_ops btree family ✅
+- [X] T148b Add float8 × int operators to float_ops btree family ✅
 - [X] T149 Create sql/merge_joins.sql test file ✅
-- [X] T150 Update expected output for btree family membership ✅ (expected/merge_joins.out reflects current float_ops membership in Test 3 and Test 5)
+- [X] T150 Update expected output for btree family membership ✅
+- [X] T167-T172 Add int×numeric operators to integer_ops btree family ✅
+- [X] T180 Add MERGES property to int×numeric equality operators ✅
 
-**Checkpoint**: ✅ Btree operator family support COMPLETE for current implementation. Future remediation tasks (T167-T180, T173-T179) may modify btree family membership per spec.
+**Checkpoint**: ✅ Btree operator family support COMPLETE including merge join support.
 
 ### What Works Now
 
-✅ **Indexed Nested Loop Joins for int×numeric**: Works via numeric_ops family membership
+✅ **Merge Joins for int×numeric**: Works via integer_ops + numeric_ops dual family membership + MERGES property
+✅ **Indexed Nested Loop Joins for int×numeric**: Works via numeric_ops and integer_ops family membership
 ✅ **Indexed Nested Loop Joins for int×float**: Works via float_ops family membership (T148, T148b)
 ✅ **Index Condition Pushdown**: Conditions like `numeric_col = int_col` use btree index
 ✅ **Hash Joins**: All operators in hash families
-
-### What Needs Remediation (Future Tasks)
-
-❌ **Merge Joins for int×numeric**: Requires integer_ops membership (T167-T172) + MERGES property (T180)
 
 ---
 
@@ -472,7 +469,7 @@ Instead of detecting fractional parts, cast integers to the higher-precision typ
 - [x] T186 [P] Update doc/api-reference.md with complete operator reference (108 operators) ✅
 - [x] T187 [P] Verify all C functions have doxygen comments with @brief, @param, @return ✅
 - [x] T188 Verify all files have copyright notices and AI assistance caveat ✅
-- [ ] T189 Run code style verification (K&R style, 2-space indentation, camelCase)
+- [X] T189 Run code style verification (K&R style, 2-space indentation, camelCase) ✅
 - [x] T190 Run `make clean && make` with -Wall -Wextra -Werror to verify no warnings ✅
 - [x] T191 Run full regression test suite `make installcheck` and verify 100% pass rate ✅
 - [ ] T192 Test extension on PostgreSQL 12, 13, 14, 15, 16 (multi-version compatibility)
@@ -510,40 +507,40 @@ Instead of detecting fractional parts, cast integers to the higher-precision typ
 
 > **TEST-FIRST**: Write these tests FIRST, verify they FAIL, then implement
 
-- [ ] T201 [P] Create sql/selectivity.sql with EXPLAIN tests for constant predicate optimization
-- [ ] T202 [P] Create expected/selectivity.out with expected EXPLAIN output (rows=0 for impossible predicates)
-- [ ] T203 Add selectivity to REGRESS variable in Makefile
+- [X] T201 [P] Create sql/selectivity.sql with EXPLAIN tests for constant predicate optimization ✅
+- [X] T202 [P] Create expected/selectivity.out with expected EXPLAIN output (rows=0 for impossible predicates) ✅
+- [X] T203 Add selectivity to REGRESS variable in Makefile ✅
 
 ### Implementation for Constant Predicate Optimization
 
-- [ ] T204 Add SupportRequestSimplify handler to num2int_support() in pg_num2int_direct_comp.c
-- [ ] T205 Implement constant detection logic: identify Const node operand in FuncExpr arguments
-- [ ] T206 Implement fractional part detection for numeric constants using numeric_trunc comparison
-- [ ] T207 Implement fractional part detection for float4/float8 constants using floor/trunc comparison
-- [ ] T208 For equality with fractional → return makeBoolConst(false, false) 
-- [ ] T209 For equality with exact integer → build OpExpr with native int=int operator and converted constant
-- [ ] T210 [P] Implement range boundary transformation for `>` operator (10.5 → >= 11)
-- [ ] T211 [P] Implement range boundary transformation for `<` operator (10.5 → <= 10)
-- [ ] T212 [P] Implement range boundary transformation for `>=` operator (10.5 → >= 11)
-- [ ] T213 [P] Implement range boundary transformation for `<=` operator (10.5 → <= 10)
-- [ ] T214 Handle all 9 type combinations (numeric/float4/float8 × int2/int4/int8) in both directions
+- [X] T204 Add SupportRequestSimplify handler to num2int_support() in pg_num2int_direct_comp.c ✅
+- [X] T205 Implement constant detection logic: identify Const node operand in FuncExpr arguments ✅
+- [X] T206 Implement fractional part detection for numeric constants using trunc comparison (OID 1710) ✅
+- [X] T207 Implement fractional part detection for float4/float8 constants using floor/trunc comparison ✅
+- [X] T208 For equality with fractional → return makeBoolConst(false, false) ✅
+- [X] T209 For equality with exact integer → build OpExpr with native int=int operator and converted constant ✅
+- [X] T210 [P] Implement range boundary transformation for `>` operator (10.5 → >= 11) ✅
+- [X] T211 [P] Implement range boundary transformation for `<` operator (10.5 → <= 10) ✅
+- [X] T212 [P] Implement range boundary transformation for `>=` operator (10.5 → >= 11) ✅
+- [X] T213 [P] Implement range boundary transformation for `<=` operator (10.5 → <= 10) ✅
+- [X] T214 Handle all 9 type combinations (numeric/float4/float8 × int2/int4/int8) in both directions ✅
 
 ### Verification
 
-- [ ] T215 Run `make clean && make` to rebuild extension
-- [ ] T216 Run `make installcheck` to verify all tests pass (including new selectivity tests)
-- [ ] T217 Verify SC-009: EXPLAIN shows rows=0 for impossible predicates like `int_col = 10.5::numeric`
-- [ ] T218 Verify existing merge join tests still pass (btree family not affected)
-- [ ] T219 Verify existing hash join tests still pass
-- [ ] T220 Verify existing index_usage tests still pass
+- [X] T215 Run `make clean && make` to rebuild extension ✅
+- [X] T216 Run `make installcheck` to verify all tests pass (including new selectivity tests) ✅ (13/13 tests pass)
+- [X] T217 Verify SC-009: EXPLAIN shows rows=0 for impossible predicates like `int_col = 10.5::numeric` ✅
+- [X] T218 Verify existing merge join tests still pass (btree family not affected) ✅
+- [X] T219 Verify existing hash join tests still pass ✅
+- [X] T220 Verify existing index_usage tests still pass ✅
 
 ### Documentation for Constant Predicate Optimization
 
-- [ ] T221 [P] Update README.md with query optimization section explaining impossible predicate detection
-- [ ] T222 [P] Update doc/user-guide.md with examples of constant predicate transformation (10.5 → FALSE, boundary handling)
-- [ ] T223 Update CHANGELOG.md with FR-015, FR-016, FR-017 in 1.0.0 release notes
+- [X] T221 [P] Update README.md with query optimization section explaining impossible predicate detection ✅
+- [X] T222 [P] Update doc/user-guide.md with examples of constant predicate transformation (10.5 → FALSE, boundary handling) ✅
+- [X] T223 Update CHANGELOG.md with FR-015, FR-016, FR-017 in 1.0.0 release notes ✅
 
-**Checkpoint**: Constant predicate optimization complete - FR-015, FR-016, FR-017 satisfied
+**Checkpoint**: Phase 12 COMPLETE - Constant predicate optimization fully implemented and documented. FR-015, FR-016, FR-017 satisfied.
 
 ---
 
@@ -675,21 +672,22 @@ T053-T055 (build and verify)
 - US1 (Equality): 37 tasks - 9 core functions + 18 wrappers + tests + SQL
 - US2 (Index): 14 tasks - Support function enhancement + tests
 - US3 (Range): 47 tasks - 36 wrappers + tests + SQL
-- US4 (Transitivity): 15 tasks - integer_ops membership + MERGES property + tests
-- US5 (Coverage): 23 tasks - Edge case tests + float_ops btree removal
+- US4 (Transitivity): 15 tasks - integer_ops membership + MERGES property + tests ✅ COMPLETE
+- US5 (Coverage): 23 tasks - Edge case tests + float_ops btree removal (deferred)
 
-**Implementation Gap Tasks** (to align implementation with spec):
-- T118, T120: Verify btree family membership matches spec
-- T167-T172: Add integer_ops btree family membership for int×numeric
-- T173-T179: Remove float_ops btree membership for int×float (deferred per spec)
-- T180: Add MERGES property to int×numeric equality operators
+**Completed Implementation Tasks**:
+- ✅ T118, T120: Verify btree family membership matches spec
+- ✅ T167-T172: Add integer_ops btree family membership for int×numeric
+- ✅ T180: Add MERGES property to int×numeric equality operators
+
+**Deferred Tasks**:
+- T173-T179: Remove float_ops btree membership for int×float (kept for indexed nested loop joins)
 
 **Documentation Remediation Tasks**:
-- T195-T200: Update README and docs to match spec (operator counts, feature claims)
+- T195-T200: Superseded by T221-T223
 
 **Parallelization**:
 - 89 tasks marked [P] can run in parallel within their phase
-- Implementation gap tasks (T167-T180) should be done before T195-T196 verification
 
 **Test-First Emphasis**:
 - Every user story phase starts with test creation

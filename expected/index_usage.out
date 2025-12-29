@@ -3,6 +3,7 @@
 -- Tests all 9 type combinations: numeric/float4/float8 × int2/int4/int8
 -- Load extension
 CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
+NOTICE:  extension "pg_num2int_direct_comp" already exists, skipping
 -- Disable sequential scans to force index usage if possible
 SET enable_seqscan = off;
 -- ============================================================================
@@ -20,7 +21,7 @@ EXPLAIN (COSTS OFF) SELECT * FROM test_int2 WHERE val = 100::numeric;
                  QUERY PLAN                 
 --------------------------------------------
  Index Scan using idx_int2_val on test_int2
-   Index Cond: (val = '100'::numeric)
+   Index Cond: (val = '100'::smallint)
 (2 rows)
 
 -- Test 1b: int2 = numeric (commutator)
@@ -28,7 +29,7 @@ EXPLAIN (COSTS OFF) SELECT * FROM test_int2 WHERE 100::numeric = val;
                  QUERY PLAN                 
 --------------------------------------------
  Index Scan using idx_int2_val on test_int2
-   Index Cond: (val = '100'::numeric)
+   Index Cond: (val = '100'::smallint)
 (2 rows)
 
 -- ============================================================================
@@ -46,7 +47,7 @@ EXPLAIN (COSTS OFF) SELECT * FROM test_int4 WHERE val = 100::numeric;
                  QUERY PLAN                 
 --------------------------------------------
  Index Scan using idx_int4_val on test_int4
-   Index Cond: (val = '100'::numeric)
+   Index Cond: (val = 100)
 (2 rows)
 
 -- Test 2b: int4 = numeric (commutator)
@@ -54,7 +55,7 @@ EXPLAIN (COSTS OFF) SELECT * FROM test_int4 WHERE 100::numeric = val;
                  QUERY PLAN                 
 --------------------------------------------
  Index Scan using idx_int4_val on test_int4
-   Index Cond: (val = '100'::numeric)
+   Index Cond: (val = 100)
 (2 rows)
 
 -- ============================================================================
@@ -72,7 +73,7 @@ EXPLAIN (COSTS OFF) SELECT * FROM test_int8 WHERE val = 100::numeric;
                  QUERY PLAN                 
 --------------------------------------------
  Index Scan using idx_int8_val on test_int8
-   Index Cond: (val = '100'::numeric)
+   Index Cond: (val = '100'::bigint)
 (2 rows)
 
 -- Test 3b: int8 = numeric (commutator)
@@ -80,7 +81,7 @@ EXPLAIN (COSTS OFF) SELECT * FROM test_int8 WHERE 100::numeric = val;
                  QUERY PLAN                 
 --------------------------------------------
  Index Scan using idx_int8_val on test_int8
-   Index Cond: (val = '100'::numeric)
+   Index Cond: (val = '100'::bigint)
 (2 rows)
 
 -- ============================================================================

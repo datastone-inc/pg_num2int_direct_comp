@@ -14,7 +14,8 @@ MODULES = pg_num2int_direct_comp
 # Phase 9: hash_joins (hash join optimization)
 # Phase 10: merge_joins (documents why merge joins are not supported in v1.0)
 # Phase 11: performance
-REGRESS = numeric_int_ops float_int_ops index_usage range_boundary transitivity edge_cases null_handling special_values index_nested_loop hash_joins merge_joins performance
+# Phase 12: selectivity (constant predicate optimization FR-015/016/017)
+REGRESS = numeric_int_ops float_int_ops index_usage range_boundary transitivity edge_cases null_handling special_values index_nested_loop hash_joins merge_joins performance selectivity
 
 # Build configuration
 PG_CONFIG = pg_config

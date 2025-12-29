@@ -5,12 +5,12 @@ All notable changes to pg_num2int_direct_comp will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2025-12-25
+## [1.0.0] - 2025-12-29
 
 ### Added
 
 - Initial release of pg_num2int_direct_comp extension
-- **72 operators total**: 54 forward + 18 commutator operators for exact comparisons
+- **108 operators total**: 54 forward + 54 commutator operators for exact comparisons
   - Exact equality operators (=, <>) for numeric/float × integer comparisons (18 operators)
   - Exact ordering operators (<, >, <=, >=) for numeric/float × integer comparisons (36 operators)
   - Commutator operators for int × numeric/float (18 operators)
@@ -22,11 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 18 hash wrapper functions (cast integers to numeric/float before hashing)
   - HASHES property on all equality operators
 - Index optimization support via SupportRequestIndexCondition for btree indexes
+- **Constant predicate optimization** via SupportRequestSimplify (FR-015, FR-016, FR-017):
+  - Impossible predicate detection: `int_col = 10.5::numeric` → `FALSE` (rows=0 estimate)
+  - Exact match transformation: `int_col = 100::numeric` → `int_col = 100` (native operator)
+  - Range boundary transformation: `int_col > 10.5` → `int_col >= 11` (correct integer semantics)
+- **Merge join support** for int × numeric via dual btree family membership (integer_ops + numeric_ops)
 - Complete type coverage: (numeric, float4, float8) × (int2, int4, int8)
 - Type alias support: serial, bigserial, smallserial, decimal
 - NULL handling per SQL standard
 - IEEE 754 special value handling (NaN, Infinity) for float types
-- Comprehensive test suite with 11 test files via pg_regress
+- Comprehensive test suite with 13 test files via pg_regress
 - Documentation: README, installation guide, user guide, API reference, research documentation
 - PostgreSQL version support: 12, 13, 14, 15, 16, 17
 - Performance benchmarks showing <10% overhead vs native comparisons
@@ -59,9 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Not Implemented
 
-- **Merge joins**: Not possible due to transitive inference constraints
-  - Adding operators to `integer_ops` would enable invalid planner inferences
-  - Example: Planner could infer `int_col = 10.5` from `int_col = 10` and `10 = 10.5`
-  - Indexed nested loop joins provide equivalent or better performance
+- **Merge joins for int × float**: Not supported due to float precision constraints
+  - Int × float operators are not in btree families (would require both integer_ops and float_ops)
+  - Hash joins and indexed nested loop joins provide excellent performance for these cases
 
 [1.0.0]: https://github.com/dsharpe/pg-num2int-direct-comp/releases/tag/v1.0.0

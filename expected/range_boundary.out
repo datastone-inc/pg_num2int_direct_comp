@@ -83,9 +83,9 @@ EXPLAIN (COSTS OFF) SELECT id FROM boundary_test WHERE id > 10.5::numeric;
                   QUERY PLAN                   
 -----------------------------------------------
  Bitmap Heap Scan on boundary_test
-   Recheck Cond: (id > 10.5)
+   Recheck Cond: (id >= 11)
    ->  Bitmap Index Scan on boundary_test_pkey
-         Index Cond: (id > 10.5)
+         Index Cond: (id >= 11)
 (4 rows)
 
 -- Test 10: Verify EXPLAIN shows Index Scan for integer values
@@ -93,9 +93,9 @@ EXPLAIN (COSTS OFF) SELECT id FROM boundary_test WHERE id >= 10::numeric;
                   QUERY PLAN                   
 -----------------------------------------------
  Bitmap Heap Scan on boundary_test
-   Recheck Cond: (id >= '10'::numeric)
+   Recheck Cond: (id >= 10)
    ->  Bitmap Index Scan on boundary_test_pkey
-         Index Cond: (id >= '10'::numeric)
+         Index Cond: (id >= 10)
 (4 rows)
 
 -- Test 11: Float4 fractional > (should find 11, 12)

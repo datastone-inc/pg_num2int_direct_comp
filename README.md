@@ -407,21 +407,56 @@ SELECT * FROM users WHERE id = 100.0::numeric;  -- Uses exact comparison
 SELECT 10::int4 = 10.0::decimal;  -- true (decimal is alias for numeric)
 ```
 
+### Example 8: Query Optimization - Impossible Predicate Detection
+
+The extension's support functions transform constant predicates during query planning for optimal performance:
+
+```sql
+-- Impossible predicate detection: integer can never equal fractional value
+EXPLAIN (COSTS OFF) SELECT * FROM measurements WHERE value = 10.5::numeric;
+-- Result:
+--  Result
+--    One-Time Filter: false
+-- The planner recognizes this is impossible and returns rows=0 estimate
+
+-- Exact match transformation: uses native integer operator
+EXPLAIN (COSTS OFF) SELECT * FROM measurements WHERE value = 100::numeric;
+-- Result:
+--  Index Scan using measurements_value_idx on measurements
+--    Index Cond: (value = 100)
+-- Transformed from cross-type to native int=int for optimal selectivity
+
+-- Range boundary transformation: adjusts fractional boundaries
+-- "value > 10.5" becomes "value >= 11" (since no integer is between 10 and 11)
+SELECT * FROM measurements WHERE value > 10.5::numeric;
+-- Returns values 11, 12, 13, ... (correctly excludes 10)
+```
+
+These optimizations ensure:
+- Impossible predicates are detected early (rows=0 estimate, potential scan elimination)
+- Exact integer matches use native operators for perfect selectivity
+- Range boundaries are correctly adjusted for integer semantics
+
 ## Limitations
 
-### Merge Joins (Coming Soon)
+### Int × Float Merge Joins Not Supported
 
-**What**: Merge join optimization is planned for v1.0.0. This will require adding operators to the `integer_ops` family with safeguards to prevent invalid transitive inference (see research.md section 4 for details).
+**What**: Merge joins between integer and float types (float4, float8) are not supported due to floating-point precision constraints.
 
-**Current Impact**: Until merge join support lands, queries will use indexed nested loop joins or hash joins. For most real-world queries with selective predicates and indexes, indexed nested loop joins provide equal or better performance than merge joins.
+**Why**: Adding int × float operators to btree families would require them in both `integer_ops` and `float_ops` families. Due to float precision limits, this could enable invalid transitive inferences by the query planner.
 
-**Details**: See [specs/001-num-int-direct-comp/research.md](specs/001-num-int-direct-comp/research.md#4-3-merge-join-implementation-path) for the implementation plan and rationale.
+**Impact**: Int × float joins use hash joins or indexed nested loop joins, which provide excellent performance for most workloads.
+
+### Int × Numeric Merge Joins
+
+✅ **Fully Supported**: Int × numeric operators are in both `integer_ops` and `numeric_ops` btree families, enabling merge joins.
 
 ### Join Strategy Selection
 
-- ✅ **Indexed Nested Loop Joins**: Fully supported and optimized (sub-millisecond on indexed columns)
-- ✅ **Hash Joins**: Fully supported for large table equijoins
-- ❌ **Merge Joins**: Not possible due to architectural constraints
+- ✅ **Indexed Nested Loop Joins**: Fully supported for all type combinations
+- ✅ **Hash Joins**: Fully supported for all type combinations
+- ✅ **Merge Joins**: Supported for int × numeric
+- ❌ **Merge Joins**: Not supported for int × float (use hash join or nested loop)
 
 ## Documentation
 

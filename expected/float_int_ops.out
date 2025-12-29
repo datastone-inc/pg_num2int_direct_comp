@@ -87,7 +87,7 @@ SELECT 9007199254740992::float8 = 9007199254740992::int8 AS "float8=int8_at_limi
 SELECT 9007199254740993::float8 = 9007199254740993::int8 AS "float8=int8_beyond_limit_FALSE";
  float8=int8_beyond_limit_FALSE 
 --------------------------------
- t
+ f
 (1 row)
 
 -- Test 5: Inequality operators with floats

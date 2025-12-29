@@ -31,6 +31,7 @@
 #include "utils/fmgrprotos.h"
 #include "utils/lsyscache.h"
 #include "utils/numeric.h"
+#include "utils/syscache.h"
 #include "fmgr.h"
 #include <math.h>
 
@@ -213,17 +214,553 @@ init_oid_cache(OperatorOidCache *cache) {
   cache->float8_ge_int8_oid = OpernameGetOprid(list_make1(makeString(">=")),
                                                 FLOAT8OID, INT8OID);
   
+  /* Populate commutator less than operator OIDs (int X < numeric/float) */
+  cache->int2_lt_numeric_oid = OpernameGetOprid(list_make1(makeString("<")),
+                                                  INT2OID, NUMERICOID);
+  cache->int2_lt_float4_oid = OpernameGetOprid(list_make1(makeString("<")),
+                                                INT2OID, FLOAT4OID);
+  cache->int2_lt_float8_oid = OpernameGetOprid(list_make1(makeString("<")),
+                                                INT2OID, FLOAT8OID);
+  cache->int4_lt_numeric_oid = OpernameGetOprid(list_make1(makeString("<")),
+                                                  INT4OID, NUMERICOID);
+  cache->int4_lt_float4_oid = OpernameGetOprid(list_make1(makeString("<")),
+                                                INT4OID, FLOAT4OID);
+  cache->int4_lt_float8_oid = OpernameGetOprid(list_make1(makeString("<")),
+                                                INT4OID, FLOAT8OID);
+  cache->int8_lt_numeric_oid = OpernameGetOprid(list_make1(makeString("<")),
+                                                  INT8OID, NUMERICOID);
+  cache->int8_lt_float4_oid = OpernameGetOprid(list_make1(makeString("<")),
+                                                INT8OID, FLOAT4OID);
+  cache->int8_lt_float8_oid = OpernameGetOprid(list_make1(makeString("<")),
+                                                INT8OID, FLOAT8OID);
+  
+  /* Populate commutator greater than operator OIDs (int X > numeric/float) */
+  cache->int2_gt_numeric_oid = OpernameGetOprid(list_make1(makeString(">")),
+                                                  INT2OID, NUMERICOID);
+  cache->int2_gt_float4_oid = OpernameGetOprid(list_make1(makeString(">")),
+                                                INT2OID, FLOAT4OID);
+  cache->int2_gt_float8_oid = OpernameGetOprid(list_make1(makeString(">")),
+                                                INT2OID, FLOAT8OID);
+  cache->int4_gt_numeric_oid = OpernameGetOprid(list_make1(makeString(">")),
+                                                  INT4OID, NUMERICOID);
+  cache->int4_gt_float4_oid = OpernameGetOprid(list_make1(makeString(">")),
+                                                INT4OID, FLOAT4OID);
+  cache->int4_gt_float8_oid = OpernameGetOprid(list_make1(makeString(">")),
+                                                INT4OID, FLOAT8OID);
+  cache->int8_gt_numeric_oid = OpernameGetOprid(list_make1(makeString(">")),
+                                                  INT8OID, NUMERICOID);
+  cache->int8_gt_float4_oid = OpernameGetOprid(list_make1(makeString(">")),
+                                                INT8OID, FLOAT4OID);
+  cache->int8_gt_float8_oid = OpernameGetOprid(list_make1(makeString(">")),
+                                                INT8OID, FLOAT8OID);
+  
+  /* Populate commutator less than or equal operator OIDs (int X <= numeric/float) */
+  cache->int2_le_numeric_oid = OpernameGetOprid(list_make1(makeString("<=")),
+                                                  INT2OID, NUMERICOID);
+  cache->int2_le_float4_oid = OpernameGetOprid(list_make1(makeString("<=")),
+                                                INT2OID, FLOAT4OID);
+  cache->int2_le_float8_oid = OpernameGetOprid(list_make1(makeString("<=")),
+                                                INT2OID, FLOAT8OID);
+  cache->int4_le_numeric_oid = OpernameGetOprid(list_make1(makeString("<=")),
+                                                  INT4OID, NUMERICOID);
+  cache->int4_le_float4_oid = OpernameGetOprid(list_make1(makeString("<=")),
+                                                INT4OID, FLOAT4OID);
+  cache->int4_le_float8_oid = OpernameGetOprid(list_make1(makeString("<=")),
+                                                INT4OID, FLOAT8OID);
+  cache->int8_le_numeric_oid = OpernameGetOprid(list_make1(makeString("<=")),
+                                                  INT8OID, NUMERICOID);
+  cache->int8_le_float4_oid = OpernameGetOprid(list_make1(makeString("<=")),
+                                                INT8OID, FLOAT4OID);
+  cache->int8_le_float8_oid = OpernameGetOprid(list_make1(makeString("<=")),
+                                                INT8OID, FLOAT8OID);
+  
+  /* Populate commutator greater than or equal operator OIDs (int X >= numeric/float) */
+  cache->int2_ge_numeric_oid = OpernameGetOprid(list_make1(makeString(">=")),
+                                                  INT2OID, NUMERICOID);
+  cache->int2_ge_float4_oid = OpernameGetOprid(list_make1(makeString(">=")),
+                                                INT2OID, FLOAT4OID);
+  cache->int2_ge_float8_oid = OpernameGetOprid(list_make1(makeString(">=")),
+                                                INT2OID, FLOAT8OID);
+  cache->int4_ge_numeric_oid = OpernameGetOprid(list_make1(makeString(">=")),
+                                                  INT4OID, NUMERICOID);
+  cache->int4_ge_float4_oid = OpernameGetOprid(list_make1(makeString(">=")),
+                                                INT4OID, FLOAT4OID);
+  cache->int4_ge_float8_oid = OpernameGetOprid(list_make1(makeString(">=")),
+                                                INT4OID, FLOAT8OID);
+  cache->int8_ge_numeric_oid = OpernameGetOprid(list_make1(makeString(">=")),
+                                                  INT8OID, NUMERICOID);
+  cache->int8_ge_float4_oid = OpernameGetOprid(list_make1(makeString(">=")),
+                                                INT8OID, FLOAT4OID);
+  cache->int8_ge_float8_oid = OpernameGetOprid(list_make1(makeString(">=")),
+                                                INT8OID, FLOAT8OID);
+  
   cache->initialized = true;
 }
 
+/*
+ * ============================================================================
+ * Support Function Helper Types and Functions
+ * ============================================================================
+ * These helpers are shared between SupportRequestIndexCondition and
+ * SupportRequestSimplify handlers to avoid code duplication.
+ */
+
 /**
- * @brief Generic support function for index optimization
+ * @brief Operator type classification
+ */
+typedef enum {
+  OP_TYPE_UNKNOWN = 0,
+  OP_TYPE_EQ,
+  OP_TYPE_NE,
+  OP_TYPE_LT,
+  OP_TYPE_GT,
+  OP_TYPE_LE,
+  OP_TYPE_GE
+} OpType;
+
+/**
+ * @brief Result of constant conversion
+ */
+typedef struct {
+  bool valid;          /**< True if conversion succeeded */
+  bool has_fraction;   /**< True if constant has fractional part */
+  int64 int_val;       /**< Converted integer value (truncated) */
+} ConstConversion;
+
+/**
+ * @brief Classify an operator OID into OpType
+ * @param opno Operator OID
+ * @return OpType classification
+ */
+static OpType
+classify_operator(Oid opno) {
+  /* Initialize cache if needed */
+  init_oid_cache(&oid_cache);
+  
+  /* Check equality operators */
+  if (opno == oid_cache.numeric_eq_int2_oid || opno == oid_cache.numeric_eq_int4_oid ||
+      opno == oid_cache.numeric_eq_int8_oid || opno == oid_cache.float4_eq_int2_oid ||
+      opno == oid_cache.float4_eq_int4_oid || opno == oid_cache.float4_eq_int8_oid ||
+      opno == oid_cache.float8_eq_int2_oid || opno == oid_cache.float8_eq_int4_oid ||
+      opno == oid_cache.float8_eq_int8_oid || opno == oid_cache.int2_eq_numeric_oid ||
+      opno == oid_cache.int2_eq_float4_oid || opno == oid_cache.int2_eq_float8_oid ||
+      opno == oid_cache.int4_eq_numeric_oid || opno == oid_cache.int4_eq_float4_oid ||
+      opno == oid_cache.int4_eq_float8_oid || opno == oid_cache.int8_eq_numeric_oid ||
+      opno == oid_cache.int8_eq_float4_oid || opno == oid_cache.int8_eq_float8_oid) {
+    return OP_TYPE_EQ;
+  }
+  
+  /* Check inequality operators */
+  if (opno == oid_cache.numeric_ne_int2_oid || opno == oid_cache.numeric_ne_int4_oid ||
+      opno == oid_cache.numeric_ne_int8_oid || opno == oid_cache.float4_ne_int2_oid ||
+      opno == oid_cache.float4_ne_int4_oid || opno == oid_cache.float4_ne_int8_oid ||
+      opno == oid_cache.float8_ne_int2_oid || opno == oid_cache.float8_ne_int4_oid ||
+      opno == oid_cache.float8_ne_int8_oid || opno == oid_cache.int2_ne_numeric_oid ||
+      opno == oid_cache.int2_ne_float4_oid || opno == oid_cache.int2_ne_float8_oid ||
+      opno == oid_cache.int4_ne_numeric_oid || opno == oid_cache.int4_ne_float4_oid ||
+      opno == oid_cache.int4_ne_float8_oid || opno == oid_cache.int8_ne_numeric_oid ||
+      opno == oid_cache.int8_ne_float4_oid || opno == oid_cache.int8_ne_float8_oid) {
+    return OP_TYPE_NE;
+  }
+  
+  /* Check < operators */
+  if (opno == oid_cache.numeric_lt_int2_oid || opno == oid_cache.numeric_lt_int4_oid ||
+      opno == oid_cache.numeric_lt_int8_oid || opno == oid_cache.float4_lt_int2_oid ||
+      opno == oid_cache.float4_lt_int4_oid || opno == oid_cache.float4_lt_int8_oid ||
+      opno == oid_cache.float8_lt_int2_oid || opno == oid_cache.float8_lt_int4_oid ||
+      opno == oid_cache.float8_lt_int8_oid || opno == oid_cache.int2_lt_numeric_oid ||
+      opno == oid_cache.int2_lt_float4_oid || opno == oid_cache.int2_lt_float8_oid ||
+      opno == oid_cache.int4_lt_numeric_oid || opno == oid_cache.int4_lt_float4_oid ||
+      opno == oid_cache.int4_lt_float8_oid || opno == oid_cache.int8_lt_numeric_oid ||
+      opno == oid_cache.int8_lt_float4_oid || opno == oid_cache.int8_lt_float8_oid) {
+    return OP_TYPE_LT;
+  }
+  
+  /* Check > operators */
+  if (opno == oid_cache.numeric_gt_int2_oid || opno == oid_cache.numeric_gt_int4_oid ||
+      opno == oid_cache.numeric_gt_int8_oid || opno == oid_cache.float4_gt_int2_oid ||
+      opno == oid_cache.float4_gt_int4_oid || opno == oid_cache.float4_gt_int8_oid ||
+      opno == oid_cache.float8_gt_int2_oid || opno == oid_cache.float8_gt_int4_oid ||
+      opno == oid_cache.float8_gt_int8_oid || opno == oid_cache.int2_gt_numeric_oid ||
+      opno == oid_cache.int2_gt_float4_oid || opno == oid_cache.int2_gt_float8_oid ||
+      opno == oid_cache.int4_gt_numeric_oid || opno == oid_cache.int4_gt_float4_oid ||
+      opno == oid_cache.int4_gt_float8_oid || opno == oid_cache.int8_gt_numeric_oid ||
+      opno == oid_cache.int8_gt_float4_oid || opno == oid_cache.int8_gt_float8_oid) {
+    return OP_TYPE_GT;
+  }
+  
+  /* Check <= operators */
+  if (opno == oid_cache.numeric_le_int2_oid || opno == oid_cache.numeric_le_int4_oid ||
+      opno == oid_cache.numeric_le_int8_oid || opno == oid_cache.float4_le_int2_oid ||
+      opno == oid_cache.float4_le_int4_oid || opno == oid_cache.float4_le_int8_oid ||
+      opno == oid_cache.float8_le_int2_oid || opno == oid_cache.float8_le_int4_oid ||
+      opno == oid_cache.float8_le_int8_oid || opno == oid_cache.int2_le_numeric_oid ||
+      opno == oid_cache.int2_le_float4_oid || opno == oid_cache.int2_le_float8_oid ||
+      opno == oid_cache.int4_le_numeric_oid || opno == oid_cache.int4_le_float4_oid ||
+      opno == oid_cache.int4_le_float8_oid || opno == oid_cache.int8_le_numeric_oid ||
+      opno == oid_cache.int8_le_float4_oid || opno == oid_cache.int8_le_float8_oid) {
+    return OP_TYPE_LE;
+  }
+  
+  /* Check >= operators */
+  if (opno == oid_cache.numeric_ge_int2_oid || opno == oid_cache.numeric_ge_int4_oid ||
+      opno == oid_cache.numeric_ge_int8_oid || opno == oid_cache.float4_ge_int2_oid ||
+      opno == oid_cache.float4_ge_int4_oid || opno == oid_cache.float4_ge_int8_oid ||
+      opno == oid_cache.float8_ge_int2_oid || opno == oid_cache.float8_ge_int4_oid ||
+      opno == oid_cache.float8_ge_int8_oid || opno == oid_cache.int2_ge_numeric_oid ||
+      opno == oid_cache.int2_ge_float4_oid || opno == oid_cache.int2_ge_float8_oid ||
+      opno == oid_cache.int4_ge_numeric_oid || opno == oid_cache.int4_ge_float4_oid ||
+      opno == oid_cache.int4_ge_float8_oid || opno == oid_cache.int8_ge_numeric_oid ||
+      opno == oid_cache.int8_ge_float4_oid || opno == oid_cache.int8_ge_float8_oid) {
+    return OP_TYPE_GE;
+  }
+  
+  return OP_TYPE_UNKNOWN;
+}
+
+/**
+ * @brief Find operator OID from function OID by searching cached operators
+ * @param funcid Function OID to match
+ * @param op_type Output: operator type classification
+ * @return Matching operator OID or InvalidOid
+ */
+static Oid
+find_operator_by_funcid(Oid funcid, OpType *op_type) {
+  HeapTuple opertup;
+  Form_pg_operator operform;
+  
+  /* Array of all operators to check, grouped by type */
+  struct {
+    Oid *ops;
+    int count;
+    OpType type;
+  } op_groups[] = {
+    /* Equality operators */
+    { (Oid[]){oid_cache.numeric_eq_int2_oid, oid_cache.numeric_eq_int4_oid,
+              oid_cache.numeric_eq_int8_oid, oid_cache.float4_eq_int2_oid,
+              oid_cache.float4_eq_int4_oid, oid_cache.float4_eq_int8_oid,
+              oid_cache.float8_eq_int2_oid, oid_cache.float8_eq_int4_oid,
+              oid_cache.float8_eq_int8_oid, oid_cache.int2_eq_numeric_oid,
+              oid_cache.int2_eq_float4_oid, oid_cache.int2_eq_float8_oid,
+              oid_cache.int4_eq_numeric_oid, oid_cache.int4_eq_float4_oid,
+              oid_cache.int4_eq_float8_oid, oid_cache.int8_eq_numeric_oid,
+              oid_cache.int8_eq_float4_oid, oid_cache.int8_eq_float8_oid}, 18, OP_TYPE_EQ },
+    /* Inequality operators */
+    { (Oid[]){oid_cache.numeric_ne_int2_oid, oid_cache.numeric_ne_int4_oid,
+              oid_cache.numeric_ne_int8_oid, oid_cache.float4_ne_int2_oid,
+              oid_cache.float4_ne_int4_oid, oid_cache.float4_ne_int8_oid,
+              oid_cache.float8_ne_int2_oid, oid_cache.float8_ne_int4_oid,
+              oid_cache.float8_ne_int8_oid, oid_cache.int2_ne_numeric_oid,
+              oid_cache.int2_ne_float4_oid, oid_cache.int2_ne_float8_oid,
+              oid_cache.int4_ne_numeric_oid, oid_cache.int4_ne_float4_oid,
+              oid_cache.int4_ne_float8_oid, oid_cache.int8_ne_numeric_oid,
+              oid_cache.int8_ne_float4_oid, oid_cache.int8_ne_float8_oid}, 18, OP_TYPE_NE },
+    /* Less than operators */
+    { (Oid[]){oid_cache.numeric_lt_int2_oid, oid_cache.numeric_lt_int4_oid,
+              oid_cache.numeric_lt_int8_oid, oid_cache.float4_lt_int2_oid,
+              oid_cache.float4_lt_int4_oid, oid_cache.float4_lt_int8_oid,
+              oid_cache.float8_lt_int2_oid, oid_cache.float8_lt_int4_oid,
+              oid_cache.float8_lt_int8_oid, oid_cache.int2_lt_numeric_oid,
+              oid_cache.int2_lt_float4_oid, oid_cache.int2_lt_float8_oid,
+              oid_cache.int4_lt_numeric_oid, oid_cache.int4_lt_float4_oid,
+              oid_cache.int4_lt_float8_oid, oid_cache.int8_lt_numeric_oid,
+              oid_cache.int8_lt_float4_oid, oid_cache.int8_lt_float8_oid}, 18, OP_TYPE_LT },
+    /* Greater than operators */
+    { (Oid[]){oid_cache.numeric_gt_int2_oid, oid_cache.numeric_gt_int4_oid,
+              oid_cache.numeric_gt_int8_oid, oid_cache.float4_gt_int2_oid,
+              oid_cache.float4_gt_int4_oid, oid_cache.float4_gt_int8_oid,
+              oid_cache.float8_gt_int2_oid, oid_cache.float8_gt_int4_oid,
+              oid_cache.float8_gt_int8_oid, oid_cache.int2_gt_numeric_oid,
+              oid_cache.int2_gt_float4_oid, oid_cache.int2_gt_float8_oid,
+              oid_cache.int4_gt_numeric_oid, oid_cache.int4_gt_float4_oid,
+              oid_cache.int4_gt_float8_oid, oid_cache.int8_gt_numeric_oid,
+              oid_cache.int8_gt_float4_oid, oid_cache.int8_gt_float8_oid}, 18, OP_TYPE_GT },
+    /* Less than or equal operators */
+    { (Oid[]){oid_cache.numeric_le_int2_oid, oid_cache.numeric_le_int4_oid,
+              oid_cache.numeric_le_int8_oid, oid_cache.float4_le_int2_oid,
+              oid_cache.float4_le_int4_oid, oid_cache.float4_le_int8_oid,
+              oid_cache.float8_le_int2_oid, oid_cache.float8_le_int4_oid,
+              oid_cache.float8_le_int8_oid, oid_cache.int2_le_numeric_oid,
+              oid_cache.int2_le_float4_oid, oid_cache.int2_le_float8_oid,
+              oid_cache.int4_le_numeric_oid, oid_cache.int4_le_float4_oid,
+              oid_cache.int4_le_float8_oid, oid_cache.int8_le_numeric_oid,
+              oid_cache.int8_le_float4_oid, oid_cache.int8_le_float8_oid}, 18, OP_TYPE_LE },
+    /* Greater than or equal operators */
+    { (Oid[]){oid_cache.numeric_ge_int2_oid, oid_cache.numeric_ge_int4_oid,
+              oid_cache.numeric_ge_int8_oid, oid_cache.float4_ge_int2_oid,
+              oid_cache.float4_ge_int4_oid, oid_cache.float4_ge_int8_oid,
+              oid_cache.float8_ge_int2_oid, oid_cache.float8_ge_int4_oid,
+              oid_cache.float8_ge_int8_oid, oid_cache.int2_ge_numeric_oid,
+              oid_cache.int2_ge_float4_oid, oid_cache.int2_ge_float8_oid,
+              oid_cache.int4_ge_numeric_oid, oid_cache.int4_ge_float4_oid,
+              oid_cache.int4_ge_float8_oid, oid_cache.int8_ge_numeric_oid,
+              oid_cache.int8_ge_float4_oid, oid_cache.int8_ge_float8_oid}, 18, OP_TYPE_GE }
+  };
+  
+  for (int g = 0; g < 6; g++) {
+    for (int i = 0; i < op_groups[g].count; i++) {
+      Oid op_oid = op_groups[g].ops[i];
+      opertup = SearchSysCache1(OPEROID, ObjectIdGetDatum(op_oid));
+      if (HeapTupleIsValid(opertup)) {
+        operform = (Form_pg_operator) GETSTRUCT(opertup);
+        bool match = (operform->oprcode == funcid);
+        ReleaseSysCache(opertup);
+        if (match) {
+          *op_type = op_groups[g].type;
+          return op_oid;
+        }
+      }
+    }
+  }
+  
+  *op_type = OP_TYPE_UNKNOWN;
+  return InvalidOid;
+}
+
+/**
+ * @brief Convert a numeric/float constant to integer
+ * @param const_node Constant node to convert
+ * @param int_type Target integer type OID (INT2OID, INT4OID, INT8OID)
+ * @return Conversion result with validity flag, fractional flag, and value
+ */
+static ConstConversion
+convert_const_to_int(Const *const_node, Oid int_type) {
+  ConstConversion result = {false, false, 0};
+  Oid const_type = const_node->consttype;
+  
+  if (const_node->constisnull) {
+    return result;
+  }
+  
+  if (const_type == NUMERICOID) {
+    Numeric num = DatumGetNumeric(const_node->constvalue);
+    Numeric trunc_num;
+    Numeric floor_num;
+    
+    if (numeric_is_nan(num) || numeric_is_inf(num)) {
+      return result;
+    }
+    
+    /* Check for fractional part using trunc(numeric) (OID 1710) and numeric_eq (OID 1718) */
+    trunc_num = DatumGetNumeric(OidFunctionCall1(1710, NumericGetDatum(num)));
+    result.has_fraction = !DatumGetBool(OidFunctionCall2(1718,
+                                                          NumericGetDatum(num),
+                                                          NumericGetDatum(trunc_num)));
+    
+    /* Use floor() (OID 1712) for consistent rounding toward negative infinity */
+    floor_num = DatumGetNumeric(OidFunctionCall1(1712, NumericGetDatum(num)));
+    
+    /* Convert floor value to integer */
+    PG_TRY();
+    {
+      if (int_type == INT2OID) {
+        Datum d = OidFunctionCall1(NUM2INT_CAST_NUMERIC_INT2, NumericGetDatum(floor_num));
+        result.int_val = DatumGetInt16(d);
+        result.valid = true;
+      } else if (int_type == INT4OID) {
+        Datum d = OidFunctionCall1(NUM2INT_CAST_NUMERIC_INT4, NumericGetDatum(floor_num));
+        result.int_val = DatumGetInt32(d);
+        result.valid = true;
+      } else if (int_type == INT8OID) {
+        Datum d = OidFunctionCall1(NUM2INT_CAST_NUMERIC_INT8, NumericGetDatum(floor_num));
+        result.int_val = DatumGetInt64(d);
+        result.valid = true;
+      }
+    }
+    PG_CATCH();
+    {
+      FlushErrorState();
+      result.valid = false;
+    }
+    PG_END_TRY();
+  } else if (const_type == FLOAT4OID) {
+    float4 fval = DatumGetFloat4(const_node->constvalue);
+    
+    if (isnan(fval) || isinf(fval)) {
+      return result;
+    }
+    
+    result.has_fraction = (fval != floorf(fval));
+    
+    /* Use floor for consistent rounding toward negative infinity */
+    float4 floor_val = floorf(fval);
+    if (int_type == INT2OID) {
+      if (floor_val >= PG_INT16_MIN && floor_val <= PG_INT16_MAX) {
+        result.int_val = (int16) floor_val;
+        result.valid = true;
+      }
+    } else if (int_type == INT4OID) {
+      if (floor_val >= PG_INT32_MIN && floor_val <= PG_INT32_MAX) {
+        result.int_val = (int32) floor_val;
+        result.valid = true;
+      }
+    } else if (int_type == INT8OID) {
+      result.int_val = (int64) floor_val;
+      result.valid = true;
+    }
+  } else if (const_type == FLOAT8OID) {
+    float8 dval = DatumGetFloat8(const_node->constvalue);
+    
+    if (isnan(dval) || isinf(dval)) {
+      return result;
+    }
+    
+    result.has_fraction = (dval != floor(dval));
+    
+    /* Use floor for consistent rounding toward negative infinity */
+    float8 floor_val = floor(dval);
+    if (int_type == INT2OID) {
+      if (floor_val >= PG_INT16_MIN && floor_val <= PG_INT16_MAX) {
+        result.int_val = (int16) floor_val;
+        result.valid = true;
+      }
+    } else if (int_type == INT4OID) {
+      if (floor_val >= PG_INT32_MIN && floor_val <= PG_INT32_MAX) {
+        result.int_val = (int32) floor_val;
+        result.valid = true;
+      }
+    } else if (int_type == INT8OID) {
+      result.int_val = (int64) floor_val;
+      result.valid = true;
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * @brief Get native integer operator OID for given operator type and integer type
+ * @param op_type Operator type classification
+ * @param int_type Integer type OID
+ * @return Native operator OID for same-type comparison
+ */
+static Oid
+get_native_op_oid(OpType op_type, Oid int_type) {
+  switch (op_type) {
+    case OP_TYPE_EQ:
+      if (int_type == INT2OID) return NUM2INT_INT2EQ_OID;
+      if (int_type == INT4OID) return NUM2INT_INT4EQ_OID;
+      return NUM2INT_INT8EQ_OID;
+    case OP_TYPE_NE:
+      if (int_type == INT2OID) return NUM2INT_INT2NE_OID;
+      if (int_type == INT4OID) return NUM2INT_INT4NE_OID;
+      return NUM2INT_INT8NE_OID;
+    case OP_TYPE_LT:
+      if (int_type == INT2OID) return NUM2INT_INT2LT_OID;
+      if (int_type == INT4OID) return NUM2INT_INT4LT_OID;
+      return NUM2INT_INT8LT_OID;
+    case OP_TYPE_GT:
+      if (int_type == INT2OID) return NUM2INT_INT2GT_OID;
+      if (int_type == INT4OID) return NUM2INT_INT4GT_OID;
+      return NUM2INT_INT8GT_OID;
+    case OP_TYPE_LE:
+      if (int_type == INT2OID) return NUM2INT_INT2LE_OID;
+      if (int_type == INT4OID) return NUM2INT_INT4LE_OID;
+      return NUM2INT_INT8LE_OID;
+    case OP_TYPE_GE:
+      if (int_type == INT2OID) return NUM2INT_INT2GE_OID;
+      if (int_type == INT4OID) return NUM2INT_INT4GE_OID;
+      return NUM2INT_INT8GE_OID;
+    default:
+      return InvalidOid;
+  }
+}
+
+/**
+ * @brief Create an integer constant node
+ * @param int_type Integer type OID
+ * @param int_val Integer value
+ * @return New Const node
+ */
+static Const *
+make_int_const(Oid int_type, int64 int_val) {
+  if (int_type == INT2OID) {
+    return makeConst(INT2OID, -1, InvalidOid, sizeof(int16),
+                     Int16GetDatum((int16) int_val), false, true);
+  } else if (int_type == INT4OID) {
+    return makeConst(INT4OID, -1, InvalidOid, sizeof(int32),
+                     Int32GetDatum((int32) int_val), false, true);
+  } else {
+    return makeConst(INT8OID, -1, InvalidOid, sizeof(int64),
+                     Int64GetDatum(int_val), false, true);
+  }
+}
+
+/**
+ * @brief Build transformed OpExpr using native integer operator
+ * @param native_op_oid Native operator OID
+ * @param var_node Variable node (will be copied)
+ * @param int_val Integer constant value
+ * @param int_type Integer type OID
+ * @param location Source location for new expression
+ * @param inputcollid Input collation ID
+ * @return New OpExpr node
+ */
+static OpExpr *
+build_native_opexpr(Oid native_op_oid, Var *var_node, int64 int_val,
+                    Oid int_type, int location, Oid inputcollid) {
+  Var *new_var = (Var *) copyObject(var_node);
+  Const *new_const = make_int_const(int_type, int_val);
+  
+  OpExpr *new_clause = (OpExpr *) make_opclause(native_op_oid,
+                                                 BOOLOID,
+                                                 false,
+                                                 (Expr *) new_var,
+                                                 (Expr *) new_const,
+                                                 InvalidOid,
+                                                 InvalidOid);
+  new_clause->inputcollid = inputcollid;
+  new_clause->location = location;
+  
+  return new_clause;
+}
+
+/**
+ * @brief Compute adjusted value and operator for range predicates with fractions
+ * @param op_type Original operator type
+ * @param int_type Integer type OID
+ * @param int_val Truncated integer value
+ * @param has_fraction Whether constant has fractional part
+ * @param adjusted_val Output: adjusted integer value
+ * @return Native operator OID to use
+ */
+static Oid
+compute_range_transform(OpType op_type, Oid int_type, int64 int_val,
+                        bool has_fraction, int64 *adjusted_val) {
+  *adjusted_val = int_val;
+  
+  if (has_fraction) {
+    if (op_type == OP_TYPE_GT || op_type == OP_TYPE_GE) {
+      /* > 10.5 or >= 10.5 becomes >= 11 */
+      *adjusted_val = int_val + 1;
+      return get_native_op_oid(OP_TYPE_GE, int_type);
+    } else {
+      /* < 10.5 or <= 10.5 becomes <= 10 */
+      return get_native_op_oid(OP_TYPE_LE, int_type);
+    }
+  }
+  
+  /* No fraction - preserve original operator */
+  return get_native_op_oid(op_type, int_type);
+}
+
+/*
+ * ============================================================================
+ * Main Support Function
+ * ============================================================================
+ */
+
+/**
+ * @brief Generic support function for query optimization
  * @param fcinfo Function call context
  * @return Node pointer or NULL
  *
- * Implements SupportRequestIndexCondition to enable btree index usage
- * for exact comparison predicates. Inspects operator OID, validates
- * constant operand is within range, and transforms predicate for index scan.
+ * Handles two request types:
+ * - SupportRequestIndexCondition: Transforms predicates for btree index scans
+ * - SupportRequestSimplify: Simplifies constant predicates (FR-015, FR-016, FR-017)
+ *   - FR-015: Equality with fractional value → FALSE
+ *   - FR-016: Equality with exact integer → native operator
+ *   - FR-017: Range with fraction → adjusted boundary
  */
 PG_FUNCTION_INFO_V1(num2int_support);
 Datum
@@ -231,532 +768,161 @@ num2int_support(PG_FUNCTION_ARGS) {
   Node *rawreq = (Node *) PG_GETARG_POINTER(0);
   Node *ret = NULL;
   
+  /* Initialize OID cache on first use */
+  init_oid_cache(&oid_cache);
+  
   if (IsA(rawreq, SupportRequestIndexCondition)) {
+    /*
+     * SupportRequestIndexCondition: Transform predicates for btree index scans
+     */
     SupportRequestIndexCondition *req = (SupportRequestIndexCondition *) rawreq;
+    req->lossy = false;
     
-    /* Initialize output fields */
-    req->lossy = false;  /* Our transformation is exact, not lossy */
+    if (!is_opclause(req->node)) {
+      PG_RETURN_POINTER(NULL);
+    }
     
-    /* Initialize OID cache on first use */
-    init_oid_cache(&oid_cache);
+    OpExpr *clause = (OpExpr *) req->node;
+    Oid opno = clause->opno;
     
-    /* Check if this is an OpExpr (operator clause) */
-    if (is_opclause(req->node)) {
-      OpExpr *clause = (OpExpr *) req->node;
-      Oid opno = clause->opno;
-      Node *leftop;
-      Node *rightop;
-      Var *var_node = NULL;
-      Const *const_node = NULL;
-      
-      /* Extract left and right operands */
-      if (list_length(clause->args) != 2) {
-        PG_RETURN_POINTER(NULL);
-      }
-      
-      leftop = (Node *) linitial(clause->args);
-      rightop = (Node *) lsecond(clause->args);
-      
-      /* Identify Var and Const positions */
-      if (IsA(leftop, Const) && IsA(rightop, Var)) {
-        const_node = (Const *) leftop;
-        var_node = (Var *) rightop;
-      } else if (IsA(leftop, Var) && IsA(rightop, Const)) {
-        var_node = (Var *) leftop;
-        const_node = (Const *) rightop;
+    if (list_length(clause->args) != 2) {
+      PG_RETURN_POINTER(NULL);
+    }
+    
+    Node *leftop = (Node *) linitial(clause->args);
+    Node *rightop = (Node *) lsecond(clause->args);
+    Var *var_node = NULL;
+    Const *const_node = NULL;
+    
+    /* Identify Var and Const positions */
+    if (IsA(leftop, Const) && IsA(rightop, Var)) {
+      const_node = (Const *) leftop;
+      var_node = (Var *) rightop;
+    } else if (IsA(leftop, Var) && IsA(rightop, Const)) {
+      var_node = (Var *) leftop;
+      const_node = (Const *) rightop;
+    } else {
+      PG_RETURN_POINTER(NULL);
+    }
+    
+    /* Classify the operator */
+    OpType op_type = classify_operator(opno);
+    if (op_type == OP_TYPE_UNKNOWN) {
+      PG_RETURN_POINTER(NULL);
+    }
+    
+    /* Convert constant to integer */
+    Oid int_type = var_node->vartype;
+    ConstConversion conv = convert_const_to_int(const_node, int_type);
+    if (!conv.valid) {
+      PG_RETURN_POINTER(NULL);
+    }
+    
+    /* For equality with fractional value, index scan won't help - return NULL */
+    if (op_type == OP_TYPE_EQ && conv.has_fraction) {
+      PG_RETURN_POINTER(NULL);
+    }
+    
+    /* Compute the native operator and adjusted value */
+    int64 adjusted_val = conv.int_val;
+    Oid native_op_oid;
+    
+    if (op_type == OP_TYPE_EQ || op_type == OP_TYPE_NE) {
+      native_op_oid = get_native_op_oid(op_type, int_type);
+    } else {
+      native_op_oid = compute_range_transform(op_type, int_type, conv.int_val,
+                                               conv.has_fraction, &adjusted_val);
+    }
+    
+    /* Build transformed expression */
+    OpExpr *new_clause = build_native_opexpr(native_op_oid, var_node, adjusted_val,
+                                              int_type, clause->location,
+                                              clause->inputcollid);
+    
+    ret = (Node *) list_make1(new_clause);
+  }
+  else if (IsA(rawreq, SupportRequestSimplify)) {
+    /*
+     * SupportRequestSimplify: Transform constant predicates at simplification time
+     * 
+     * - FR-015: Equality with fractional value → FALSE
+     * - FR-016: Equality with exact integer → native operator
+     * - FR-017: Range with fraction → adjusted boundary
+     */
+    SupportRequestSimplify *req = (SupportRequestSimplify *) rawreq;
+    FuncExpr *func = req->fcall;
+    
+    if (list_length(func->args) != 2) {
+      PG_RETURN_POINTER(NULL);
+    }
+    
+    Node *leftop = (Node *) linitial(func->args);
+    Node *rightop = (Node *) lsecond(func->args);
+    Var *var_node = NULL;
+    Const *const_node = NULL;
+    
+    /* Identify Var and Const positions */
+    if (IsA(leftop, Const) && IsA(rightop, Var)) {
+      const_node = (Const *) leftop;
+      var_node = (Var *) rightop;
+    } else if (IsA(leftop, Var) && IsA(rightop, Const)) {
+      var_node = (Var *) leftop;
+      const_node = (Const *) rightop;
+    } else {
+      PG_RETURN_POINTER(NULL);
+    }
+    
+    if (const_node->constisnull) {
+      PG_RETURN_POINTER(NULL);
+    }
+    
+    /* Find the operator that uses this function */
+    OpType op_type;
+    Oid opno = find_operator_by_funcid(func->funcid, &op_type);
+    if (opno == InvalidOid) {
+      PG_RETURN_POINTER(NULL);
+    }
+    
+    /* Convert constant to integer */
+    Oid int_type = var_node->vartype;
+    ConstConversion conv = convert_const_to_int(const_node, int_type);
+    if (!conv.valid) {
+      PG_RETURN_POINTER(NULL);
+    }
+    
+    /* Apply transformation based on operator type and fractional status */
+    if (op_type == OP_TYPE_EQ) {
+      if (conv.has_fraction) {
+        /* FR-015: Equality with fractional value is always FALSE */
+        ret = (Node *) makeBoolConst(false, false);
       } else {
-        /* Not Var + Const pattern */
-        PG_RETURN_POINTER(NULL);
+        /* FR-016: Equality with exact integer - transform to native operator */
+        Oid native_op_oid = get_native_op_oid(OP_TYPE_EQ, int_type);
+        ret = (Node *) build_native_opexpr(native_op_oid, var_node, conv.int_val,
+                                            int_type, func->location, InvalidOid);
       }
-      
-      /* Check if this is one of our equality operators */
-      if (opno == oid_cache.numeric_eq_int2_oid ||
-          opno == oid_cache.numeric_eq_int4_oid ||
-          opno == oid_cache.numeric_eq_int8_oid ||
-          opno == oid_cache.float4_eq_int2_oid ||
-          opno == oid_cache.float4_eq_int4_oid ||
-          opno == oid_cache.float4_eq_int8_oid ||
-          opno == oid_cache.float8_eq_int2_oid ||
-          opno == oid_cache.float8_eq_int4_oid ||
-          opno == oid_cache.float8_eq_int8_oid ||
-          opno == oid_cache.int2_eq_numeric_oid ||
-          opno == oid_cache.int2_eq_float4_oid ||
-          opno == oid_cache.int2_eq_float8_oid ||
-          opno == oid_cache.int4_eq_numeric_oid ||
-          opno == oid_cache.int4_eq_float4_oid ||
-          opno == oid_cache.int4_eq_float8_oid ||
-          opno == oid_cache.int8_eq_numeric_oid ||
-          opno == oid_cache.int8_eq_float4_oid ||
-          opno == oid_cache.int8_eq_float8_oid) {
-        
-        /* Transform: convert numeric/float const to int const */
-        /* Create new OpExpr using standard int = int operator */
-        Const *new_const = NULL;
-        OpExpr *new_clause = NULL;
-        Var *new_var;
-        Oid standard_eq_oid;
-        Oid int_type = var_node->vartype;
-        int64 int_val;
-        bool is_valid = false;
-        
-        /* Convert const to integer value based on type */
-        if (const_node->constisnull) {
-          PG_RETURN_POINTER(NULL);
-        }
-        
-        if (const_node->consttype == NUMERICOID) {
-          Numeric num = DatumGetNumeric(const_node->constvalue);
-          
-          /* Skip NaN/Inf */
-          if (numeric_is_nan(num) || numeric_is_inf(num)) {
-            PG_RETURN_POINTER(NULL);
-          }
-          
-          /* Convert using PostgreSQL's built-in cast functions: int2(numeric), int4(numeric), int8(numeric) */
-          PG_TRY();
-          {
-            if (int_type == INT2OID) {
-              /* Use int2(numeric) cast - OID 1783 */
-              Datum result = OidFunctionCall1(1783, NumericGetDatum(num));
-              int_val = DatumGetInt16(result);
-              is_valid = true;
-            } else if (int_type == INT4OID) {
-              /* Use int4(numeric) cast - OID 1744 */
-              Datum result = OidFunctionCall1(1744, NumericGetDatum(num));
-              int_val = DatumGetInt32(result);
-              is_valid = true;
-            } else if (int_type == INT8OID) {
-              /* Use int8(numeric) cast - OID 1779 */
-              Datum result = OidFunctionCall1(1779, NumericGetDatum(num));
-              int_val = DatumGetInt64(result);
-              is_valid = true;
-            }
-          }
-          PG_CATCH();
-          {
-            /* Conversion failed - out of range */
-            FlushErrorState();
-            is_valid = false;
-          }
-          PG_END_TRY();
-          
-          if (!is_valid) {
-            /* Conversion failed - out of range */
-            PG_RETURN_POINTER(NULL);
-          }
-        } else if (const_node->consttype == FLOAT4OID) {
-          float4 fval = DatumGetFloat4(const_node->constvalue);
-          
-          if (isnan(fval) || isinf(fval)) {
-            PG_RETURN_POINTER(NULL);
-          }
-          
-          /* Check range and convert */
-          if (int_type == INT2OID) {
-            if (fval < PG_INT16_MIN || fval > PG_INT16_MAX) {
-              PG_RETURN_POINTER(NULL);
-            }
-            int_val = (int16) fval;
-            is_valid = ((float4) int_val == fval);
-          } else if (int_type == INT4OID) {
-            if (fval < PG_INT32_MIN || fval > PG_INT32_MAX) {
-              PG_RETURN_POINTER(NULL);
-            }
-            int_val = (int32) fval;
-            is_valid = ((float4) int_val == fval);
-          } else if (int_type == INT8OID) {
-            int_val = (int64) fval;
-            is_valid = ((float4) int_val == fval);
-          }
-          
-          if (!is_valid) {
-            /* Has fractional part or precision loss */
-            PG_RETURN_POINTER(NULL);
-          }
-        } else if (const_node->consttype == FLOAT8OID) {
-          float8 dval = DatumGetFloat8(const_node->constvalue);
-          
-          if (isnan(dval) || isinf(dval)) {
-            PG_RETURN_POINTER(NULL);
-          }
-          
-          /* Check range and convert */
-          if (int_type == INT2OID) {
-            if (dval < PG_INT16_MIN || dval > PG_INT16_MAX) {
-              PG_RETURN_POINTER(NULL);
-            }
-            int_val = (int16) dval;
-            is_valid = ((float8) int_val == dval);
-          } else if (int_type == INT4OID) {
-            if (dval < PG_INT32_MIN || dval > PG_INT32_MAX) {
-              PG_RETURN_POINTER(NULL);
-            }
-            int_val = (int32) dval;
-            is_valid = ((float8) int_val == dval);
-          } else if (int_type == INT8OID) {
-            int_val = (int64) dval;
-            is_valid = ((float8) int_val == dval);
-          }
-          
-          if (!is_valid) {
-            /* Has fractional part or precision loss */
-            PG_RETURN_POINTER(NULL);
-          }
-        } else {
-          /* Unknown type */
-          PG_RETURN_POINTER(NULL);
-        }
-        
-        /* Create new integer Const node */
-        if (int_type == INT2OID) {
-          new_const = makeConst(INT2OID, -1, InvalidOid, sizeof(int16),
-                               Int16GetDatum((int16) int_val), false, true);
-          standard_eq_oid = NUM2INT_INT2EQ_OID;
-        } else if (int_type == INT4OID) {
-          new_const = makeConst(INT4OID, -1, InvalidOid, sizeof(int32),
-                               Int32GetDatum((int32) int_val), false, true);
-          standard_eq_oid = NUM2INT_INT4EQ_OID;
-        } else if (int_type == INT8OID) {
-          new_const = makeConst(INT8OID, -1, InvalidOid, sizeof(int64),
-                               Int64GetDatum(int_val), false, true);
-          standard_eq_oid = NUM2INT_INT8EQ_OID;
-        } else {
-          PG_RETURN_POINTER(NULL);
-        }
-        
-        /* Build new OpExpr: ALWAYS put Var on left, Const on right for btree index */
-        /* Copy the Var node to avoid sharing pointers with original clause */
-        new_var = (Var *) copyObject(var_node);
-        
-        new_clause = (OpExpr *) make_opclause(standard_eq_oid,
-                                               BOOLOID,
-                                               false,
-                                               (Expr *) new_var,
-                                               (Expr *) new_const,
-                                               InvalidOid,
-                                               InvalidOid);
-        
-        /* Set collation and location from original */
-        new_clause->inputcollid = clause->inputcollid;
-        new_clause->location = clause->location;
-        
-        /* Mark this transformation as NOT lossy - it's exact */
-        req->lossy = false;
-        
-        /* Return a LIST of conditions (even though we only have one) */
-        ret = (Node *) list_make1(new_clause);
+    } else if (op_type == OP_TYPE_NE) {
+      if (conv.has_fraction) {
+        /* Inequality with fractional value is always TRUE */
+        ret = (Node *) makeBoolConst(true, false);
+      } else {
+        /* Transform to native inequality operator */
+        Oid native_op_oid = get_native_op_oid(OP_TYPE_NE, int_type);
+        ret = (Node *) build_native_opexpr(native_op_oid, var_node, conv.int_val,
+                                            int_type, func->location, InvalidOid);
       }
-      /* Check if this is one of our range comparison operators (<, >, <=, >=) */
-      else if (opno == oid_cache.numeric_lt_int2_oid ||
-               opno == oid_cache.numeric_lt_int4_oid ||
-               opno == oid_cache.numeric_lt_int8_oid ||
-               opno == oid_cache.float4_lt_int2_oid ||
-               opno == oid_cache.float4_lt_int4_oid ||
-               opno == oid_cache.float4_lt_int8_oid ||
-               opno == oid_cache.float8_lt_int2_oid ||
-               opno == oid_cache.float8_lt_int4_oid ||
-               opno == oid_cache.float8_lt_int8_oid ||
-               opno == oid_cache.numeric_gt_int2_oid ||
-               opno == oid_cache.numeric_gt_int4_oid ||
-               opno == oid_cache.numeric_gt_int8_oid ||
-               opno == oid_cache.float4_gt_int2_oid ||
-               opno == oid_cache.float4_gt_int4_oid ||
-               opno == oid_cache.float4_gt_int8_oid ||
-               opno == oid_cache.float8_gt_int2_oid ||
-               opno == oid_cache.float8_gt_int4_oid ||
-               opno == oid_cache.float8_gt_int8_oid ||
-               opno == oid_cache.numeric_le_int2_oid ||
-               opno == oid_cache.numeric_le_int4_oid ||
-               opno == oid_cache.numeric_le_int8_oid ||
-               opno == oid_cache.float4_le_int2_oid ||
-               opno == oid_cache.float4_le_int4_oid ||
-               opno == oid_cache.float4_le_int8_oid ||
-               opno == oid_cache.float8_le_int2_oid ||
-               opno == oid_cache.float8_le_int4_oid ||
-               opno == oid_cache.float8_le_int8_oid ||
-               opno == oid_cache.numeric_ge_int2_oid ||
-               opno == oid_cache.numeric_ge_int4_oid ||
-               opno == oid_cache.numeric_ge_int8_oid ||
-               opno == oid_cache.float4_ge_int2_oid ||
-               opno == oid_cache.float4_ge_int4_oid ||
-               opno == oid_cache.float4_ge_int8_oid ||
-               opno == oid_cache.float8_ge_int2_oid ||
-               opno == oid_cache.float8_ge_int4_oid ||
-               opno == oid_cache.float8_ge_int8_oid) {
-        
-        /* Transform range operators with intelligent rounding
-         * Examples:
-         *   intcol > 10.5::numeric  =>  intcol >= 11   (round up)
-         *   intcol < 10.5::numeric  =>  intcol <= 10   (round down)
-         *   intcol >= 10.5::numeric =>  intcol >= 11   (round up)
-         *   intcol <= 10.5::numeric =>  intcol <= 10   (round down)
-         */
-        Const *new_const = NULL;
-        OpExpr *new_clause = NULL;
-        Oid standard_op_oid;
-        Oid int_type = var_node->vartype;
-        int64 int_val;
-        bool has_fraction = false;
-        bool is_lt, is_gt, is_le, is_ge;
-        Var *new_var;
-        
-        if (const_node->constisnull) {
-          PG_RETURN_POINTER(NULL);
-        }
-        
-        /* Determine which operator we're dealing with */
-        is_lt = (opno == oid_cache.numeric_lt_int2_oid ||
-                 opno == oid_cache.numeric_lt_int4_oid ||
-                 opno == oid_cache.numeric_lt_int8_oid ||
-                 opno == oid_cache.float4_lt_int2_oid ||
-                 opno == oid_cache.float4_lt_int4_oid ||
-                 opno == oid_cache.float4_lt_int8_oid ||
-                 opno == oid_cache.float8_lt_int2_oid ||
-                 opno == oid_cache.float8_lt_int4_oid ||
-                 opno == oid_cache.float8_lt_int8_oid);
-        
-        is_gt = (opno == oid_cache.numeric_gt_int2_oid ||
-                 opno == oid_cache.numeric_gt_int4_oid ||
-                 opno == oid_cache.numeric_gt_int8_oid ||
-                 opno == oid_cache.float4_gt_int2_oid ||
-                 opno == oid_cache.float4_gt_int4_oid ||
-                 opno == oid_cache.float4_gt_int8_oid ||
-                 opno == oid_cache.float8_gt_int2_oid ||
-                 opno == oid_cache.float8_gt_int4_oid ||
-                 opno == oid_cache.float8_gt_int8_oid);
-        
-        is_le = (opno == oid_cache.numeric_le_int2_oid ||
-                 opno == oid_cache.numeric_le_int4_oid ||
-                 opno == oid_cache.numeric_le_int8_oid ||
-                 opno == oid_cache.float4_le_int2_oid ||
-                 opno == oid_cache.float4_le_int4_oid ||
-                 opno == oid_cache.float4_le_int8_oid ||
-                 opno == oid_cache.float8_le_int2_oid ||
-                 opno == oid_cache.float8_le_int4_oid ||
-                 opno == oid_cache.float8_le_int8_oid);
-        
-        is_ge = (opno == oid_cache.numeric_ge_int2_oid ||
-                 opno == oid_cache.numeric_ge_int4_oid ||
-                 opno == oid_cache.numeric_ge_int8_oid ||
-                 opno == oid_cache.float4_ge_int2_oid ||
-                 opno == oid_cache.float4_ge_int4_oid ||
-                 opno == oid_cache.float4_ge_int8_oid ||
-                 opno == oid_cache.float8_ge_int2_oid ||
-                 opno == oid_cache.float8_ge_int4_oid ||
-                 opno == oid_cache.float8_ge_int8_oid);
-        
-        /* Convert const to integer value and detect fractional part */
-        if (const_node->consttype == NUMERICOID) {
-          Numeric num = DatumGetNumeric(const_node->constvalue);
-          Numeric trunc_num;
-          
-          if (numeric_is_nan(num) || numeric_is_inf(num)) {
-            PG_RETURN_POINTER(NULL);
-          }
-          
-          /* Check for fractional part: trunc(num) returns integer part */
-          trunc_num = DatumGetNumeric(OidFunctionCall1(1916 /* numeric_trunc */, NumericGetDatum(num)));
-          has_fraction = !DatumGetBool(OidFunctionCall2(1752 /* numeric_eq */,
-                                                         NumericGetDatum(num),
-                                                         NumericGetDatum(trunc_num)));
-          
-          /* Convert to integer using appropriate cast */
-          PG_TRY();
-          {
-            if (int_type == INT2OID) {
-              Datum result = OidFunctionCall1(1783, NumericGetDatum(num));
-              int_val = DatumGetInt16(result);
-            } else if (int_type == INT4OID) {
-              Datum result = OidFunctionCall1(1744, NumericGetDatum(num));
-              int_val = DatumGetInt32(result);
-            } else if (int_type == INT8OID) {
-              Datum result = OidFunctionCall1(1779, NumericGetDatum(num));
-              int_val = DatumGetInt64(result);
-            } else {
-              PG_RETURN_POINTER(NULL);
-            }
-          }
-          PG_CATCH();
-          {
-            FlushErrorState();
-            PG_RETURN_POINTER(NULL);
-          }
-          PG_END_TRY();
-          
-        } else if (const_node->consttype == FLOAT4OID) {
-          float4 fval = DatumGetFloat4(const_node->constvalue);
-          float4 floor_val;
-          
-          if (isnan(fval) || isinf(fval)) {
-            PG_RETURN_POINTER(NULL);
-          }
-          
-          /* Check for fractional part */
-          floor_val = floorf(fval);
-          has_fraction = (fval != floor_val);
-          
-          /* Convert to integer */
-          if (int_type == INT2OID) {
-            if (fval < PG_INT16_MIN || fval > PG_INT16_MAX) {
-              PG_RETURN_POINTER(NULL);
-            }
-            int_val = (int16) fval;
-          } else if (int_type == INT4OID) {
-            if (fval < PG_INT32_MIN || fval > PG_INT32_MAX) {
-              PG_RETURN_POINTER(NULL);
-            }
-            int_val = (int32) fval;
-          } else if (int_type == INT8OID) {
-            int_val = (int64) fval;
-          } else {
-            PG_RETURN_POINTER(NULL);
-          }
-          
-        } else if (const_node->consttype == FLOAT8OID) {
-          float8 dval = DatumGetFloat8(const_node->constvalue);
-          float8 floor_val;
-          
-          if (isnan(dval) || isinf(dval)) {
-            PG_RETURN_POINTER(NULL);
-          }
-          
-          /* Check for fractional part */
-          floor_val = floor(dval);
-          has_fraction = (dval != floor_val);
-          
-          /* Convert to integer */
-          if (int_type == INT2OID) {
-            if (dval < PG_INT16_MIN || dval > PG_INT16_MAX) {
-              PG_RETURN_POINTER(NULL);
-            }
-            int_val = (int16) dval;
-          } else if (int_type == INT4OID) {
-            if (dval < PG_INT32_MIN || dval > PG_INT32_MAX) {
-              PG_RETURN_POINTER(NULL);
-            }
-            int_val = (int32) dval;
-          } else if (int_type == INT8OID) {
-            int_val = (int64) dval;
-          } else {
-            PG_RETURN_POINTER(NULL);
-          }
-        } else {
-          PG_RETURN_POINTER(NULL);
-        }
-        
-        /* Apply rounding logic based on operator and fractional part */
-        if (has_fraction) {
-          if (is_gt || is_ge) {
-            /* For > or >=, round up (add 1 to truncated value) */
-            int_val++;
-            /* Use >= operator for both > and >= */
-            if (int_type == INT2OID) {
-              standard_op_oid = NUM2INT_INT2GE_OID;
-            } else if (int_type == INT4OID) {
-              standard_op_oid = NUM2INT_INT4GE_OID;
-            } else {
-              standard_op_oid = NUM2INT_INT8GE_OID;
-            }
-          } else if (is_lt || is_le) {
-            /* For < or <=, use truncated value with <= operator */
-            if (int_type == INT2OID) {
-              standard_op_oid = NUM2INT_INT2LE_OID;
-            } else if (int_type == INT4OID) {
-              standard_op_oid = NUM2INT_INT4LE_OID;
-            } else {
-              standard_op_oid = NUM2INT_INT8LE_OID;
-            }
-          } else {
-            PG_RETURN_POINTER(NULL);
-          }
-        } else {
-          /* No fractional part - use the original operator */
-          if (is_lt) {
-            if (int_type == INT2OID) {
-              standard_op_oid = NUM2INT_INT2LT_OID;
-            } else if (int_type == INT4OID) {
-              standard_op_oid = NUM2INT_INT4LT_OID;
-            } else {
-              standard_op_oid = NUM2INT_INT8LT_OID;
-            }
-          } else if (is_gt) {
-            if (int_type == INT2OID) {
-              standard_op_oid = NUM2INT_INT2GT_OID;
-            } else if (int_type == INT4OID) {
-              standard_op_oid = NUM2INT_INT4GT_OID;
-            } else {
-              standard_op_oid = NUM2INT_INT8GT_OID;
-            }
-          } else if (is_le) {
-            if (int_type == INT2OID) {
-              standard_op_oid = NUM2INT_INT2LE_OID;
-            } else if (int_type == INT4OID) {
-              standard_op_oid = NUM2INT_INT4LE_OID;
-            } else {
-              standard_op_oid = NUM2INT_INT8LE_OID;
-            }
-          } else if (is_ge) {
-            if (int_type == INT2OID) {
-              standard_op_oid = NUM2INT_INT2GE_OID;
-            } else if (int_type == INT4OID) {
-              standard_op_oid = NUM2INT_INT4GE_OID;
-            } else {
-              standard_op_oid = NUM2INT_INT8GE_OID;
-            }
-          } else {
-            PG_RETURN_POINTER(NULL);
-          }
-        }
-        
-        /* Create new integer Const node */
-        if (int_type == INT2OID) {
-          new_const = makeConst(INT2OID, -1, InvalidOid, sizeof(int16),
-                               Int16GetDatum((int16) int_val), false, true);
-        } else if (int_type == INT4OID) {
-          new_const = makeConst(INT4OID, -1, InvalidOid, sizeof(int32),
-                               Int32GetDatum((int32) int_val), false, true);
-        } else if (int_type == INT8OID) {
-          new_const = makeConst(INT8OID, -1, InvalidOid, sizeof(int64),
-                               Int64GetDatum(int_val), false, true);
-        } else {
-          PG_RETURN_POINTER(NULL);
-        }
-        
-        /* Build new OpExpr: ALWAYS put Var on left, Const on right for btree index */
-        new_var = (Var *) copyObject(var_node);
-        
-        new_clause = (OpExpr *) make_opclause(standard_op_oid,
-                                               BOOLOID,
-                                               false,
-                                               (Expr *) new_var,
-                                               (Expr *) new_const,
-                                               InvalidOid,
-                                               InvalidOid);
-        
-        new_clause->inputcollid = clause->inputcollid;
-        new_clause->location = clause->location;
-        
-        /* Mark as NOT lossy - transformation is exact */
-        req->lossy = false;
-        
-        ret = (Node *) list_make1(new_clause);
-      }
+    } else {
+      /* FR-017: Range boundary transformation */
+      int64 adjusted_val;
+      Oid native_op_oid = compute_range_transform(op_type, int_type, conv.int_val,
+                                                   conv.has_fraction, &adjusted_val);
+      ret = (Node *) build_native_opexpr(native_op_oid, var_node, adjusted_val,
+                                          int_type, func->location, InvalidOid);
     }
   }
   
   PG_RETURN_POINTER(ret);
 }
-
-/*
- * Core comparison functions (9 total)
- * 
- * These functions implement the actual comparison logic, returning:
- *   -1 if left < right
- *    0 if left == right
- *    1 if left > right
- *
- * They will be implemented in Phase 3 (User Story 1)
- */
 
 /*
  * Core comparison functions (9 total)
@@ -787,6 +953,9 @@ numeric_cmp_int2_internal(Numeric num, int16 val) {
 
 /**
  * @brief Compare numeric value with int4 value
+ * @param num Numeric value (left operand)
+ * @param val int4 value (right operand)
+ * @return -1 if num < val, 0 if num == val, 1 if num > val
  */
 int
 numeric_cmp_int4_internal(Numeric num, int32 val) {

@@ -218,6 +218,64 @@ SELECT 10.5::numeric = 10::int4;    -- false (has fractional part)
 SELECT 10.001::numeric = 10::int4;  -- false (has fractional part)
 ```
 
+## Query Optimization
+
+### Constant Predicate Optimization
+
+The extension's support functions (via `SupportRequestSimplify`) optimize constant predicates during query planning:
+
+#### FR-015: Impossible Predicate Detection
+
+When an integer column is compared to a fractional constant, the predicate is recognized as always-false:
+
+```sql
+-- int_col can never equal 10.5 (fractional value)
+EXPLAIN (COSTS OFF) SELECT * FROM table WHERE int_col = 10.5::numeric;
+-- Result:
+--  Result
+--    One-Time Filter: false
+
+-- Benefits:
+-- - Planner estimates rows=0
+-- - May skip table scan entirely
+-- - Faster query planning
+```
+
+#### FR-016: Exact Match Transformation
+
+When a numeric constant exactly equals an integer, it's transformed to use the native integer operator:
+
+```sql
+-- 100::numeric exactly equals 100::int4
+EXPLAIN (COSTS OFF) SELECT * FROM table WHERE int_col = 100::numeric;
+-- Result:
+--  Index Scan using idx on table
+--    Index Cond: (int_col = 100)    ← Native int4=int4 operator
+
+-- Benefits:
+-- - Perfect selectivity estimation
+-- - Uses most efficient comparison operator
+-- - Better index condition pushdown
+```
+
+#### FR-017: Range Boundary Transformation
+
+Range predicates with fractional boundaries are transformed to equivalent integer predicates:
+
+```sql
+-- "int_col > 10.5" means "int_col >= 11" for integers
+EXPLAIN (COSTS OFF) SELECT * FROM table WHERE int_col > 10.5::numeric;
+-- Semantically equivalent to: int_col >= 11
+
+-- Transformations:
+-- int_col > 10.5   →  int_col >= 11  (round up for >)
+-- int_col >= 10.5  →  int_col >= 11  (round up for >=)
+-- int_col < 10.5   →  int_col <= 10  (round down for <)
+-- int_col <= 10.5  →  int_col <= 10  (round down for <=)
+
+-- This ensures correct boundary handling and optimal selectivity
+```
+
 ## Performance Considerations
 
 ### Index Usage
@@ -253,7 +311,7 @@ JOIN large_table_b b ON a.int_col = b.numeric_col;
 -- Shows: Hash Join with Hash Cond
 ```
 
-**Note**: Merge joins are not supported due to transitive inference constraints. Indexed nested loop joins provide equivalent or better performance for most queries.
+**Note**: Merge joins are supported for int × numeric. For int × float, use hash joins or indexed nested loop joins.
 
 ### Overhead
 
