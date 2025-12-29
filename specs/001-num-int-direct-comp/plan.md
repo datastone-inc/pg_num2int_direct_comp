@@ -125,6 +125,62 @@ doc/                            # User documentation
 | Phase 1 | quickstart.md | ✅ Complete |
 | Phase 2 | tasks.md | ✅ Complete |
 
+---
+
+## Increment: Constant Predicate Optimization (FR-015 to FR-017)
+
+**Date Added**: 2025-12-29
+**Research**: [research.md Section 9](research.md#9-supportrequestsimplify-vs-supportrequestindexcondition)
+
+### Summary
+
+Implement `SupportRequestSimplify` handler in `num2int_support()` to transform constant predicates at query simplification time. This enables optimal selectivity estimates even when operators are in btree families (which bypass `SupportRequestIndexCondition`).
+
+### Problem Statement
+
+When int×numeric operators are in btree families (integer_ops + numeric_ops), PostgreSQL uses btree machinery directly, **bypassing** `SupportRequestIndexCondition`. This causes:
+- `int_col = 10.5::numeric` → estimates rows=1 instead of rows=0 (impossible predicate)
+- `int_col = 100::numeric` → not transformed to `int_col = 100` (suboptimal selectivity)
+
+### Solution: SupportRequestSimplify
+
+Transform predicates **before** btree family lookup:
+
+| Original Predicate | Transformation | Benefit |
+|-------------------|----------------|---------|
+| `int_col = 10.5::numeric` | `FALSE` | rows=0 estimate, may skip scan |
+| `int_col = 100::numeric` | `int_col = 100` | Native int4=int4, perfect selectivity |
+| `int_col > 10.5::numeric` | `int_col >= 11` | Correct integer boundary |
+| `int_col < 10.5::numeric` | `int_col <= 10` | Correct integer boundary |
+
+### Technical Approach
+
+1. **Extend `num2int_support()`** to handle `SupportRequestSimplify`
+2. **Detect constant operand**: Check if one argument is a `Const` node
+3. **Apply transformation**:
+   - Equality with fractional → `makeBoolConst(false, false)`
+   - Equality with exact integer → `OpExpr` with native int operator
+   - Range operators → compute correct integer boundary
+
+### Scope
+
+- Applies to **constant predicates** in WHERE clauses only
+- **Join conditions** continue to use btree family membership (runtime values)
+- **Parameterized queries** (`$1::numeric`) cannot be transformed (value unknown at plan time)
+
+### Files to Modify
+
+| File | Change |
+|------|--------|
+| `pg_num2int_direct_comp.c` | Add `SupportRequestSimplify` handler |
+| `sql/selectivity.sql` | NEW: Test selectivity estimates |
+| `expected/selectivity.out` | NEW: Expected output |
+| `Makefile` | Add `selectivity` to REGRESS |
+
+### Success Criteria
+
+- SC-009: Query plans for impossible predicates show rows=0 estimate
+
 ## Complexity Tracking
 
 No constitution violations requiring justification. Implementation follows all principles.

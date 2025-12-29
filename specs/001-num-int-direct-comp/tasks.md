@@ -482,17 +482,68 @@ Instead of detecting fractional parts, cast integers to the higher-precision typ
 ### Documentation Remediation (Align with Spec)
 
 > **Rationale**: README and other docs have incorrect operator counts and feature claims that don't match the updated spec. These tasks fix documentation to match spec.
+>
+> **SUPERSEDED**: T195-T200 are superseded by Phase 12 documentation tasks T221-T223. Complete T221-T223 instead, which cover the same scope plus constant predicate optimization documentation.
 
-- [ ] T195 Update README.md operator count from 108 to match spec (108 is correct, verify no other count errors)
-- [ ] T196 Update README.md "Merge Joins (Coming Soon)" section to match spec's merge join claims
-- [ ] T197 Update README.md to remove claims about float_ops btree membership (deferred per spec)
-- [ ] T198 Update doc/api-reference.md operator count to 108
-- [ ] T199 Verify SQL examples in README.md execute correctly and produce documented results
-- [ ] T200 Run final spec-to-doc alignment check
+- [~] T195 ~~Update README.md operator count from 108 to match spec~~ → See T221
+- [~] T196 ~~Update README.md "Merge Joins (Coming Soon)" section~~ → See T221
+- [~] T197 ~~Update README.md to remove claims about float_ops btree membership~~ → See T221
+- [~] T198 ~~Update doc/api-reference.md operator count to 108~~ → See T221
+- [~] T199 ~~Verify SQL examples in README.md execute correctly~~ → See T221
+- [~] T200 ~~Run final spec-to-doc alignment check~~ → See T221
 
 **Note**: T184-T188 documentation tasks complete. T189 and T192 deferred (T189: code already follows style; T192: requires multi-version PostgreSQL setup). T195-T200 added for documentation remediation.
 
 **Checkpoint**: Extension complete and ready for release once documentation remediation verified
+
+---
+
+## Phase 12: Constant Predicate Optimization (FR-015 to FR-017)
+
+**Goal**: Implement SupportRequestSimplify handler for optimal selectivity estimation on constant predicates
+
+**Rationale**: When operators are in btree families, SupportRequestIndexCondition is bypassed. SupportRequestSimplify transforms predicates earlier in planning, before btree family lookup, enabling correct row estimates.
+
+**Independent Test**: Run EXPLAIN on `WHERE int_col = 10.5::numeric` and verify rows=0 estimate (impossible predicate detected)
+
+### Tests for Constant Predicate Optimization (TEST-FIRST)
+
+> **TEST-FIRST**: Write these tests FIRST, verify they FAIL, then implement
+
+- [ ] T201 [P] Create sql/selectivity.sql with EXPLAIN tests for constant predicate optimization
+- [ ] T202 [P] Create expected/selectivity.out with expected EXPLAIN output (rows=0 for impossible predicates)
+- [ ] T203 Add selectivity to REGRESS variable in Makefile
+
+### Implementation for Constant Predicate Optimization
+
+- [ ] T204 Add SupportRequestSimplify handler to num2int_support() in pg_num2int_direct_comp.c
+- [ ] T205 Implement constant detection logic: identify Const node operand in FuncExpr arguments
+- [ ] T206 Implement fractional part detection for numeric constants using numeric_trunc comparison
+- [ ] T207 Implement fractional part detection for float4/float8 constants using floor/trunc comparison
+- [ ] T208 For equality with fractional → return makeBoolConst(false, false) 
+- [ ] T209 For equality with exact integer → build OpExpr with native int=int operator and converted constant
+- [ ] T210 [P] Implement range boundary transformation for `>` operator (10.5 → >= 11)
+- [ ] T211 [P] Implement range boundary transformation for `<` operator (10.5 → <= 10)
+- [ ] T212 [P] Implement range boundary transformation for `>=` operator (10.5 → >= 11)
+- [ ] T213 [P] Implement range boundary transformation for `<=` operator (10.5 → <= 10)
+- [ ] T214 Handle all 9 type combinations (numeric/float4/float8 × int2/int4/int8) in both directions
+
+### Verification
+
+- [ ] T215 Run `make clean && make` to rebuild extension
+- [ ] T216 Run `make installcheck` to verify all tests pass (including new selectivity tests)
+- [ ] T217 Verify SC-009: EXPLAIN shows rows=0 for impossible predicates like `int_col = 10.5::numeric`
+- [ ] T218 Verify existing merge join tests still pass (btree family not affected)
+- [ ] T219 Verify existing hash join tests still pass
+- [ ] T220 Verify existing index_usage tests still pass
+
+### Documentation for Constant Predicate Optimization
+
+- [ ] T221 [P] Update README.md with query optimization section explaining impossible predicate detection
+- [ ] T222 [P] Update doc/user-guide.md with examples of constant predicate transformation (10.5 → FALSE, boundary handling)
+- [ ] T223 Update CHANGELOG.md with FR-015, FR-016, FR-017 in 1.0.0 release notes
+
+**Checkpoint**: Constant predicate optimization complete - FR-015, FR-016, FR-017 satisfied
 
 ---
 
@@ -513,9 +564,10 @@ Setup (Phase 1) → Foundational (Phase 2) → User Stories (Phase 3-7) → Join
 - **User Story 3 (Phase 5 - P2)**: Depends on Phase 2 (can be parallel with US2 if different developers)
 - **User Story 4 (Phase 6 - P2)**: Depends on Phase 2 (verification only, minimal implementation)
 - **User Story 5 (Phase 7 - P3)**: Depends on Phases 3-4 (needs all operators for edge case tests)
-- **Join Support (Phase 8)**: Depends on Phases 3-5 (needs all operators)
-- **Performance (Phase 9)**: Depends on Phases 3-5 (needs all operators and index support)
-- **Polish (Phase 10)**: Depends on all previous phases
+- **Join Support (Phase 8-9)**: Depends on Phases 3-5 (needs all operators)
+- **Performance (Phase 10)**: Depends on Phases 3-5 (needs all operators and index support)
+- **Polish (Phase 11)**: Depends on all previous phases
+- **Constant Predicate Optimization (Phase 12)**: Depends on Phase 11 (all operators complete)
 
 ### User Story Independence
 
@@ -604,7 +656,7 @@ T053-T055 (build and verify)
 
 ## Implementation Strategy Summary
 
-**Total Tasks**: 200
+**Total Tasks**: 223
 
 **By Phase**:
 - Phase 1 (Setup): 9 tasks (T001-T009)
@@ -617,6 +669,7 @@ T053-T055 (build and verify)
 - Phase 8 (Hash/Join Support): 11 tasks (T140-T150)
 - Phase 9 (Performance): 6 tasks (T151-T153, T181-T183)
 - Phase 10 (Polish): 17 tasks (T184-T200)
+- Phase 12 (Constant Predicate Optimization): 23 tasks (T201-T223) ← NEW
 
 **By Story**:
 - US1 (Equality): 37 tasks - 9 core functions + 18 wrappers + tests + SQL
@@ -644,4 +697,4 @@ T053-T055 (build and verify)
 - 100% test pass rate required before phase completion
 
 **Full Feature Delivery Path**:
-Phase 1 → Phase 2 → Phases 3-7 → Phase 8 → Phase 9 → Implementation Gap Tasks → Phase 10 → Release 1.0.0
+Phase 1 → Phase 2 → Phases 3-7 → Phase 8 → Phase 9 → Implementation Gap Tasks → Phase 10 → Phase 12 (Constant Predicate Optimization) → Release 1.0.0

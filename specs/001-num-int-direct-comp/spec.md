@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-num-int-direct-comp`  
 **Created**: 2025-12-23  
-**Status**: Draft  
+**Status**: Approved  
 **Input**: User description: "Create a PostgreSQL extension pg_num2int_direct_comp that adds comparison operators for the inexact numeric types (numeric, decimal, float4, float8) with integral types (int2, int4, int8, serial, serial8, etc). The comparisons are exact, e.g., 16777216::bigint = 16777217::float should return false even though it is true with the builtin PostgreSQL cast and compare. The comparisons should allow btree index SARG predicate access, e.g., intkeycol = 10.0, should allow index only SARG.
 
 ## Clarifications
@@ -197,6 +197,9 @@ The extension provides exact comparison operators for all meaningful combination
 - **FR-012**: int × numeric operators MUST be added to BOTH `integer_ops` and `numeric_ops` btree operator families to enable merge join optimization
 - **FR-013**: int × numeric operators MUST NOT cause invalid transitive inference (e.g., planner must not infer `int_col = 10.5` from `int_col = 10 AND 10 = 10.5::numeric`)
 - **FR-014**: int × float operators MUST support hash joins via hash operator families but MUST NOT be added to both btree operator families (to avoid precision-related transitivity issues)
+- **FR-015**: Constant predicates with impossible equality conditions (e.g., `int_col = 10.5::numeric`) SHOULD be recognized as always-false during query planning, enabling optimal row estimates (rows=0) and potential scan elimination
+- **FR-016**: Constant predicates with exact integer matches (e.g., `int_col = 100::numeric` where 100.0 has no fractional part) SHOULD be transformed to use native same-type operators for optimal selectivity estimation
+- **FR-017**: Range predicates with fractional boundaries (e.g., `int_col > 10.5::numeric`) SHOULD be transformed to equivalent integer predicates with correct boundary handling (e.g., `int_col >= 11`)
 
 ## Implemented in v1.0
 
@@ -216,6 +219,14 @@ The extension provides exact comparison operators for all meaningful combination
   - Ensures `hash(10::int4) = hash(10.0::numeric)` for equal values
   - Leverages PostgreSQL's existing hash functions (`hash_numeric`, `hashfloat4`, `hashfloat8`)
   - Operators have HASHES property, allowing planner to choose hash joins for large table joins
+
+- **Constant predicate optimization**: Transform predicates at query simplification time (before index planning)
+  - `int_col = 10.5::numeric` → `FALSE` (impossible equality, rows=0 estimate)
+  - `int_col = 100::numeric` → `int_col = 100` (use native operator, perfect selectivity)
+  - `int_col > 10.5::numeric` → `int_col >= 11` (correct integer boundary)
+  - `int_col < 10.5::numeric` → `int_col <= 10` (correct integer boundary)
+  - Applies to constant predicates in WHERE clauses; join conditions use btree family membership
+  - Rationale: When operators are in btree families, index condition transformation is bypassed; simplification at an earlier planning stage ensures optimal selectivity estimates while preserving join optimization
 
 # Future Enhancements
 
@@ -238,3 +249,4 @@ The extension provides exact comparison operators for all meaningful combination
 - **SC-006c**: Queries with chained comparisons produce correct results following exact comparison semantics, with no invalid transitive inferences
 - **SC-007**: User documentation includes at least 5 practical examples demonstrating exact comparison behavior and query optimization
 - **SC-008**: Performance overhead of exact comparison operators is within 10% of standard comparison operators for equivalent queries
+- **SC-009**: Query plans for impossible predicates (e.g., `WHERE int_col = 10.5::numeric`) show rows=0 estimate, indicating the planner recognizes the predicate as always-false
