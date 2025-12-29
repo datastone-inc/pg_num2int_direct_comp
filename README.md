@@ -47,7 +47,7 @@ Exact numeric-to-integer comparison operators for PostgreSQL
 
 ## Overview
 
-PostgreSQL database schema drift and software evolution means that cross-type comparisons between numeric types (numeric, float4, float8) and integer types (int2, int4, int8) will occur. PostgreSQL's default behavior injects implicit casts that cause two critical problems: **incorrect comparison results** and **poor query performance**.
+PostgreSQL database schema drift and software evolution means that cross-type comparisons between numeric types (numeric, float4, float8) and integer types (int2, int4, int8) can occur. PostgreSQL's default behavior injects implicit casts that cause two critical problems: **mathematically incorrect comparison results** and **poor query performance**.
 
 ### The Problem: Implicit Casting Produces Wrong Results
 
@@ -65,10 +65,10 @@ IEEE 754 floating-point formats used by PostgreSQL have limited mantissa bits:
 - **float4 (32-bit)**: 23-bit mantissa → can exactly represent integers only up to 2²⁴ (16,777,216)
 - **float8 (64-bit)**: 52-bit mantissa → can exactly represent integers only up to 2⁵³ (9,007,199,254,740,992)
 
-Integers beyond these thresholds get **rounding errors** when cast to float. The database silently loses precision, and comparisons produce mathematically incorrect results:
+Integers beyond these thresholds get **rounding errors** when cast to float. The database silently loses precision, and default comparisons produce mathematically incorrect results:
 
 ```sql
--- PostgreSQL's DEFAULT behavior (WRONG):
+-- PostgreSQL's DEFAULT behavior (Mathematically WRONG):
 SELECT 16777217::int4 = 16777217::float4;  -- Returns FALSE (!)
 
 -- What actually happens:
@@ -79,7 +79,7 @@ SELECT 16777217::int4 = 16777217::float4;  -- Returns FALSE (!)
 -- The same integer literal on both sides returns FALSE, i.e., there are many integer values for which there are no equal float4 (or float8) representation. If you rely on cross-type comparisons, this leads to silent incorrect results.
 ```
 
-This affects real-world scenarios, for myself, this is why I originally created this extension, a customer application was passing user IDs (and all numeric parametes) as float4 values, leading to silent data integrity issues:
+This affects real-world scenarios, and for myself, this is why I originally created this extension: a customer's applications was passing user IDs (and all numeric parametes) as float4 values, leading to silent data integrity and performance issues, e.g.:
 
 ```sql
 -- User lookup returns the WRONG person
@@ -96,7 +96,7 @@ EXECUTE find_user(16777217);  -- Looking for Bob...
 
 #### Transitive Equality Violations
 
-PostgreSQL's implicit casting also violates transitivity, normally a fundamental property of equality:
+PostgreSQL's default implicit casting also violates transitivity, normally a fundamental property of equality:
 
 ```sql
 -- If a = b and b = c, then a = c should always hold
@@ -110,11 +110,11 @@ SELECT 16777216::int4 = 16777217::int4;    -- FALSE
 
 > **This extension guarantees mathematical correctness.** All comparison operators added by this extension satisfy reflexivity, symmetry, and transitivity for equality, and irreflexivity, transitivity, and trichotomy for ordering. Cross-type comparisons work correctly without precision loss.
 
-PostgreSQL's query planner can leverage transitivity (inferring `a=c` from `a=b` and `b=c`) only when operators are defined with appropriate btree [operator class](https://www.postgresql.org/docs/current/btree.html#BTREE-SUPPORT-FUNCS) strategies. Stock PostgreSQL's implicit-cast-based comparisons don't provide this, leading to missed optimizations. This extension defines proper operator classes for all cross-type comparisons.
+PostgreSQL's query planner can leverage transitivity (inferring `a=c` from `a=b` and `b=c`) only when operators are defined with appropriate btree [operator class](https://www.postgresql.org/docs/current/btree.html#BTREE-SUPPORT-FUNCS) strategies. Stock PostgreSQL's implicit-cast-based comparisons don't provide this, leading to missed optimizations. This extension defines proper operator classes for all cross-type comparisons, but only when they are mathematically correct.
 
 ### The Problem: Implicit Casting Destroys Performance
 
-Beyond correctness, implicit casts prevent the query optimizer from using indexes efficiently.
+Beyond correctness, implicit casts prevent the query optimizer from using indexes, hash joins, and merge joins efficiently.
 
 #### Index Scans Become Sequential Scans
 
@@ -167,7 +167,7 @@ For `numeric_value = integer_value`:
 // Pseudocode C comparison function
 int compare_numeric_to_int(numeric num, int32 i) {
     // Handle special values (NaN, ±Infinity)
-    if (is_nan(num)) return NOT_EQUAL;  // NaN ≠ everything
+    if (is_nan(num)) return GREATER;  // NaN > everything in PostgreSQL
     if (is_inf(num)) return (positive ? GREATER : LESS);
     
     // Check if num is outside int32 range

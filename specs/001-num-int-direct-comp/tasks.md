@@ -272,9 +272,9 @@
 
 ### Implementation for User Story 4
 
-- [X] T118 [US4] Review operator registration in pg_num2int_direct_comp--1.0.0.sql to confirm operators are NOT added to btree operator families ✅
+- [ ] T118 [US4] Review operator registration in pg_num2int_direct_comp--1.0.0.sql to verify int×numeric operators are in numeric_ops btree family (implementation gap: need to also add to integer_ops per spec)
 - [X] T119 [US4] Verify COMMUTATOR and NEGATOR properties are correctly specified (these are safe) ✅
-- [X] T120 [US4] Verify operator properties: equality/inequality operators do NOT have HASHES (deferred to v2.0), range operators do NOT have MERGES (planned for v1.0.0 with merge join support). Operators ARE in btree opfamilies (numeric_ops, float_ops) to enable indexed nested loop joins. ✅
+- [ ] T120 [US4] Verify operator properties: equality operators have HASHES property, operators ARE in btree opfamilies (numeric_ops AND integer_ops for int×numeric), operators have MERGES property for merge join support
 
 **Verification**:
 
@@ -282,7 +282,27 @@
 - [X] T122 [US4] Verify EXPLAIN output shows no inferred predicates for chained comparisons ✅
 - [X] T123 [US4] Verify result sets are correct (no extra rows from transitive optimization) ✅
 
-**Checkpoint**: User Story 4 COMPLETE ✅ - transitivity correctly prevented across type combinations
+### Integer_ops Family Membership (Merge Join Enablement)
+
+> **Rationale**: Spec requires int×numeric operators in BOTH integer_ops AND numeric_ops btree families to enable merge joins from either side. Current implementation only has numeric_ops. These tasks add integer_ops membership.
+
+**Tests (TEST-FIRST)**:
+
+- [ ] T167 [US4] Update sql/merge_joins.sql Test 4 to verify operators ARE in integer_ops family (not "NOT in")
+- [ ] T168 [US4] Add sql/merge_joins.sql test case querying pg_amop to confirm dual-family membership (integer_ops + numeric_ops)
+- [ ] T169 [US4] Update expected/merge_joins.out to expect Merge Join plans (not hash join fallback)
+
+**Implementation**:
+
+- [ ] T170 [US4] Add int×numeric operators to integer_ops btree family in pg_num2int_direct_comp--1.0.0.sql (mirrors numeric_ops ADD block)
+- [ ] T171 [US4] Remove comments in merge_joins.sql stating operators are not in integer_ops
+- [ ] T180 [US4] Add MERGES property to all int×numeric equality operators in pg_num2int_direct_comp--1.0.0.sql
+
+**Verification**:
+
+- [ ] T172 [US4] Run `make installcheck` and verify merge_joins test shows Merge Join in EXPLAIN output
+
+**Checkpoint**: User Story 4 COMPLETE - merge joins enabled for int×numeric via dual btree family membership
 
 ---
 
@@ -319,7 +339,27 @@
 - [X] T138 [US5] Verify decimal type works correctly (alias for numeric) ✅
 - [X] T139 [US5] Verify NaN/Infinity handling follows IEEE 754 semantics ✅
 
-**Checkpoint**: User Story 5 complete - comprehensive type coverage verified, all edge cases handled
+### Remove int×float from float_ops Btree Family (Deferred per Spec)
+
+> **Rationale**: Spec US5 states btree family integration is "deferred to reduce scope". Current implementation incorrectly adds int×float to float_ops btree. Remove to match spec; index optimization still works via support functions.
+
+**Tests (TEST-FIRST)**:
+
+- [ ] T173 [US5] Update sql/index_usage.sql to verify int×float index scans work via support function (not btree family)
+- [ ] T174 [US5] Add test querying pg_amop to confirm int×float operators are NOT in float_ops btree family
+- [ ] T175 [US5] Update expected/index_usage.out for support-function-based index access
+
+**Implementation**:
+
+- [ ] T176 [US5] Remove int×float4 operators from float_ops btree family in pg_num2int_direct_comp--1.0.0.sql (lines 2035-2085)
+- [ ] T177 [US5] Remove int×float8 operators from float_ops btree family in pg_num2int_direct_comp--1.0.0.sql (lines 2085-2135)
+
+**Verification**:
+
+- [ ] T178 [US5] Run `make installcheck` and verify index_usage tests pass (support functions provide index access)
+- [ ] T179 [US5] Verify merge joins are NOT used for int×float (hash join or nested loop expected)
+
+**Checkpoint**: User Story 5 complete - comprehensive type coverage verified, all edge cases handled, btree family deferred per spec
 
 ---
 
@@ -354,47 +394,49 @@ Instead of detecting fractional parts, cast integers to the higher-precision typ
 
 ---
 
-## Phase 9: Btree Operator Family Support (Implemented in v1.0)
+## Phase 9: Btree Operator Family Support
 
-**Goal**: Enable indexed nested loop join optimization by adding operators to btree operator families
+**Goal**: Enable indexed nested loop join and merge join optimization by adding operators to btree operator families
 
-**Status**: ✅ COMPLETE - Operators added to numeric_ops and float_ops families with support functions
+**Status**: ⚠️ PARTIAL - Requires remediation tasks T167-T180 (US4) and T173-T179 (US5)
 
-**Background**: Research shows operators ARE mathematically transitive and safe to add to higher-precision btree families:
+**Current State**:
+- ✅ int×numeric operators in numeric_ops btree family
+- ❌ int×numeric operators NOT in integer_ops (needed for merge joins) → T167-T172
+- ❌ int×float operators incorrectly in float_ops btree (should be deferred) → T173-T179
+- ❌ MERGES property not set on int×numeric equality operators → T180
+
+**Target State (after remediation)**:
+- int×numeric in BOTH integer_ops AND numeric_ops (merge joins enabled)
+- int×float NOT in btree families (deferred per spec US5)
+- int×numeric equality operators have MERGES property
+
+**Background**: Research shows int×numeric operators ARE mathematically transitive and safe to add to both btree families:
 - If A = B (no fractional part) and B = C, then A = C
 - If A = B returns false (has fractional part), transitive chain correctly propagates inequality
-- Example: 10.5 = 10 → false, so (10.5 = 10) AND (10 = X) → false regardless of X
 
-**Why NOT in integer_ops**: Adding operators to integer_ops would enable invalid transitive inference. Example: planner could infer `int_col = 10.5` from `int_col = 10 AND int_col = numeric_col AND numeric_col = 10.5`, which is incorrect.
-
-**Merge join support (planned)**: Merge join requires operators in the same family on both sides. Support is planned for v1.0.0 by adding cross-type operators to integer_ops with safeguards to prevent invalid transitive inference. See research.md section 4 for implementation plan.
-
-**Benefit achieved**: Indexed nested loop joins with cross-type index usage - provides similar or better performance than merge joins for selective queries.
-
-### Implementation Tasks
+### Implementation Tasks (Completed)
 
 - [X] T148c Implement btree support functions (numeric_cmp_int2/4/8, float4_cmp_int2/4/8, float8_cmp_int2/4/8) ✅
 - [X] T148d Create SQL-callable wrappers for btree support functions ✅
 - [X] T147 Add numeric × int operators to numeric_ops btree family with FUNCTION 1 entries ✅
-- [X] T148 Add float4 × int operators to float_ops btree family with FUNCTION 1 entries ✅
-- [X] T148b Add float8 × int operators to float_ops btree family with FUNCTION 1 entries ✅
-- [X] T149 Create sql/merge_joins.sql test file - renamed to verify indexed nested loop joins ✅
-- [X] T150 Update expected output for btree family membership benefits ✅
+- [ ] T148 Add float4 × int operators to float_ops btree family - NEEDS REMOVAL per T176-T177
+- [ ] T148b Add float8 × int operators to float_ops btree family - NEEDS REMOVAL per T176-T177
+- [X] T149 Create sql/merge_joins.sql test file ✅
+- [ ] T150 Update expected output for btree family membership - NEEDS UPDATE after remediation
 
-**Checkpoint**: ✅ Btree operator family support complete - indexed nested loop joins working
+**Checkpoint**: ⚠️ Btree operator family support PARTIAL - see remediation tasks in US4 (T167-T172, T180) and US5 (T173-T179)
 
-### What Works
+### What Works Now
 
-✅ **Indexed Nested Loop Joins**: Cross-type joins can use indexes on both sides
+✅ **Indexed Nested Loop Joins for int×numeric**: Works via numeric_ops family membership
 ✅ **Index Condition Pushdown**: Conditions like `numeric_col = int_col` use btree index
-✅ **Query Performance**: Selective joins with indexes are highly optimized
+✅ **Hash Joins**: All operators in hash families
 
-### What Does NOT Work (and why)
+### What Needs Remediation
 
-⏳ **Merge Joins**: Planned for v1.0.0 by adding cross-type operators to integer_ops with planner safeguards
-⏳ **MERGES Property**: Planned for v1.0.0 with merge join support
-
-**Rationale**: See research.md section 4 for detailed explanation of why this approach is optimal
+❌ **Merge Joins for int×numeric**: Requires integer_ops membership (T167-T172) + MERGES property (T180)
+❌ **int×float btree membership**: Incorrectly in float_ops, needs removal (T173-T179) per spec US5
 
 ---
 
@@ -412,9 +454,9 @@ Instead of detecting fractional parts, cast integers to the higher-precision typ
 
 **Verification**:
 
-- [X] T154 Run `make installcheck` to execute performance benchmarks ✅
-- [X] T155 Verify sub-millisecond execution time for selective predicates ✅
-- [X] T156 Verify overhead is within 10% of native integer comparisons ✅
+- [X] T181 Run `make installcheck` to execute performance benchmarks ✅
+- [X] T182 Verify sub-millisecond execution time for selective predicates ✅
+- [X] T183 Verify overhead is within 10% of native integer comparisons ✅
 
 **Checkpoint**: Performance requirements met - extension is production-ready ✅
 
@@ -424,21 +466,32 @@ Instead of detecting fractional parts, cast integers to the higher-precision typ
 
 **Purpose**: Documentation, cleanup, and final verification
 
-- [x] T154 [P] Update README.md with complete installation instructions and 6 practical examples ✅
-- [x] T155 [P] Update doc/user-guide.md with all 7 operator usage patterns ✅
-- [x] T156 [P] Update doc/api-reference.md with complete 72-operator reference ✅
-- [x] T157 [P] Verify all C functions have doxygen comments with @brief, @param, @return ✅
-- [x] T158 Verify all files have copyright notices and AI assistance caveat ✅
-- [ ] T159 Run code style verification (K&R style, 2-space indentation, camelCase)
-- [x] T160 Run `make clean && make` with -Wall -Wextra -Werror to verify no warnings ✅
-- [x] T161 Run full regression test suite `make installcheck` and verify 100% pass rate (11 tests passing) ✅
-- [ ] T162 Test extension on PostgreSQL 12, 13, 14, 15, 16 (multi-version compatibility)
-- [x] T163 Update CHANGELOG.md with complete 1.0.0 release notes ✅
-- [x] T164 Review quickstart.md and verify all steps work correctly ✅
+- [x] T184 [P] Update README.md with complete installation instructions and 6 practical examples ✅
+- [x] T185 [P] Update doc/user-guide.md with all 7 operator usage patterns ✅
+- [x] T186 [P] Update doc/api-reference.md with complete operator reference (108 operators) ✅
+- [x] T187 [P] Verify all C functions have doxygen comments with @brief, @param, @return ✅
+- [x] T188 Verify all files have copyright notices and AI assistance caveat ✅
+- [ ] T189 Run code style verification (K&R style, 2-space indentation, camelCase)
+- [x] T190 Run `make clean && make` with -Wall -Wextra -Werror to verify no warnings ✅
+- [x] T191 Run full regression test suite `make installcheck` and verify 100% pass rate ✅
+- [ ] T192 Test extension on PostgreSQL 12, 13, 14, 15, 16 (multi-version compatibility)
+- [x] T193 Update CHANGELOG.md with complete 1.0.0 release notes ✅
+- [x] T194 Review quickstart.md and verify all steps work correctly ✅
 
-**Note**: T154-T157 now complete. T159 and T162 deferred (T159: code already follows style; T162: requires multi-version PostgreSQL setup).
+### Documentation Remediation (Align with Spec)
 
-**Checkpoint**: Extension complete and ready for release
+> **Rationale**: README and other docs have incorrect operator counts and feature claims that don't match the updated spec. These tasks fix documentation to match spec.
+
+- [ ] T195 Update README.md operator count from 108 to match spec (108 is correct, verify no other count errors)
+- [ ] T196 Update README.md "Merge Joins (Coming Soon)" section to match spec's merge join claims
+- [ ] T197 Update README.md to remove claims about float_ops btree membership (deferred per spec)
+- [ ] T198 Update doc/api-reference.md operator count to 108
+- [ ] T199 Verify SQL examples in README.md execute correctly and produce documented results
+- [ ] T200 Run final spec-to-doc alignment check
+
+**Note**: T184-T188 documentation tasks complete. T189 and T192 deferred (T189: code already follows style; T192: requires multi-version PostgreSQL setup). T195-T200 added for documentation remediation.
+
+**Checkpoint**: Extension complete and ready for release once documentation remediation verified
 
 ---
 
@@ -550,39 +603,44 @@ T053-T055 (build and verify)
 
 ## Implementation Strategy Summary
 
-**Total Tasks**: 164
+**Total Tasks**: 200
 
 **By Phase**:
-- Phase 1 (Setup): 9 tasks
-- Phase 2 (Foundational): 9 tasks
-- Phase 3 (US1 - Equality): 37 tasks
-- Phase 4 (US2 - Index): 12 tasks
-- Phase 5 (US3 - Range): 43 tasks
-- Phase 6 (US4 - Transitivity): 9 tasks
-- Phase 7 (US5 - Coverage): 16 tasks
-- Phase 8 (Join Support): 8 tasks
-- Phase 9 (Performance): 6 tasks
-- Phase 10 (Polish): 11 tasks
+- Phase 1 (Setup): 9 tasks (T001-T009)
+- Phase 2 (Foundational): 9 tasks (T010-T018)
+- Phase 3 (US1 - Equality): 37 tasks (T019-T055)
+- Phase 4 (US2 - Index): 14 tasks (T056-T067c)
+- Phase 5 (US3 - Range): 47 tasks (T068-T114)
+- Phase 6 (US4 - Transitivity): 15 tasks (T115-T123, T167-T172, T180)
+- Phase 7 (US5 - Coverage): 23 tasks (T124-T139, T173-T179)
+- Phase 8 (Hash/Join Support): 11 tasks (T140-T150)
+- Phase 9 (Performance): 6 tasks (T151-T153, T181-T183)
+- Phase 10 (Polish): 17 tasks (T184-T200)
 
 **By Story**:
 - US1 (Equality): 37 tasks - 9 core functions + 18 wrappers + tests + SQL
-- US2 (Index): 12 tasks - Support function enhancement + tests
-- US3 (Range): 43 tasks - 36 wrappers + tests + SQL
-- US4 (Transitivity): 9 tasks - Verification tests + SQL review
-- US5 (Coverage): 16 tasks - Edge case tests + special value handling
+- US2 (Index): 14 tasks - Support function enhancement + tests
+- US3 (Range): 47 tasks - 36 wrappers + tests + SQL
+- US4 (Transitivity): 15 tasks - integer_ops membership + MERGES property + tests
+- US5 (Coverage): 23 tasks - Edge case tests + float_ops btree removal
+
+**Implementation Gap Tasks** (to align implementation with spec):
+- T118, T120: Verify btree family membership matches spec
+- T167-T172: Add integer_ops btree family membership for int×numeric
+- T173-T179: Remove float_ops btree membership for int×float (deferred per spec)
+- T180: Add MERGES property to int×numeric equality operators
+
+**Documentation Remediation Tasks**:
+- T195-T200: Update README and docs to match spec (operator counts, feature claims)
 
 **Parallelization**:
 - 89 tasks marked [P] can run in parallel within their phase
-- 75 tasks are sequential (SQL registration, verification, integration)
-- Estimated critical path: ~40-50 sequential task units (with parallel execution)
+- Implementation gap tasks (T167-T180) should be done before T195-T196 verification
 
 **Test-First Emphasis**:
-- Every user story phase starts with test creation (T019-T023, T056-T058, T068-T071, etc.)
+- Every user story phase starts with test creation
 - Tests must FAIL before implementation begins (constitutional requirement)
-- 100% test pass rate required before phase completion (T054, T066, T113, T121, T136, etc.)
-
-**MVP Delivery Path**: 
-Phase 1 → Phase 2 → Phase 3 → Verify → Deploy MVP
+- 100% test pass rate required before phase completion
 
 **Full Feature Delivery Path**:
-Phase 1 → Phase 2 → Phases 3-7 (in priority order or parallel) → Phase 8 → Phase 9 → Phase 10 → Release 1.0.0
+Phase 1 → Phase 2 → Phases 3-7 → Phase 8 → Phase 9 → Implementation Gap Tasks → Phase 10 → Release 1.0.0

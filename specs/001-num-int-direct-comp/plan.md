@@ -1,40 +1,41 @@
 # Implementation Plan: Direct Exact Comparison for Numeric and Integer Types
 
-**Branch**: `001-num-int-direct-comp` | **Date**: 2025-12-23 | **Spec**: [spec.md](spec.md)  
+**Branch**: `001-num-int-direct-comp` | **Date**: 2025-12-28 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `/specs/001-num-int-direct-comp/spec.md`
-
-**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
 
 ## Summary
 
-Create PostgreSQL extension `pg_num2int_direct_comp` that provides exact comparison operators (=, <>, <, >, <=, >=) for inexact numeric types (numeric, float4, float8) with integer types (int2, int4, int8). Comparisons detect precision mismatches (e.g., 16777216::bigint = 16777217::float4 returns false) and support btree index SARG predicates for efficient query execution. Implementation uses C body functions with PostgreSQL truncation/bounds checking, SupportRequestIndexCondition for index integration (similar to LIKE operator), and lazy OID caching for operator lookups.
+PostgreSQL extension providing 108 exact comparison operators for cross-type comparisons between inexact numeric types (numeric, float4, float8) and integer types (int2, int4, int8). Operators use C body functions that reuse PostgreSQL's truncation/bounds primitives. Index optimization via `SupportRequestIndexCondition` support functions. Hash join support via operator family membership with casting-based hash functions. Merge join support for int×numeric via btree family membership; int×float btree family integration deferred to reduce scope.
 
 ## Technical Context
 
-**Language/Version**: C (C99 minimum) for PostgreSQL backend extension  
-**Primary Dependencies**: PostgreSQL 12+ headers (fmgr.h, utils/numeric.h, utils/float.h, optimizer/optimizer.h)  
+**Language/Version**: C (C99) for PostgreSQL backend extension  
+**Primary Dependencies**: PostgreSQL 12+ development headers, PGXS build system  
 **Storage**: N/A (operators only, no data storage)  
-**Testing**: PostgreSQL pg_regress framework  
-**Target Platform**: PostgreSQL 12+ on Linux/macOS/Windows  
-**Project Type**: Single PostgreSQL extension (PGXS build)  
-**Performance Goals**: Sub-millisecond comparison on indexed columns, overhead <10% vs standard operators  
-**Constraints**: Must integrate with PostgreSQL query optimizer, support btree index access paths, no transitivity inference  
-**Scale/Scope**: 54 operators total (6 comparison types × 9 type combinations), 9 core comparison functions (`_cmp_internal` pattern) + 54 operator wrappers, 1 generic support function for index integration
+**Testing**: pg_regress framework (constitution requirement)  
+**Target Platform**: Linux, macOS, Windows (via MinGW) - PostgreSQL 12-16  
+**Project Type**: Single PostgreSQL extension  
+**Performance Goals**: Sub-millisecond index lookups on 1M+ row tables, <10% overhead vs native comparisons  
+**Constraints**: Must compile with `-Wall -Wextra -Werror`, no C++ in backend code  
+**Scale/Scope**: 108 operators (9 type combinations × 6 ops × 2 directions)
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-**✓ PASS**: Extension follows constitutional requirements:
-- Pure C backend code (no C++), K&R style, 2-space indentation
-- Test-first development with pg_regress framework mandatory
-- PGXS build system for compilation and installation
-- Documentation requirements (README, CHANGELOG, doc/ folder)
-- Copyright notices and doxygen headers required
-- SQL files use UPPERCASE keywords, lowercase identifiers
-- Semantic versioning for releases (starting 1.0.0)
+| Principle | Requirement | Status |
+|-----------|-------------|--------|
+| I. Code Style | K&R C, 2-space indent, camelCase functions | ✅ PASS |
+| II. Documentation | Doxygen headers, @param/@return, AI caveat | ✅ PASS |
+| III. Test-First | pg_regress tests before implementation | ✅ PASS |
+| IV. SQL Standards | UPPERCASE keywords, snake_case identifiers | ✅ PASS |
+| V. PGXS Build | Makefile with EXTENSION, DATA, MODULES, REGRESS | ✅ PASS |
+| VI. User Docs | README, doc/ folder, CHANGELOG.md | ✅ PASS |
+| Backend C Purity | No C++ in PostgreSQL extension code | ✅ PASS |
+| Memory Discipline | palloc/pfree only, no malloc/free | ✅ PASS |
+| Error Handling | ereport/elog, no printf | ✅ PASS |
 
-**No complexity violations**: Standard single-extension structure, no additional projects or architectural complexity beyond PostgreSQL operator definition patterns.
+**Gate Status**: ✅ All gates pass. Proceed to implementation.
 
 ## Project Structure
 
@@ -42,109 +43,93 @@ Create PostgreSQL extension `pg_num2int_direct_comp` that provides exact compari
 
 ```text
 specs/001-num-int-direct-comp/
-├── spec.md              # Feature specification (user requirements)
-├── plan.md              # This file (/speckit.plan command output)
-├── research.md          # Phase 0 output (/speckit.plan command)
-├── data-model.md        # Phase 1 output (/speckit.plan command)
-├── quickstart.md        # Phase 1 output (/speckit.plan command)
-├── contracts/           # Phase 1 output (/speckit.plan command)
-│   ├── operators.yaml   # Operator definitions matrix
-│   └── test-cases.yaml  # Test case specifications
-└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
+├── plan.md              # This file
+├── research.md          # Phase 0 output (complete)
+├── data-model.md        # Phase 1 output (complete)
+├── quickstart.md        # Phase 1 output (complete)
+├── contracts/           # Phase 1 output
+│   ├── operators.md     # Operator definitions
+│   └── test-cases.md    # Test case specifications
+└── tasks.md             # Phase 2 output
 ```
 
 ### Source Code (repository root)
 
 ```text
-pg-num2int-direct-comp/
-├── pg_num2int_direct_comp.c           # Main C implementation file
-├── pg_num2int_direct_comp.h           # Header with function declarations
-├── pg_num2int_direct_comp--1.0.0.sql  # Extension installation script
-├── pg_num2int_direct_comp.control     # Extension control file
-├── Makefile                            # PGXS-based build configuration
-├── LICENSE                             # MIT License
-├── README.md                           # User-facing documentation
-├── CHANGELOG.md                        # Version history
-├── doc/                                # Detailed documentation
-│   ├── installation.md                 # Setup and build instructions
-│   ├── user-guide.md                   # Usage examples and patterns
-│   ├── api-reference.md                # Complete operator reference
-│   └── development.md                  # Contributor guide
-├── sql/                                # pg_regress test SQL scripts
-│   ├── numeric_int_ops.sql             # Tests for numeric vs int comparisons
-│   ├── float_int_ops.sql               # Tests for float vs int comparisons
-│   ├── index_usage.sql                 # EXPLAIN tests for index optimization
-│   ├── null_handling.sql               # NULL behavior tests
-│   ├── special_values.sql              # NaN, Infinity tests
-│   └── edge_cases.sql                  # Boundary and overflow tests
-└── expected/                           # Expected test outputs
-    ├── numeric_int_ops.out
-    ├── float_int_ops.out
-    ├── index_usage.out
-    ├── null_handling.out
-    ├── special_values.out
-    └── edge_cases.out
+pg_num2int_direct_comp.c        # Main C implementation (comparison functions)
+pg_num2int_direct_comp.h        # Header with function declarations
+pg_num2int_direct_comp--1.0.0.sql  # Extension SQL (operators, families)
+pg_num2int_direct_comp.control  # Extension metadata
+Makefile                        # PGXS build configuration
+
+sql/                            # Regression test inputs
+├── numeric_int_ops.sql         # numeric × int tests
+├── float_int_ops.sql           # float × int tests
+├── index_usage.sql             # Index optimization tests
+├── hash_joins.sql              # Hash join tests
+├── merge_joins.sql             # Merge join tests
+├── null_handling.sql           # NULL semantics tests
+├── special_values.sql          # NaN, Infinity tests
+├── edge_cases.sql              # Boundary conditions
+├── range_boundary.sql          # Range operator boundaries
+├── transitivity.sql            # Transitivity verification
+├── index_nested_loop.sql       # Indexed nested loop tests
+└── performance.sql             # Performance benchmarks
+
+expected/                       # Expected test outputs
+
+doc/                            # User documentation
+├── installation.md
+├── user-guide.md
+├── api-reference.md
+└── development.md
 ```
 
-**Structure Decision**: Standard PostgreSQL extension layout using PGXS. Single C implementation file with header (following constitution requirement for simple projects). Test suite uses pg_regress with separate test files by functionality category. Documentation follows constitutional requirements with README, CHANGELOG, and doc/ folder structure.
+**Structure Decision**: Single-project PostgreSQL extension. All C code in single file with header. PGXS standard layout.
 
-## Phase Completion Status
+## Key Technical Decisions (from research.md)
 
-### Phase 0: Research ✅ COMPLETE
+### 1. Exact Comparison Strategy
+- Use PostgreSQL's `numeric_trunc()` and bounds checking primitives
+- Truncate to integer part, check range, compare
+- Return -1/0/1 from core comparison functions
 
-**Output**: [research.md](research.md)
+### 2. Index Optimization
+- Single generic `num2int_support()` function via `SupportRequestIndexCondition`
+- Both operator directions need real C functions (shell operators cannot have support functions)
+- Support function returns `List *` via `list_make1()`
 
-**Key Decisions**:
-1. **Exact comparison strategy**: Reuse PostgreSQL's `numeric_trunc()` and bounds checking primitives
-2. **Index integration**: Implement via `SupportRequestIndexCondition` (modeled after LIKE operator)
-3. **Performance optimization**: Lazy per-backend OID cache for operator lookups
-4. **Transitivity prevention**: Keep operators independent (not added to cross-type btree operator families)
-5. **Test organization**: pg_regress with categorized test suites (operators, index, NULL, special values, edges)
-6. **Type coverage**: Full 9-combination matrix with type-specific precision handling
+### 3. Hash Join Support
+- Cast integers to higher-precision type before hashing
+- Use PostgreSQL's native hash functions (`hash_numeric`, `hashfloat8`)
+- All equality operators have HASHES property
 
-All unknowns from Technical Context resolved. No [NEEDS CLARIFICATION] markers remain.
+### 4. Btree Family Strategy
+- Add int×numeric operators to BOTH `integer_ops` AND `numeric_ops` (enables merge joins)
+- Add int×float operators to `float_ops` only (deferred: btree family integration)
+- Do NOT add int×float to `integer_ops` (preserves transitivity correctness)
 
-### Phase 1: Design ✅ COMPLETE
+### 5. Operator Coverage
+- 108 operators: 9 type combinations × 6 ops × 2 directions
+- int×numeric: 36 operators with full btree/hash family integration
+- int×float: 72 operators with hash family, btree deferred
 
-**Outputs**:
-- [data-model.md](data-model.md) - Operator catalog structures, function signatures, type combination matrix
-- [contracts/operators.md](contracts/operators.md) - Complete 54-operator specification with properties
-- [contracts/test-cases.md](contracts/test-cases.md) - 7 test categories with ~200+ test assertions
-- [quickstart.md](quickstart.md) - Developer workflow guide and quick reference
+## Phase Status
 
-**Design Highlights**:
-- 54 operators (6 types × 9 combinations) with commutator/negator relationships
-- 9 core `_cmp_internal` functions (PostgreSQL standard pattern returning -1/0/1)
-- 54 operator wrapper functions (thin wrappers calling core cmp functions)
-- 1 generic support function (`num2int_support`) handling all operators via OID inspection
-- Lazy OID cache structure for per-backend caching
-- Comprehensive test strategy covering correctness, index usage, NULL handling, special values, edge cases, transitivity, and performance
+| Phase | Artifact | Status |
+|-------|----------|--------|
+| Phase 0 | research.md | ✅ Complete |
+| Phase 1 | data-model.md | ✅ Complete |
+| Phase 1 | contracts/operators.md | ✅ Complete |
+| Phase 1 | contracts/test-cases.md | ✅ Complete |
+| Phase 1 | quickstart.md | ✅ Complete |
+| Phase 2 | tasks.md | ✅ Complete |
 
-**Constitution Re-Check**: ✅ PASS
-- Design maintains pure C backend code requirement
-- Test-first approach with pg_regress framework defined
-- PGXS build system structure confirmed
-- Documentation structure aligns with constitution (README, CHANGELOG, doc/)
-- No architectural complexity violations introduced
+## Complexity Tracking
 
-### Phase 2: Agent Context Update ✅ COMPLETE
+No constitution violations requiring justification. Implementation follows all principles.
 
-**Updated File**: [.github/agents/copilot-instructions.md](../../.github/agents/copilot-instructions.md)
-
-**Context Added**:
-- Language: C (C99 minimum) for PostgreSQL backend extension
-- Framework: PostgreSQL 12+ headers (fmgr.h, utils/numeric.h, utils/float.h, optimizer/optimizer.h)
-- Database: N/A (operators only, no data storage)
-- Project Type: Single PostgreSQL extension (PGXS build)
-
-Agent context now reflects the technology stack for AI-assisted development.
-
-## Next Steps
-
-Planning phase complete. Proceed to implementation with:
-
-```bash
-/speckit.tasks
-```
-
-This will generate the task breakdown in `tasks.md` for execution via `/speckit.implement`.
+| Violation | Why Needed | Simpler Alternative Rejected Because |
+|-----------|------------|-------------------------------------|
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
