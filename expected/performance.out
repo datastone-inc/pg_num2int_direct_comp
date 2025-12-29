@@ -25,7 +25,7 @@ EXPLAIN (COSTS OFF) SELECT COUNT(*) FROM perf_int4 WHERE val = 50000::numeric;
 ------------------------------------------------------------
  Aggregate
    ->  Index Only Scan using idx_perf_int4_val on perf_int4
-         Index Cond: (val = 50000)
+         Index Cond: (val = '50000'::numeric)
 (3 rows)
 
 EXPLAIN (COSTS OFF) SELECT COUNT(*) FROM perf_int4 WHERE val = 50000::float8;
@@ -117,7 +117,7 @@ SELECT 'native int4 < int4'::text AS test, COUNT(*) AS count FROM perf_int4 WHER
 SELECT 'int4 = numeric (fractional)'::text AS test, COUNT(*) AS count FROM perf_int4 WHERE val = 50000.5::numeric;
             test             | count 
 -----------------------------+-------
- int4 = numeric (fractional) |     1
+ int4 = numeric (fractional) |     0
 (1 row)
 
 SELECT 'int4 = float8 (fractional)'::text AS test, COUNT(*) AS count FROM perf_int4 WHERE val = 50000.5::float8;
@@ -162,7 +162,7 @@ SELECT * FROM perf_int4 WHERE val = 12345::numeric;
                    QUERY PLAN                    
 -------------------------------------------------
  Index Scan using idx_perf_int4_val on perf_int4
-   Index Cond: (val = 12345)
+   Index Cond: (val = '12345'::numeric)
 (2 rows)
 
 EXPLAIN (COSTS OFF, ANALYZE OFF)

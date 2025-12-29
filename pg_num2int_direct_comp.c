@@ -998,6 +998,36 @@ numeric_cmp_int8(PG_FUNCTION_ARGS) {
   PG_RETURN_INT32(numeric_cmp_int8_internal(num, val));
 }
 
+/*
+ * Reverse comparison functions for int <op> numeric
+ * These are needed for the integer_ops btree family where the integer
+ * is the left (indexed) operand.
+ * int_cmp_numeric(i, n) = -numeric_cmp_int(n, i)
+ */
+PG_FUNCTION_INFO_V1(int2_cmp_numeric);
+Datum
+int2_cmp_numeric(PG_FUNCTION_ARGS) {
+  int16 val = PG_GETARG_INT16(0);
+  Numeric num = PG_GETARG_NUMERIC(1);
+  PG_RETURN_INT32(-numeric_cmp_int2_internal(num, val));
+}
+
+PG_FUNCTION_INFO_V1(int4_cmp_numeric);
+Datum
+int4_cmp_numeric(PG_FUNCTION_ARGS) {
+  int32 val = PG_GETARG_INT32(0);
+  Numeric num = PG_GETARG_NUMERIC(1);
+  PG_RETURN_INT32(-numeric_cmp_int4_internal(num, val));
+}
+
+PG_FUNCTION_INFO_V1(int8_cmp_numeric);
+Datum
+int8_cmp_numeric(PG_FUNCTION_ARGS) {
+  int64 val = PG_GETARG_INT64(0);
+  Numeric num = PG_GETARG_NUMERIC(1);
+  PG_RETURN_INT32(-numeric_cmp_int8_internal(num, val));
+}
+
 PG_FUNCTION_INFO_V1(float4_cmp_int2);
 Datum
 float4_cmp_int2(PG_FUNCTION_ARGS) {

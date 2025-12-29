@@ -84,15 +84,15 @@ SELECT COUNT(*)
 FROM nl_float8 f
 JOIN nl_int4 i ON f.val = i.val
 WHERE f.val < 100;
-                                QUERY PLAN                                
---------------------------------------------------------------------------
+                QUERY PLAN                 
+-------------------------------------------
  Aggregate
    ->  Hash Join
          Hash Cond: (i.val = f.val)
          ->  Seq Scan on nl_int4 i
          ->  Hash
-               ->  Index Only Scan using idx_nl_float8_val on nl_float8 f
-                     Index Cond: (val < 100)
+               ->  Seq Scan on nl_float8 f
+                     Filter: (val < 100)
 (7 rows)
 
 -- Test 4: Compare with non-selective query (should use hash join)
@@ -130,7 +130,7 @@ WHERE i.val = 42;
    ->  Index Only Scan using idx_nl_int4_val on nl_int4 i
          Index Cond: (val = 42)
    ->  Index Scan using idx_nl_numeric_val on nl_numeric n
-         Index Cond: (val = i.val)
+         Index Cond: (val = 42)
 (5 rows)
 
 -- Expected: Nested Loop
@@ -167,8 +167,10 @@ ORDER BY op.oprleft, op.oprright;
  oprname | oprleft | oprright | opfamily | access_method 
 ---------+---------+----------+----------+---------------
  =       | integer | numeric  | 1988     | btree
+ =       | integer | numeric  | 1976     | btree
  =       | numeric | integer  | 1988     | btree
-(2 rows)
+ =       | numeric | integer  | 1976     | btree
+(4 rows)
 
 -- Expected: Both directions in numeric_ops btree family
 -- Clean up

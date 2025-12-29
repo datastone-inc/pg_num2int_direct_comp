@@ -80,19 +80,23 @@ SELECT id FROM boundary_test WHERE id <= 10::numeric ORDER BY id;
 
 -- Test 9: Verify EXPLAIN shows Index Scan for fractional values
 EXPLAIN (COSTS OFF) SELECT id FROM boundary_test WHERE id > 10.5::numeric;
-        QUERY PLAN         
----------------------------
- Seq Scan on boundary_test
-   Filter: (id > 10.5)
-(2 rows)
+                  QUERY PLAN                   
+-----------------------------------------------
+ Bitmap Heap Scan on boundary_test
+   Recheck Cond: (id > 10.5)
+   ->  Bitmap Index Scan on boundary_test_pkey
+         Index Cond: (id > 10.5)
+(4 rows)
 
 -- Test 10: Verify EXPLAIN shows Index Scan for integer values
 EXPLAIN (COSTS OFF) SELECT id FROM boundary_test WHERE id >= 10::numeric;
-           QUERY PLAN            
----------------------------------
- Seq Scan on boundary_test
-   Filter: (id >= '10'::numeric)
-(2 rows)
+                  QUERY PLAN                   
+-----------------------------------------------
+ Bitmap Heap Scan on boundary_test
+   Recheck Cond: (id >= '10'::numeric)
+   ->  Bitmap Index Scan on boundary_test_pkey
+         Index Cond: (id >= '10'::numeric)
+(4 rows)
 
 -- Test 11: Float4 fractional > (should find 11, 12)
 SELECT id FROM boundary_test WHERE id > 10.5::float4 ORDER BY id;

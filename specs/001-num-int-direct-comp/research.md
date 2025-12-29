@@ -958,3 +958,123 @@ These insights represent critical design decisions that shaped v1.0:
 6. int×float btree integration deferred to reduce scope (support functions still work)
 
 The combination enables high performance (hash joins, merge joins, indexed lookups) while maintaining exact comparison semantics.
+
+---
+
+## 9. SupportRequestSimplify vs SupportRequestIndexCondition
+
+**Date**: 2025-12-29
+
+**Context**: After implementing btree family membership for int×numeric operators, we discovered that `SupportRequestIndexCondition` is bypassed when operators are in a btree family. This raises the question: can `SupportRequestSimplify` provide better planning while still enabling merge joins?
+
+### 9.1 Problem Discovery
+
+When int×numeric operators are added to btree families (integer_ops + numeric_ops), PostgreSQL's planner uses the btree family machinery directly for index access. This **bypasses** the `SupportRequestIndexCondition` handler, meaning:
+
+1. **No predicate transformation**: `int_col = 100::numeric` is NOT transformed to `int_col = 100`
+2. **No fractional detection**: `int_col = 10.5::numeric` is NOT transformed to `FALSE`
+3. **Suboptimal selectivity estimates**: Planner estimates `rows=1` even for impossible predicates
+
+**Observed Behavior**:
+```sql
+EXPLAIN SELECT * FROM test_selectivity WHERE val = 10.5::numeric;
+-- Shows: Index Cond: (val = 10.5)
+-- Estimates: rows=1 (but returns 0 rows - impossible predicate)
+```
+
+### 9.2 Support Request Types Comparison
+
+| Aspect | SupportRequestIndexCondition | SupportRequestSimplify |
+|--------|------------------------------|------------------------|
+| **When called** | During index path planning | During query simplification (earlier) |
+| **What it transforms** | Index condition only | The expression itself |
+| **Btree family interaction** | Bypassed when op is in btree family | Called BEFORE btree family lookup |
+| **Fractional → FALSE** | Can transform, but bypassed | Can transform at parse time |
+| **Join conditions** | N/A (constants only) | N/A (constants only) |
+| **PostgreSQL version** | PG12+ | PG12+ |
+
+### 9.3 SupportRequestSimplify Advantages
+
+For **constant predicates** (WHERE clause with literals), `SupportRequestSimplify` can:
+
+1. **Transform earlier**: Before btree family even checked
+2. **Improve selectivity**: `int_col = 10.5::numeric` → `FALSE` gives `rows=0` estimate
+3. **Enable constant folding**: `int_col = 100::numeric` → `int_col = 100` uses native operator
+4. **Work WITH btree families**: Transformation happens before family-based optimization
+
+**Transformation Examples**:
+
+| Original Predicate | SupportRequestSimplify Result | Benefit |
+|-------------------|-------------------------------|---------|
+| `int_col = 100::numeric` | `int_col = 100` | Uses int4=int4, perfect estimate |
+| `int_col = 10.5::numeric` | `FALSE` | Rows=0 estimate, may skip scan |
+| `int_col > 10.5::numeric` | `int_col > 10` or `int_col >= 11` | Correct boundary, good estimate |
+| `int_col < 10.5::numeric` | `int_col <= 10` | Correct boundary |
+
+### 9.4 Limitations
+
+`SupportRequestSimplify` only works for **constant expressions**. It cannot help with:
+
+1. **Join conditions**: `t1.int_col = t2.numeric_col` - runtime values unknown
+2. **Parameterized queries**: `int_col = $1::numeric` - parameter value unknown at plan time
+
+For these cases, we still need:
+- **Btree family membership**: Enables nested loop join index access and merge joins for int×numeric
+- **Cross-type operators**: Correct evaluation at runtime
+
+### 9.5 Recommended Architecture
+
+**Hybrid approach for v1.0+**:
+
+1. **Keep btree family membership**: Required for joins
+2. **Add SupportRequestSimplify handler**: For constant predicate optimization
+3. **Remove SupportRequestIndexCondition** (optional): Redundant when Simplify handles constants
+
+**Implementation in num2int_support()**:
+```c
+Datum
+num2int_support(PG_FUNCTION_ARGS)
+{
+    Node *rawreq = (Node *) PG_GETARG_POINTER(0);
+    
+    if (IsA(rawreq, SupportRequestSimplify))
+    {
+        SupportRequestSimplify *req = (SupportRequestSimplify *) rawreq;
+        // Transform: int_col = 100::numeric → int_col = 100
+        // Transform: int_col = 10.5::numeric → FALSE
+        // Return transformed expression or NULL if no transformation
+    }
+    
+    // SupportRequestIndexCondition no longer needed if Simplify handles all cases
+    
+    PG_RETURN_POINTER(NULL);
+}
+```
+
+### 9.6 Decision
+
+**Recommendation**: Implement `SupportRequestSimplify` as the primary mechanism for constant predicate optimization. This provides:
+
+1. ✅ Better selectivity estimates (fractional → FALSE gives rows=0)
+2. ✅ Correct boundary handling for range operators
+3. ✅ Works alongside btree family membership (not bypassed)
+4. ✅ Simpler architecture (one transformation mechanism)
+
+**For joins**: Btree family membership remains essential for merge join support. The operators themselves handle runtime evaluation correctly.
+
+**Trade-off accepted**: Join predicates don't get the same optimization as constants, but:
+- Merge joins work (btree family)
+- Hash joins work (hash family)
+- Results are always correct (exact operators)
+
+### 9.7 Implementation Notes
+
+The `SupportRequestSimplify` handler should:
+
+1. **Check for constant operand**: Only transform when one side is a Const node
+2. **Detect fractional values**: For equality, if numeric/float has fractional part → return FALSE
+3. **Handle range boundaries**: For `<`, `>`, `<=`, `>=`, compute correct integer boundary
+4. **Return NULL if no transformation**: Let operator execute normally for non-constant cases
+5. **Build replacement expression**: Use `makeBoolConst()` for FALSE, or build new OpExpr with integer constant
+
+**Key insight**: `SupportRequestSimplify` effectively replaces `SupportRequestIndexCondition` for constant predicates while enabling btree family benefits for joins.

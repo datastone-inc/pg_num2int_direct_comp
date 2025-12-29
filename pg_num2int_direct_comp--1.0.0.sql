@@ -161,7 +161,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -172,7 +173,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -183,7 +185,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -194,7 +197,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 -- Float4 × Integer Equality Operators
@@ -479,7 +483,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -534,7 +539,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -1850,6 +1856,23 @@ RETURNS int4
 AS 'MODULE_PATHNAME', 'numeric_cmp_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
+-- Reverse comparison functions for integer_ops btree family
+-- These are called with (int, numeric) argument order
+CREATE OR REPLACE FUNCTION int2_cmp_numeric(int2, numeric)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'int2_cmp_numeric'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION int4_cmp_numeric(int4, numeric)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'int4_cmp_numeric'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION int8_cmp_numeric(int8, numeric)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'int8_cmp_numeric'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
 CREATE OR REPLACE FUNCTION float4_cmp_int2(float4, int2)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'float4_cmp_int2'
@@ -1982,7 +2005,78 @@ LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
 -- Add numeric × int operators to numeric_ops btree family
 -- This enables merge join optimization and transitive inference
+--
+-- CRITICAL: We must also add integer comparison operators so PostgreSQL can
+-- compare integer values within numeric_ops context (e.g., during merge join sort).
 ALTER OPERATOR FAMILY numeric_ops USING btree ADD
+  -- Same-type integer comparisons (required for merge join sorting)
+  -- int2 comparisons
+  FUNCTION 1 (int2, int2) btint2cmp(int2, int2),
+  OPERATOR 1 < (int2, int2),
+  OPERATOR 2 <= (int2, int2),
+  OPERATOR 3 = (int2, int2),
+  OPERATOR 4 >= (int2, int2),
+  OPERATOR 5 > (int2, int2),
+  
+  -- int4 comparisons
+  FUNCTION 1 (int4, int4) btint4cmp(int4, int4),
+  OPERATOR 1 < (int4, int4),
+  OPERATOR 2 <= (int4, int4),
+  OPERATOR 3 = (int4, int4),
+  OPERATOR 4 >= (int4, int4),
+  OPERATOR 5 > (int4, int4),
+  
+  -- int8 comparisons
+  FUNCTION 1 (int8, int8) btint8cmp(int8, int8),
+  OPERATOR 1 < (int8, int8),
+  OPERATOR 2 <= (int8, int8),
+  OPERATOR 3 = (int8, int8),
+  OPERATOR 4 >= (int8, int8),
+  OPERATOR 5 > (int8, int8),
+  
+  -- Cross-integer comparisons (int2 vs int4, int2 vs int8, int4 vs int8)
+  FUNCTION 1 (int2, int4) btint24cmp(int2, int4),
+  OPERATOR 1 < (int2, int4),
+  OPERATOR 2 <= (int2, int4),
+  OPERATOR 3 = (int2, int4),
+  OPERATOR 4 >= (int2, int4),
+  OPERATOR 5 > (int2, int4),
+  
+  FUNCTION 1 (int4, int2) btint42cmp(int4, int2),
+  OPERATOR 1 < (int4, int2),
+  OPERATOR 2 <= (int4, int2),
+  OPERATOR 3 = (int4, int2),
+  OPERATOR 4 >= (int4, int2),
+  OPERATOR 5 > (int4, int2),
+  
+  FUNCTION 1 (int2, int8) btint28cmp(int2, int8),
+  OPERATOR 1 < (int2, int8),
+  OPERATOR 2 <= (int2, int8),
+  OPERATOR 3 = (int2, int8),
+  OPERATOR 4 >= (int2, int8),
+  OPERATOR 5 > (int2, int8),
+  
+  FUNCTION 1 (int8, int2) btint82cmp(int8, int2),
+  OPERATOR 1 < (int8, int2),
+  OPERATOR 2 <= (int8, int2),
+  OPERATOR 3 = (int8, int2),
+  OPERATOR 4 >= (int8, int2),
+  OPERATOR 5 > (int8, int2),
+  
+  FUNCTION 1 (int4, int8) btint48cmp(int4, int8),
+  OPERATOR 1 < (int4, int8),
+  OPERATOR 2 <= (int4, int8),
+  OPERATOR 3 = (int4, int8),
+  OPERATOR 4 >= (int4, int8),
+  OPERATOR 5 > (int4, int8),
+  
+  FUNCTION 1 (int8, int4) btint84cmp(int8, int4),
+  OPERATOR 1 < (int8, int4),
+  OPERATOR 2 <= (int8, int4),
+  OPERATOR 3 = (int8, int4),
+  OPERATOR 4 >= (int8, int4),
+  OPERATOR 5 > (int8, int4),
+  
   -- numeric <op> int2 with support function
   FUNCTION 1 (numeric, int2) numeric_cmp_int2(numeric, int2),
   OPERATOR 1 < (numeric, int2),
@@ -2007,129 +2101,99 @@ ALTER OPERATOR FAMILY numeric_ops USING btree ADD
   OPERATOR 4 >= (numeric, int8),
   OPERATOR 5 > (numeric, int8),
   
-  -- int2 <op> numeric (commutator direction - reuse same comparison function)
-  FUNCTION 1 (int2, numeric) numeric_cmp_int2(numeric, int2),
+  -- int2 <op> numeric (commutator direction) - uses reverse comparison function
+  FUNCTION 1 (int2, numeric) int2_cmp_numeric(int2, numeric),
   OPERATOR 1 < (int2, numeric),
   OPERATOR 2 <= (int2, numeric),
   OPERATOR 3 = (int2, numeric),
   OPERATOR 4 >= (int2, numeric),
   OPERATOR 5 > (int2, numeric),
   
-  -- int4 <op> numeric (commutator direction)
-  FUNCTION 1 (int4, numeric) numeric_cmp_int4(numeric, int4),
+  -- int4 <op> numeric (commutator direction) - uses reverse comparison function
+  FUNCTION 1 (int4, numeric) int4_cmp_numeric(int4, numeric),
   OPERATOR 1 < (int4, numeric),
   OPERATOR 2 <= (int4, numeric),
   OPERATOR 3 = (int4, numeric),
   OPERATOR 4 >= (int4, numeric),
   OPERATOR 5 > (int4, numeric),
   
-  -- int8 <op> numeric (commutator direction)
-  FUNCTION 1 (int8, numeric) numeric_cmp_int8(numeric, int8),
+  -- int8 <op> numeric (commutator direction) - uses reverse comparison function
+  FUNCTION 1 (int8, numeric) int8_cmp_numeric(int8, numeric),
   OPERATOR 1 < (int8, numeric),
   OPERATOR 2 <= (int8, numeric),
   OPERATOR 3 = (int8, numeric),
   OPERATOR 4 >= (int8, numeric),
   OPERATOR 5 > (int8, numeric);
 
--- Add float4 × int operators to float_ops btree family
-ALTER OPERATOR FAMILY float_ops USING btree ADD
-  -- float4 <op> int2 with support function
-  FUNCTION 1 (float4, int2) float4_cmp_int2(float4, int2),
-  OPERATOR 1 < (float4, int2),
-  OPERATOR 2 <= (float4, int2),
-  OPERATOR 3 = (float4, int2),
-  OPERATOR 4 >= (float4, int2),
-  OPERATOR 5 > (float4, int2),
+-- Add int × numeric operators to integer_ops btree family
+-- This enables merge joins and index access from the integer side.
+-- Per spec US4: int×numeric operators must be in BOTH integer_ops AND numeric_ops.
+--
+-- CRITICAL: We must also add numeric's own operators and comparison function
+-- so PostgreSQL can compare two numeric values within integer_ops context
+-- (e.g., during merge join sort). We reference PostgreSQL's built-in operators.
+ALTER OPERATOR FAMILY integer_ops USING btree ADD
+  -- Same-type numeric comparison (required for merge join sorting)
+  FUNCTION 1 (numeric, numeric) numeric_cmp(numeric, numeric),
+  OPERATOR 1 < (numeric, numeric),
+  OPERATOR 2 <= (numeric, numeric),
+  OPERATOR 3 = (numeric, numeric),
+  OPERATOR 4 >= (numeric, numeric),
+  OPERATOR 5 > (numeric, numeric),
   
-  -- float4 <op> int4 with support function
-  FUNCTION 1 (float4, int4) float4_cmp_int4(float4, int4),
-  OPERATOR 1 < (float4, int4),
-  OPERATOR 2 <= (float4, int4),
-  OPERATOR 3 = (float4, int4),
-  OPERATOR 4 >= (float4, int4),
-  OPERATOR 5 > (float4, int4),
+  -- numeric <op> int2 with support function
+  FUNCTION 1 (numeric, int2) numeric_cmp_int2(numeric, int2),
+  OPERATOR 1 < (numeric, int2),
+  OPERATOR 2 <= (numeric, int2),
+  OPERATOR 3 = (numeric, int2),
+  OPERATOR 4 >= (numeric, int2),
+  OPERATOR 5 > (numeric, int2),
   
-  -- float4 <op> int8 with support function
-  FUNCTION 1 (float4, int8) float4_cmp_int8(float4, int8),
-  OPERATOR 1 < (float4, int8),
-  OPERATOR 2 <= (float4, int8),
-  OPERATOR 3 = (float4, int8),
-  OPERATOR 4 >= (float4, int8),
-  OPERATOR 5 > (float4, int8),
+  -- numeric <op> int4 with support function
+  FUNCTION 1 (numeric, int4) numeric_cmp_int4(numeric, int4),
+  OPERATOR 1 < (numeric, int4),
+  OPERATOR 2 <= (numeric, int4),
+  OPERATOR 3 = (numeric, int4),
+  OPERATOR 4 >= (numeric, int4),
+  OPERATOR 5 > (numeric, int4),
   
-  -- int2 <op> float4 (commutator direction)
-  FUNCTION 1 (int2, float4) float4_cmp_int2(float4, int2),
-  OPERATOR 1 < (int2, float4),
-  OPERATOR 2 <= (int2, float4),
-  OPERATOR 3 = (int2, float4),
-  OPERATOR 4 >= (int2, float4),
-  OPERATOR 5 > (int2, float4),
+  -- numeric <op> int8 with support function
+  FUNCTION 1 (numeric, int8) numeric_cmp_int8(numeric, int8),
+  OPERATOR 1 < (numeric, int8),
+  OPERATOR 2 <= (numeric, int8),
+  OPERATOR 3 = (numeric, int8),
+  OPERATOR 4 >= (numeric, int8),
+  OPERATOR 5 > (numeric, int8),
   
-  -- int4 <op> float4 (commutator direction)
-  FUNCTION 1 (int4, float4) float4_cmp_int4(float4, int4),
-  OPERATOR 1 < (int4, float4),
-  OPERATOR 2 <= (int4, float4),
-  OPERATOR 3 = (int4, float4),
-  OPERATOR 4 >= (int4, float4),
-  OPERATOR 5 > (int4, float4),
+  -- int2 <op> numeric - uses reverse comparison function for correct argument order
+  FUNCTION 1 (int2, numeric) int2_cmp_numeric(int2, numeric),
+  OPERATOR 1 < (int2, numeric),
+  OPERATOR 2 <= (int2, numeric),
+  OPERATOR 3 = (int2, numeric),
+  OPERATOR 4 >= (int2, numeric),
+  OPERATOR 5 > (int2, numeric),
   
-  -- int8 <op> float4 (commutator direction)
-  FUNCTION 1 (int8, float4) float4_cmp_int8(float4, int8),
-  OPERATOR 1 < (int8, float4),
-  OPERATOR 2 <= (int8, float4),
-  OPERATOR 3 = (int8, float4),
-  OPERATOR 4 >= (int8, float4),
-  OPERATOR 5 > (int8, float4);
+  -- int4 <op> numeric - uses reverse comparison function
+  FUNCTION 1 (int4, numeric) int4_cmp_numeric(int4, numeric),
+  OPERATOR 1 < (int4, numeric),
+  OPERATOR 2 <= (int4, numeric),
+  OPERATOR 3 = (int4, numeric),
+  OPERATOR 4 >= (int4, numeric),
+  OPERATOR 5 > (int4, numeric),
+  
+  -- int8 <op> numeric - uses reverse comparison function
+  FUNCTION 1 (int8, numeric) int8_cmp_numeric(int8, numeric),
+  OPERATOR 1 < (int8, numeric),
+  OPERATOR 2 <= (int8, numeric),
+  OPERATOR 3 = (int8, numeric),
+  OPERATOR 4 >= (int8, numeric),
+  OPERATOR 5 > (int8, numeric);
 
--- Add float8 × int operators to float_ops btree family
-ALTER OPERATOR FAMILY float_ops USING btree ADD
-  -- float8 <op> int2 with support function
-  FUNCTION 1 (float8, int2) float8_cmp_int2(float8, int2),
-  OPERATOR 1 < (float8, int2),
-  OPERATOR 2 <= (float8, int2),
-  OPERATOR 3 = (float8, int2),
-  OPERATOR 4 >= (float8, int2),
-  OPERATOR 5 > (float8, int2),
-  
-  -- float8 <op> int4 with support function
-  FUNCTION 1 (float8, int4) float8_cmp_int4(float8, int4),
-  OPERATOR 1 < (float8, int4),
-  OPERATOR 2 <= (float8, int4),
-  OPERATOR 3 = (float8, int4),
-  OPERATOR 4 >= (float8, int4),
-  OPERATOR 5 > (float8, int4),
-  
-  -- float8 <op> int8 with support function
-  FUNCTION 1 (float8, int8) float8_cmp_int8(float8, int8),
-  OPERATOR 1 < (float8, int8),
-  OPERATOR 2 <= (float8, int8),
-  OPERATOR 3 = (float8, int8),
-  OPERATOR 4 >= (float8, int8),
-  OPERATOR 5 > (float8, int8),
-  
-  -- int2 <op> float8 (commutator direction)
-  FUNCTION 1 (int2, float8) float8_cmp_int2(float8, int2),
-  OPERATOR 1 < (int2, float8),
-  OPERATOR 2 <= (int2, float8),
-  OPERATOR 3 = (int2, float8),
-  OPERATOR 4 >= (int2, float8),
-  OPERATOR 5 > (int2, float8),
-  
-  -- int4 <op> float8 (commutator direction)
-  FUNCTION 1 (int4, float8) float8_cmp_int4(float8, int4),
-  OPERATOR 1 < (int4, float8),
-  OPERATOR 2 <= (int4, float8),
-  OPERATOR 3 = (int4, float8),
-  OPERATOR 4 >= (int4, float8),
-  OPERATOR 5 > (int4, float8),
-  
-  -- int8 <op> float8 (commutator direction)
-  FUNCTION 1 (int8, float8) float8_cmp_int8(float8, int8),
-  OPERATOR 1 < (int8, float8),
-  OPERATOR 2 <= (int8, float8),
-  OPERATOR 3 = (int8, float8),
-  OPERATOR 4 >= (int8, float8),
-  OPERATOR 5 > (int8, float8);
+-- ============================================================================
+-- NOTE: int×float operators are NOT added to float_ops btree family in v1.0
+-- per spec US5 (deferred to reduce scope). Index optimization is provided via
+-- support functions. Future versions may add btree family integration.
+-- ============================================================================
 
 -- ============================================================================
 -- Hash Operator Family Support (Enables Hash Joins)

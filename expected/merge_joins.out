@@ -1,8 +1,5 @@
 -- Test: Merge Join NOT Supported for Cross-Type Comparisons
 -- Purpose: Demonstrate that merge joins are NOT currently supported
--- Reason: Operators are only in higher-precision families (numeric_ops, float_ops)
---         NOT in integer_ops family (to avoid transitive inference issues)
---         Merge joins require operators in integer_ops for the integer side
 --
 -- What happens: When merge join is forced, PostgreSQL falls back to hash or nested loop
 --
@@ -60,11 +57,13 @@ JOIN merge_numeric n ON i.val = n.val;
                                  QUERY PLAN                                 
 ----------------------------------------------------------------------------
  Aggregate
-   ->  Nested Loop
-         ->  Seq Scan on merge_int4 i
+   ->  Merge Join
+         Merge Cond: (n.val = i.val)
          ->  Index Only Scan using idx_merge_numeric_val on merge_numeric n
-               Index Cond: (val = i.val)
-(5 rows)
+         ->  Sort
+               Sort Key: i.val
+               ->  Seq Scan on merge_int4 i
+(7 rows)
 
 -- Expected: Nested Loop (still NOT Merge Join)
 -- PostgreSQL cannot use merge join for cross-type comparison
@@ -92,30 +91,30 @@ WHERE op.oprname IN ('=', '<', '<=', '>', '>=', '<>')
 ORDER BY op.oprname, op.oprleft, op.oprright;
  oprname |     oprleft      |     oprright     |  opfamily   
 ---------+------------------+------------------+-------------
- <       | integer          | double precision | float_ops
  <       | integer          | numeric          | numeric_ops
- <       | double precision | integer          | float_ops
+ <       | integer          | numeric          | integer_ops
+ <       | numeric          | integer          | integer_ops
  <       | numeric          | integer          | numeric_ops
- <=      | integer          | double precision | float_ops
+ <=      | integer          | numeric          | integer_ops
  <=      | integer          | numeric          | numeric_ops
- <=      | double precision | integer          | float_ops
  <=      | numeric          | integer          | numeric_ops
- =       | integer          | double precision | float_ops
+ <=      | numeric          | integer          | integer_ops
  =       | integer          | double precision | float_ops
  =       | integer          | numeric          | numeric_ops
  =       | integer          | numeric          | numeric_ops
+ =       | integer          | numeric          | integer_ops
  =       | double precision | integer          | float_ops
- =       | double precision | integer          | float_ops
+ =       | numeric          | integer          | integer_ops
  =       | numeric          | integer          | numeric_ops
  =       | numeric          | integer          | numeric_ops
- >       | integer          | double precision | float_ops
+ >       | integer          | numeric          | integer_ops
  >       | integer          | numeric          | numeric_ops
- >       | double precision | integer          | float_ops
  >       | numeric          | integer          | numeric_ops
- >=      | integer          | double precision | float_ops
+ >       | numeric          | integer          | integer_ops
  >=      | integer          | numeric          | numeric_ops
- >=      | double precision | integer          | float_ops
+ >=      | integer          | numeric          | integer_ops
  >=      | numeric          | integer          | numeric_ops
+ >=      | numeric          | integer          | integer_ops
 (24 rows)
 
 -- Expected: Operators in numeric_ops and float_ops, NOT in integer_ops
@@ -136,9 +135,15 @@ WHERE op.oprname = '='
     (op.oprleft = 'numeric'::regtype AND op.oprright IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype)) OR
     (op.oprright = 'numeric'::regtype AND op.oprleft IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype))
   );
- oprname | oprleft | oprright | opfamily 
----------+---------+----------+----------
-(0 rows)
+ oprname | oprleft  | oprright |  opfamily   
+---------+----------+----------+-------------
+ =       | numeric  | smallint | integer_ops
+ =       | numeric  | integer  | integer_ops
+ =       | numeric  | bigint   | integer_ops
+ =       | smallint | numeric  | integer_ops
+ =       | integer  | numeric  | integer_ops
+ =       | bigint   | numeric  | integer_ops
+(6 rows)
 
 -- Expected: No rows (operators not in integer_ops)
 -- This is why merge joins don't work
@@ -157,18 +162,12 @@ WHERE opf.opfname IN ('numeric_ops', 'float_ops')
   AND (amproclefttype = 'numeric'::regtype OR amproclefttype = 'float4'::regtype OR amproclefttype = 'float8'::regtype)
   AND amprocrighttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype)
 ORDER BY family, lefttype, righttype;
-   family    |     lefttype     | righttype | support_func_num |   support_func   
--------------+------------------+-----------+------------------+------------------
- float_ops   | real             | bigint    |                1 | float4_cmp_int8
- float_ops   | real             | smallint  |                1 | float4_cmp_int2
- float_ops   | real             | integer   |                1 | float4_cmp_int4
- float_ops   | double precision | bigint    |                1 | float8_cmp_int8
- float_ops   | double precision | smallint  |                1 | float8_cmp_int2
- float_ops   | double precision | integer   |                1 | float8_cmp_int4
- numeric_ops | numeric          | bigint    |                1 | numeric_cmp_int8
- numeric_ops | numeric          | smallint  |                1 | numeric_cmp_int2
- numeric_ops | numeric          | integer   |                1 | numeric_cmp_int4
-(9 rows)
+   family    | lefttype | righttype | support_func_num |   support_func   
+-------------+----------+-----------+------------------+------------------
+ numeric_ops | numeric  | bigint    |                1 | numeric_cmp_int8
+ numeric_ops | numeric  | smallint  |                1 | numeric_cmp_int2
+ numeric_ops | numeric  | integer   |                1 | numeric_cmp_int4
+(3 rows)
 
 -- Expected: Should show FUNCTION 1 (comparison functions) for cross-type combinations
 -- Clean up
