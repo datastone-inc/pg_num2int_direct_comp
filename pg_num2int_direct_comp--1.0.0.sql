@@ -1,16 +1,17 @@
 /*
- * Copyright (c) 2025 Dave Sharpe
+ * Copyright (c) 2026 dataStone Inc.
  * 
  * SPDX-License-Identifier: MIT
  * See LICENSE file for full license text.
  */
 
-/**
- * pg_num2int_direct_comp extension installation script
- * Version 1.0.0
- *
- * This file was developed with assistance from AI tools.
- */
+-- pg_num2int_direct_comp--1.0.0.sql
+--
+-- Exact comparison operators between numeric and integer types.
+-- Implements =, <>, <, >, <=, >= for numeric/float vs int2/int4/int8.
+--
+-- Author: Dave Sharpe
+-- This file was developed with assistance from AI tools.
 
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
 \echo Use "CREATE EXTENSION pg_num2int_direct_comp" to load this file. \quit

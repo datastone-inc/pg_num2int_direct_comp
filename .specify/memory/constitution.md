@@ -259,6 +259,7 @@ Example extension installation script:
 -- Extension installation script for myextension version 1.0.0
 -- This file defines custom types, functions, and operators.
 --
+-- Author: Dave Sharpe
 -- This file was developed with assistance from AI tools.
 
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION

@@ -122,7 +122,7 @@ All files require copyright notice:
 
 ```c
 /*
- * Copyright (c) 2025 Dave Sharpe
+ * Copyright (c) 2026 dataStone Inc.
  * 
  * SPDX-License-Identifier: MIT
  * See LICENSE file for full license text.
