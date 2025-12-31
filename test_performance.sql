@@ -1,9 +1,16 @@
 -- Performance benchmark for index-optimized queries
 -- Verify sub-millisecond execution on 1M+ row table
+--
+-- Setup (run once):
+--   createdb pg_num2int_test
+--   psql -d pg_num2int_test -c "CREATE EXTENSION pg_num2int_direct_comp;"
+--
+-- Usage:
+--   psql -d pg_num2int_test -f test_performance.sql
 
 \timing on
 
--- Create extension
+-- Create extension (idempotent)
 CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
 
 -- Create large test table with 1M rows

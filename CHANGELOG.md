@@ -27,11 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Exact match transformation: `int_col = 100::numeric` → `int_col = 100` (native operator)
   - Range boundary transformation: `int_col > 10.5` → `int_col >= 11` (correct integer semantics)
 - **Merge join support** for int × numeric via dual btree family membership (integer_ops + numeric_ops)
+- **Extension lifecycle cleanup**: Event trigger to clean up operator family entries on DROP EXTENSION
+  - Enables clean reinstallation without "operator already exists" errors
+  - Automatically removes built-in operator family entries that can't be tracked by pg_depend
 - Complete type coverage: (numeric, float4, float8) × (int2, int4, int8)
 - Type alias support: serial, bigserial, smallserial, decimal
 - NULL handling per SQL standard
 - IEEE 754 special value handling (NaN, Infinity) for float types
-- Comprehensive test suite with 13 test files via pg_regress
+- Comprehensive test suite with 15 test files via pg_regress
 - Documentation: README, installation guide, user guide, API reference, research documentation
 - PostgreSQL version support: 12, 13, 14, 15, 16, 17
 - Performance benchmarks showing <10% overhead vs native comparisons
@@ -68,4 +71,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Int × float operators are not in btree families (would require both integer_ops and float_ops)
   - Hash joins and indexed nested loop joins provide excellent performance for these cases
 
-[1.0.0]: https://github.com/dsharpe/pg-num2int-direct-comp/releases/tag/v1.0.0
+[1.0.0]: https://github.com/datastone-inc/pg_num2int_direct_comp/releases/tag/v1.0.0

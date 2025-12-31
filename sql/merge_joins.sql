@@ -76,7 +76,7 @@ WHERE op.oprname IN ('=', '<', '<=', '>', '>=', '<>')
     (op.oprleft = 'float8'::regtype AND op.oprright = 'int4'::regtype) OR
     (op.oprleft = 'int4'::regtype AND op.oprright = 'float8'::regtype)
   )
-ORDER BY op.oprname, op.oprleft, op.oprright;
+ORDER BY op.oprname, op.oprleft, op.oprright, opf.opfname;
 
 -- Expected: Operators in numeric_ops and float_ops, NOT in integer_ops
 

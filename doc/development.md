@@ -1,5 +1,33 @@
 # Development Guide
 
+## Development Methodology
+
+This extension was developed using **VS Code Copilot in agent mode** with [speckit](https://github.com/github/spec-kit), a spec-driven development framework.
+
+### Workflow
+
+1. **Specification First**: Features are defined in `specs/` with detailed requirements, research, and implementation plans before any code is written
+2. **Agent-Assisted Implementation**: VS Code Copilot (Claude) implements features based on specifications, with human review and guidance
+3. **Test-Driven Verification**: All features have regression tests that validate behavior against the specification
+4. **Iterative Refinement**: Specifications and implementations are refined through agent-human collaboration
+
+### Specification Structure
+
+The `specs/001-num-int-direct-comp/` directory contains:
+
+- **spec.md** - Feature requirements and acceptance criteria
+- **research.md** - PostgreSQL internals research and design decisions
+- **plan.md** - Implementation approach and phases
+- **tasks.md** - Detailed task breakdown with status tracking
+- **implementation-notes.md** - Development journal with lessons learned
+
+### Benefits of This Approach
+
+- **Traceable decisions**: Design rationale is documented in research.md
+- **Reproducible development**: Specifications enable consistent agent behavior
+- **Quality assurance**: Human review at specification and implementation stages
+- **Knowledge capture**: Implementation notes preserve context for future maintenance
+
 ## Contributing
 
 Contributions are welcome! This guide covers development setup, testing, and contribution guidelines.
@@ -16,8 +44,8 @@ Contributions are welcome! This guide covers development setup, testing, and con
 ### Clone and Build
 
 ```bash
-git clone https://github.com/dsharpe/pg-num2int-direct-comp.git
-cd pg-num2int-direct-comp
+git clone https://github.com/datastone-inc/pg_num2int_direct_comp.git
+cd pg_num2int_direct_comp
 make
 ```
 
@@ -180,13 +208,66 @@ diff expected/test_name.out actual_output.txt
 
 ## Architecture
 
-### File Structure
+### Project Structure
 
 ```
-pg_num2int_direct_comp.c       # Main implementation
-pg_num2int_direct_comp.h       # Header with declarations
-pg_num2int_direct_comp--1.0.0.sql  # SQL definitions
-pg_num2int_direct_comp.control     # Extension metadata
+pg-num2int-direct-comp/
+├── pg_num2int_direct_comp.c       # Core C implementation
+│                                  #   - Comparison functions (54 operators)
+│                                  #   - Support function (num2int_support)
+│                                  #   - OID cache and syscache callback
+├── pg_num2int_direct_comp.h       # Header with type definitions
+│                                  #   - OperatorOidCache structure
+│                                  #   - Function declarations
+├── pg_num2int_direct_comp--1.0.0.sql  # Extension SQL definitions
+│                                  #   - Function registrations
+│                                  #   - Operator definitions (108 total)
+│                                  #   - Operator family memberships
+│                                  #   - Hash wrapper functions
+│                                  #   - Event trigger for DROP cleanup
+├── pg_num2int_direct_comp.control # Extension metadata (name, version, etc.)
+├── Makefile                       # PGXS build configuration
+├── README.md                      # Project overview and quick start
+├── LICENSE                        # MIT license
+├── CHANGELOG.md                   # Version history
+├── PERFORMANCE.md                 # Benchmark results
+├── CODE_REVIEW.md                 # Code review checklist
+│
+├── sql/                           # Regression test SQL files
+│   ├── numeric_int_ops.sql        #   - Numeric × integer tests
+│   ├── float_int_ops.sql          #   - Float × integer tests
+│   ├── index_usage.sql            #   - Index scan verification
+│   ├── hash_joins.sql             #   - Hash join tests
+│   ├── merge_joins.sql            #   - Merge join tests
+│   ├── null_handling.sql          #   - NULL semantics
+│   ├── special_values.sql         #   - NaN, Infinity handling
+│   ├── edge_cases.sql             #   - Boundary values, overflow
+│   ├── transitivity.sql           #   - Transitivity verification
+│   ├── selectivity.sql            #   - Selectivity estimation
+│   ├── range_boundary.sql         #   - Range predicate transformation
+│   ├── index_nested_loop.sql      #   - Indexed nested loop joins
+│   ├── extension_lifecycle.sql    #   - DROP/CREATE extension cycles
+│   ├── doc_examples.sql           #   - Documentation examples
+│   └── performance.sql            #   - Performance benchmarks
+│
+├── expected/                      # Expected test output (*.out files)
+│
+├── results/                       # Actual test output (generated)
+│
+├── doc/                           # Documentation
+│   ├── installation.md            #   - Setup and prerequisites
+│   ├── operator-reference.md      #   - Operator reference and usage guide
+│   └── development.md             #   - Contributing guide (this file)
+│
+├── specs/                         # Design specifications
+│   └── 001-num-int-direct-comp/
+│       ├── spec.md                #   - Feature specification
+│       ├── research.md            #   - Research and design decisions
+│       ├── plan.md                #   - Implementation plan
+│       ├── tasks.md               #   - Task breakdown
+│       └── implementation-notes.md #  - Implementation journal
+│
+└── assets/                        # Images and logos
 ```
 
 ### Key Components
@@ -206,7 +287,7 @@ pg_num2int_direct_comp.control     # Extension metadata
 5. **Add to OID cache** in `init_oid_cache()`
 6. **Add support logic** in `num2int_support()` if index-optimized
 7. **Write tests** in appropriate `sql/*.sql` file
-8. **Update documentation** in `doc/api-reference.md`
+8. **Update documentation** in `doc/operator-reference.md`
 
 ## Performance Testing
 

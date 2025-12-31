@@ -1,99 +1,79 @@
-# Performance Benchmark Results - T067
+# Performance Benchmark Results
 
-**Test Date**: 2024-12-24  
-**PostgreSQL Version**: 17.5  
-**Table Size**: 1,000,000 rows  
+**Test Date**: 2024-12-31  
+**PostgreSQL Version**: 17.x  
+**Table Size**: 1,000,000 rows per table  
 **Hardware**: macOS (Apple Silicon)
 
-## Test Setup
+## Overview
 
-- Created table with 1M rows
-- Created btree index on int4 column
-- Disabled sequential scans to verify index usage
-- Tested with numeric, float4, and float8 constants
+This extension provides direct comparison operators between integer types (`int2`, `int4`, `int8`) and numeric/float types (`numeric`, `float4`, `float8`). The key performance benefits are:
 
-## Results Summary
+1. **Index Usage**: Cross-type predicates can use btree indexes on integer columns
+2. **Constant Transformation**: Fractional bounds are tightened (e.g., `val > 10.5` → `val >= 11`)
+3. **Join Strategies**: Hash and Merge joins work across types without casting
 
-All tests achieved **sub-millisecond execution time** (0.002-0.007 ms) using Index Scan.
+## Benchmark Summary
 
-### Test 1: numeric constant
+Run `benchmark_performance.sql` to reproduce. Full output saved to `benchmark_performance.out`.
+
+### Test Results
+
+| Test | Scenario | Extension | Stock PostgreSQL | Speedup |
+|------|----------|-----------|------------------|---------|
+| **2: Key Lookup** | `id = 500000::numeric` | 0.014 ms (Index Scan) | 18 ms (Seq Scan) | **~1,300x** |
+| **3: Range Scan** | `val BETWEEN 100::numeric AND 200::numeric` | 0.8 ms (Bitmap Index) | 34 ms (Seq Scan) | **~42x** |
+| **6: Nested Loop Join** | 1000-row probe, 1M-row lookup | 2.4 ms (Indexed NL) | 50,475 ms (Cartesian) | **~21,000x** |
+
+### Constant Transformation (Test 1)
+
+The extension transforms fractional constants to integer bounds at plan time:
+
+| Expression | Transformed To | Result |
+|------------|----------------|--------|
+| `val > 10.5::numeric` | `val >= 11` | Uses index, correct semantics |
+| `val < 10.5::numeric` | `val <= 10` | Uses index, correct semantics |
+| `val = 10.5::numeric` | `false` | One-Time Filter, 0.003 ms |
+| `val = 100.0::numeric` | `val = 100` | Index Cond, 0.2 ms |
+
+### Join Strategies (Tests 4-8)
+
+| Join Type | Extension | Stock (with cast) |
+|-----------|-----------|-------------------|
+| **Hash Join** | ✅ Enabled cross-type | ✅ Works via cast |
+| **Merge Join** | ✅ Enabled for int×numeric | ✅ Works via cast |
+| **Indexed Nested Loop** | ✅ Uses index on inner | ❌ Full scan (21,000x slower) |
+
+## Why Stock PostgreSQL is Slower
+
+Without this extension, cross-type comparisons require casting the indexed column:
+
+```sql
+-- Stock: must cast column, defeating index
+WHERE id::numeric = 500000::numeric  -- Seq Scan
+
+-- Extension: direct comparison, uses index
+WHERE id = 500000::numeric           -- Index Scan
 ```
-EXPLAIN ANALYZE SELECT * FROM perf_test WHERE val = 500000::numeric;
+
+The cast on the indexed column (`id::numeric`) prevents the optimizer from using the btree index, forcing a sequential scan.
+
+## Running the Benchmark
+
+```bash
+# Setup (once)
+createdb pg_num2int_test
+psql -d pg_num2int_test -c "CREATE EXTENSION pg_num2int_direct_comp;"
+
+# Run benchmark
+psql -d pg_num2int_test -f benchmark_performance.sql > benchmark_performance.out 2>&1
 ```
-- **Index Scan**: ✅ Yes
-- **Execution Time**: 0.004 ms
-- **Planning Time**: 1.155 ms (first query only)
-
-### Test 2: float8 constant
-```
-EXPLAIN ANALYZE SELECT * FROM perf_test WHERE val = 500000::float8;
-```
-- **Index Scan**: ✅ Yes
-- **Execution Time**: 0.002 ms
-- **Planning Time**: 0.011 ms
-
-### Test 3: float4 constant
-```
-EXPLAIN ANALYZE SELECT * FROM perf_test WHERE val = 500000::float4;
-```
-- **Index Scan**: ✅ Yes
-- **Execution Time**: 0.002 ms
-- **Planning Time**: 0.006 ms
-
-### Test 4: Commutator direction (constant on left)
-```
-EXPLAIN ANALYZE SELECT * FROM perf_test WHERE 500000::numeric = val;
-```
-- **Index Scan**: ✅ Yes
-- **Execution Time**: 0.002 ms
-- **Planning Time**: 0.006 ms
-
-### Test 5: Non-existent value (empty result)
-```
-EXPLAIN ANALYZE SELECT * FROM perf_test WHERE val = 1500000::numeric;
-```
-- **Index Scan**: ✅ Yes
-- **Execution Time**: 0.005 ms
-- **Planning Time**: 0.005 ms
-
-## Performance Analysis
-
-### Execution Time
-- **All queries**: ≤ 0.007 ms (sub-millisecond ✅)
-- **Average**: ~0.003 ms
-- **Best case**: 0.002 ms
-
-### Planning Time
-- **First query**: 1.155 ms (includes OID cache initialization)
-- **Subsequent queries**: 0.005-0.011 ms (cache hit)
-
-### Index Transformation
-All queries show proper transformation in EXPLAIN output:
-```
-Index Cond: (val = 500000)
-```
-The support function successfully transforms `val = 500000::numeric` to `val = 500000::int4`, enabling efficient index usage.
-
-## Comparison: With vs Without Index Optimization
-
-### Without optimization (sequential scan on 1M rows):
-- Estimated time: ~50-100 ms
-- All rows scanned
-
-### With optimization (index scan):
-- Actual time: 0.002-0.007 ms
-- Only matching rows accessed
-- **Performance improvement**: ~10,000x to 50,000x faster
-
-## Verification Status
-
-✅ **PASSED**: All queries use Index Scan  
-✅ **PASSED**: All execution times < 1ms  
-✅ **PASSED**: Works with numeric, float4, float8 types  
-✅ **PASSED**: Works in both directions (var = const, const = var)  
 
 ## Conclusion
 
-The index optimization support function successfully enables btree index usage for cross-type comparisons, achieving sub-millisecond query execution on 1M row tables. This meets the performance requirements for User Story 2 (T067).
+The extension delivers significant performance improvements for cross-type comparisons:
 
-**Phase 4 Complete**: Index-optimized query execution verified on large tables.
+- **Index lookups**: 1,000x+ faster for point queries
+- **Range scans**: 40x+ faster for range predicates  
+- **Nested loop joins**: 20,000x+ faster when index can be leveraged
+- **Correct semantics**: Fractional constants properly transformed

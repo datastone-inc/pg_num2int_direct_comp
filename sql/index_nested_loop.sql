@@ -32,7 +32,6 @@ ANALYZE nl_numeric;
 ANALYZE nl_float8;
 
 -- Test 1: Indexed nested loop with int4 = numeric
-\echo '=== Test 1: Indexed Nested Loop (int4 = numeric) ==='
 EXPLAIN (COSTS OFF)
 SELECT COUNT(*) 
 FROM nl_int4 i 
@@ -48,7 +47,6 @@ JOIN nl_numeric n ON i.val = n.val
 WHERE i.val < 100;
 
 -- Test 2: Indexed nested loop with numeric = int4 (reverse)
-\echo '=== Test 2: Indexed Nested Loop (numeric = int4, reverse) ==='
 EXPLAIN (COSTS OFF)
 SELECT COUNT(*) 
 FROM nl_numeric n
@@ -58,7 +56,6 @@ WHERE n.val < 100;
 -- Should also use indexed nested loop
 
 -- Test 3: Indexed nested loop with float8 = int4
-\echo '=== Test 3: Indexed Nested Loop (float8 = int4) ==='
 EXPLAIN (COSTS OFF)
 SELECT COUNT(*) 
 FROM nl_float8 f
@@ -66,7 +63,6 @@ JOIN nl_int4 i ON f.val = i.val
 WHERE f.val < 100;
 
 -- Test 4: Compare with non-selective query (should use hash join)
-\echo '=== Test 4: Large Result Set Uses Hash Join Instead ==='
 EXPLAIN (COSTS OFF)
 SELECT COUNT(*) 
 FROM nl_int4 i 
@@ -77,7 +73,6 @@ WHERE i.val < 9000;
 -- Planner chooses strategy based on statistics
 
 -- Test 5: Verify Index Cond uses cross-type operator
-\echo '=== Test 5: Index Scan on Numeric with Cross-Type Condition ==='
 EXPLAIN (COSTS OFF)
 SELECT n.* 
 FROM nl_int4 i 
@@ -94,7 +89,6 @@ JOIN nl_numeric n ON n.val = i.val
 WHERE i.val = 42;
 
 -- Test 6: Verify btree family membership enables this
-\echo '=== Test 6: Btree Family Membership Check ==='
 SELECT 
     op.oprname,
     op.oprleft::regtype,
@@ -120,9 +114,3 @@ DROP TABLE nl_numeric;
 DROP TABLE nl_float8;
 
 -- Summary
-\echo '=== Summary ==='
-\echo 'Indexed nested loop joins WORK in v1.0!'
-\echo 'Key enabler: Operators in numeric_ops/float_ops btree families.'
-\echo 'Benefit: Cross-type index conditions like "numeric.val = int.val" work.'
-\echo 'Performance: Excellent for selective queries (small result sets).'
-\echo 'Planner automatically chooses hash join for large result sets.'

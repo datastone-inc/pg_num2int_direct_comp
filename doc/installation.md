@@ -30,7 +30,7 @@ pg_config --includedir-server
 ### Clone Repository
 
 ```bash
-git clone https://github.com/dsharpe/pg-num2int-direct-comp.git
+git clone https://github.com/datastone-inc/pg_num2int_direct_comp.git
 cd pg-num2int-direct-comp
 ```
 
@@ -78,11 +78,17 @@ CREATE EXTENSION pg_num2int_direct_comp;
 
 ```sql
 -- Check extension is loaded
-SELECT * FROM pg_extension WHERE extname = 'pg_num2int_direct_comp';
+\dx pg_num2int_direct_comp
 
--- Test a simple comparison
-SELECT 10::int4 = 10.0::numeric;  -- Should return true
+-- List all extension objects (108 operators, 138 functions, etc.)
+\dx+ pg_num2int_direct_comp
+
+-- Test precision loss detection (stock PostgreSQL returns true for both)
+SELECT 16777216::int4 = 16777217::float4;  -- true (float4 rounds to 16777216)
+SELECT 16777217::int4 = 16777217::float4;  -- false (extension detects mismatch!)
 ```
+
+See the [Quick Start examples](../README.md#quick-start) for more usage patterns.
 
 ## Troubleshooting
 
@@ -161,5 +167,5 @@ sudo make uninstall
 
 ## Next Steps
 
-- [User Guide](user-guide.md) - Learn usage patterns
-- [API Reference](api-reference.md) - Complete operator reference
+- [Operator Reference](operator-reference.md) - Operator reference and usage guide
+- [Development Guide](development.md) - Contributing and testing

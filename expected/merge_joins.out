@@ -88,33 +88,33 @@ WHERE op.oprname IN ('=', '<', '<=', '>', '>=', '<>')
     (op.oprleft = 'float8'::regtype AND op.oprright = 'int4'::regtype) OR
     (op.oprleft = 'int4'::regtype AND op.oprright = 'float8'::regtype)
   )
-ORDER BY op.oprname, op.oprleft, op.oprright;
+ORDER BY op.oprname, op.oprleft, op.oprright, opf.opfname;
  oprname |     oprleft      |     oprright     |  opfamily   
 ---------+------------------+------------------+-------------
- <       | integer          | numeric          | numeric_ops
  <       | integer          | numeric          | integer_ops
+ <       | integer          | numeric          | numeric_ops
  <       | numeric          | integer          | integer_ops
  <       | numeric          | integer          | numeric_ops
  <=      | integer          | numeric          | integer_ops
  <=      | integer          | numeric          | numeric_ops
- <=      | numeric          | integer          | numeric_ops
  <=      | numeric          | integer          | integer_ops
+ <=      | numeric          | integer          | numeric_ops
  =       | integer          | double precision | float_ops
- =       | integer          | numeric          | numeric_ops
- =       | integer          | numeric          | numeric_ops
  =       | integer          | numeric          | integer_ops
+ =       | integer          | numeric          | numeric_ops
+ =       | integer          | numeric          | numeric_ops
  =       | double precision | integer          | float_ops
  =       | numeric          | integer          | integer_ops
  =       | numeric          | integer          | numeric_ops
  =       | numeric          | integer          | numeric_ops
  >       | integer          | numeric          | integer_ops
  >       | integer          | numeric          | numeric_ops
- >       | numeric          | integer          | numeric_ops
  >       | numeric          | integer          | integer_ops
- >=      | integer          | numeric          | numeric_ops
+ >       | numeric          | integer          | numeric_ops
  >=      | integer          | numeric          | integer_ops
- >=      | numeric          | integer          | numeric_ops
+ >=      | integer          | numeric          | numeric_ops
  >=      | numeric          | integer          | integer_ops
+ >=      | numeric          | integer          | numeric_ops
 (24 rows)
 
 -- Expected: Operators in numeric_ops and float_ops, NOT in integer_ops

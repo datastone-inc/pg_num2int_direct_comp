@@ -1,0 +1,489 @@
+Timing is on.
+Pager usage is off.
+================================================================================
+=== SETUP: Creating test tables with 1M rows each ===
+================================================================================
+DROP TABLE
+Time: 17.043 ms
+DROP TABLE
+Time: 4.686 ms
+DROP TABLE
+Time: 1.766 ms
+CREATE TABLE
+Time: 8.657 ms
+INSERT 0 1000000
+Time: 3204.033 ms (00:03.204)
+CREATE INDEX
+Time: 169.496 ms
+CREATE TABLE
+Time: 4.939 ms
+INSERT 0 1000000
+Time: 3373.804 ms (00:03.374)
+CREATE INDEX
+Time: 476.791 ms
+CREATE TABLE
+Time: 5.804 ms
+INSERT 0 1000000
+Time: 3398.539 ms (00:03.399)
+CREATE INDEX
+Time: 442.832 ms
+ANALYZE
+Time: 33.220 ms
+ANALYZE
+Time: 34.156 ms
+ANALYZE
+Time: 21.219 ms
+Setup complete: 3 tables with 1M rows each
+
+================================================================================
+=== TEST 1: Constant Range Transformation ===
+=== Verifies: int_col > 10.5::numeric → int_col >= 11 ===
+================================================================================
+
+--- 1a. Greater than fractional (val > 10.5::numeric) - should become val >= 11 ---
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Finalize Aggregate (actual rows=1 loops=1)
+   ->  Gather (actual rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         ->  Partial Aggregate (actual rows=1 loops=3)
+               ->  Parallel Seq Scan on int_table (actual rows=332967 loops=3)
+                     Filter: (val >= 11)
+                     Rows Removed by Filter: 367
+ Planning Time: 13.592 ms
+ Execution Time: 18.817 ms
+(10 rows)
+
+Time: 37.303 ms
+
+--- 1b. Less than fractional (val < 10.5::numeric) - should become val <= 10 ---
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Bitmap Heap Scan on int_table (actual rows=1100 loops=1)
+         Recheck Cond: (val <= 10)
+         Heap Blocks: exact=108
+         ->  Bitmap Index Scan on idx_int_table_val (actual rows=1100 loops=1)
+               Index Cond: (val <= 10)
+ Planning Time: 0.087 ms
+ Execution Time: 2.761 ms
+(8 rows)
+
+Time: 4.068 ms
+
+--- 1c. Greater than or equal fractional (val >= 10.5::numeric) - should become val >= 11 ---
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Finalize Aggregate (actual rows=1 loops=1)
+   ->  Gather (actual rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         ->  Partial Aggregate (actual rows=1 loops=3)
+               ->  Parallel Seq Scan on int_table (actual rows=332967 loops=3)
+                     Filter: (val >= 11)
+                     Rows Removed by Filter: 367
+ Planning Time: 0.058 ms
+ Execution Time: 17.151 ms
+(10 rows)
+
+Time: 17.352 ms
+
+--- 1d. Equal to fractional (val = 10.5::numeric) - impossible, should be false ---
+              QUERY PLAN              
+--------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Result (actual rows=0 loops=1)
+         One-Time Filter: false
+ Planning Time: 0.039 ms
+ Execution Time: 0.003 ms
+(5 rows)
+
+Time: 0.150 ms
+
+--- 1e. Equal to whole number (val = 100.0::numeric) - should become val = 100 ---
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Bitmap Heap Scan on int_table (actual rows=100 loops=1)
+         Recheck Cond: (val = 100)
+         Heap Blocks: exact=100
+         ->  Bitmap Index Scan on idx_int_table_val (actual rows=100 loops=1)
+               Index Cond: (val = 100)
+ Planning Time: 0.035 ms
+ Execution Time: 2.098 ms
+(8 rows)
+
+Time: 2.220 ms
+
+================================================================================
+=== TEST 2: Cross-Type SARG Key Lookups (Extension vs Stock) ===
+================================================================================
+
+--- 2a. WITH EXTENSION: id = 500000::numeric (should use Index Scan) ---
+                                                        QUERY PLAN                                                         
+---------------------------------------------------------------------------------------------------------------------------
+ Index Scan using int_table_pkey on int_table  (cost=0.42..8.44 rows=1 width=19) (actual time=1.092..1.092 rows=1 loops=1)
+   Index Cond: (id = 500000)
+ Planning Time: 0.052 ms
+ Execution Time: 1.094 ms
+(4 rows)
+
+Time: 1.272 ms
+
+--- 2b. STOCK EMULATION: id::numeric = 500000::numeric (forces Seq Scan) ---
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Gather  (cost=1000.00..14120.00 rows=5000 width=19) (actual time=10.283..18.625 rows=1 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   ->  Parallel Seq Scan on int_table  (cost=0.00..12620.00 rows=2083 width=19) (actual time=14.022..16.506 rows=0 loops=3)
+         Filter: ((id)::numeric = '500000'::numeric)
+         Rows Removed by Filter: 333333
+ Planning Time: 0.016 ms
+ Execution Time: 18.627 ms
+(8 rows)
+
+Time: 18.740 ms
+
+--- 2c. WITH EXTENSION: id = 500000::float8 (should use Index Scan) ---
+                                                        QUERY PLAN                                                         
+---------------------------------------------------------------------------------------------------------------------------
+ Index Scan using int_table_pkey on int_table  (cost=0.42..8.44 rows=1 width=19) (actual time=0.002..0.003 rows=1 loops=1)
+   Index Cond: (id = 500000)
+ Planning Time: 0.022 ms
+ Execution Time: 0.005 ms
+(4 rows)
+
+Time: 0.359 ms
+
+--- 2d. STOCK EMULATION: id::float8 = 500000::float8 (forces Seq Scan) ---
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Gather  (cost=1000.00..14120.00 rows=5000 width=19) (actual time=14.567..15.414 rows=1 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   ->  Parallel Seq Scan on int_table  (cost=0.00..12620.00 rows=2083 width=19) (actual time=11.310..13.254 rows=0 loops=3)
+         Filter: ((id)::double precision = '500000'::double precision)
+         Rows Removed by Filter: 333333
+ Planning Time: 0.010 ms
+ Execution Time: 15.417 ms
+(8 rows)
+
+Time: 15.667 ms
+
+================================================================================
+=== TEST 3: Cross-Type SARG Range Scans (Extension vs Stock) ===
+================================================================================
+
+--- 3a. WITH EXTENSION: val BETWEEN 100::numeric AND 200::numeric ---
+                                                                QUERY PLAN                                                                
+------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=6953.88..6953.89 rows=1 width=8) (actual time=3.099..3.099 rows=1 loops=1)
+   ->  Bitmap Heap Scan on int_table  (cost=140.68..6928.45 rows=10171 width=0) (actual time=0.751..2.931 rows=10100 loops=1)
+         Recheck Cond: ((val >= 100) AND (val <= 200))
+         Heap Blocks: exact=163
+         ->  Bitmap Index Scan on idx_int_table_val  (cost=0.00..138.14 rows=10171 width=0) (actual time=0.742..0.742 rows=10100 loops=1)
+               Index Cond: ((val >= 100) AND (val <= 200))
+ Planning Time: 0.083 ms
+ Execution Time: 3.106 ms
+(8 rows)
+
+Time: 3.320 ms
+
+--- 3b. STOCK EMULATION: val::numeric BETWEEN 100 AND 200 ---
+                                                               QUERY PLAN                                                                
+-----------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=15708.76..15708.77 rows=1 width=8) (actual time=36.780..37.615 rows=1 loops=1)
+   ->  Gather  (cost=15708.54..15708.75 rows=2 width=8) (actual time=36.736..37.613 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         ->  Partial Aggregate  (cost=14708.54..14708.55 rows=1 width=8) (actual time=35.409..35.410 rows=1 loops=3)
+               ->  Parallel Seq Scan on int_table  (cost=0.00..14703.33 rows=2083 width=0) (actual time=1.522..35.346 rows=3367 loops=3)
+                     Filter: (((val)::numeric >= 100) AND ((val)::numeric <= 200))
+                     Rows Removed by Filter: 329967
+ Planning Time: 0.015 ms
+ Execution Time: 37.637 ms
+(10 rows)
+
+Time: 38.110 ms
+
+================================================================================
+=== TEST 4: Hash Joins (int4 = numeric) ===
+================================================================================
+SET
+Time: 0.075 ms
+SET
+Time: 0.047 ms
+SET
+Time: 0.055 ms
+
+--- 4a. WITH EXTENSION: int_table.id = numeric_table.int_ref (Hash Join) ---
+                                                                        QUERY PLAN                                                                         
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=35924.30..35924.31 rows=1 width=8) (actual time=165.606..168.504 rows=1 loops=1)
+   ->  Gather  (cost=35924.09..35924.30 rows=2 width=8) (actual time=165.285..168.499 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         ->  Partial Aggregate  (cost=34924.09..34924.10 rows=1 width=8) (actual time=163.879..163.909 rows=1 loops=3)
+               ->  Parallel Hash Join  (cost=17373.00..33882.42 rows=416667 width=0) (actual time=106.232..157.650 rows=333333 loops=3)
+                     Hash Cond: (n.int_ref = i.id)
+                     ->  Parallel Seq Scan on numeric_table n  (cost=0.00..10531.67 rows=416667 width=6) (actual time=0.011..16.744 rows=333333 loops=3)
+                     ->  Parallel Hash  (cost=10536.67..10536.67 rows=416667 width=4) (actual time=50.028..50.028 rows=333333 loops=3)
+                           Buckets: 262144  Batches: 8  Memory Usage: 7008kB
+                           ->  Parallel Seq Scan on int_table i  (cost=0.00..10536.67 rows=416667 width=4) (actual time=0.061..14.024 rows=333333 loops=3)
+ Planning Time: 0.248 ms
+ Execution Time: 168.528 ms
+(13 rows)
+
+Time: 168.906 ms
+
+--- 4b. STOCK EMULATION: int_table.id::numeric = numeric_table.int_ref ---
+--- (May not get Hash Join without cross-type hash support) ---
+                                                                          QUERY PLAN                                                                           
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=41315.42..41315.43 rows=1 width=8) (actual time=173.357..175.518 rows=1 loops=1)
+   ->  Gather  (cost=41315.20..41315.41 rows=2 width=8) (actual time=173.184..175.512 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         ->  Partial Aggregate  (cost=40315.20..40315.21 rows=1 width=8) (actual time=171.722..171.724 rows=1 loops=3)
+               ->  Parallel Hash Join  (cost=17368.00..38274.01 rows=816478 width=0) (actual time=108.785..165.422 rows=333333 loops=3)
+                     Hash Cond: ((i.id)::numeric = n.int_ref)
+                     ->  Parallel Seq Scan on int_table i  (cost=0.00..10536.67 rows=416667 width=4) (actual time=0.145..13.726 rows=333333 loops=3)
+                     ->  Parallel Hash  (cost=10531.67..10531.67 rows=416667 width=6) (actual time=50.726..50.726 rows=333333 loops=3)
+                           Buckets: 262144  Batches: 8  Memory Usage: 7008kB
+                           ->  Parallel Seq Scan on numeric_table n  (cost=0.00..10531.67 rows=416667 width=6) (actual time=0.003..15.734 rows=333333 loops=3)
+ Planning Time: 0.081 ms
+ Execution Time: 175.529 ms
+(13 rows)
+
+Time: 175.823 ms
+RESET
+Time: 0.087 ms
+RESET
+Time: 0.068 ms
+RESET
+Time: 0.049 ms
+
+================================================================================
+=== TEST 5: Merge Joins (int4 = numeric) ===
+================================================================================
+SET
+Time: 0.048 ms
+SET
+Time: 0.043 ms
+SET
+Time: 0.039 ms
+
+--- 5a. WITH EXTENSION: int_table.id = numeric_table.int_ref (Merge Join) ---
+                                                                                   QUERY PLAN                                                                                    
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=170966.73..170966.74 rows=1 width=8) (actual time=862.526..863.893 rows=1 loops=1)
+   ->  Gather  (cost=170966.51..170966.72 rows=2 width=8) (actual time=861.026..863.890 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         ->  Partial Aggregate  (cost=169966.51..169966.52 rows=1 width=8) (actual time=859.738..859.739 rows=1 loops=3)
+               ->  Merge Join  (cost=129698.96..168924.85 rows=416667 width=0) (actual time=461.612..852.076 rows=333333 loops=3)
+                     Merge Cond: (i.id = n.int_ref)
+                     ->  Parallel Index Only Scan using int_table_pkey on int_table i  (cost=0.42..26520.09 rows=416667 width=4) (actual time=0.045..95.804 rows=333333 loops=3)
+                           Heap Fetches: 1000000
+                     ->  Materialize  (cost=129697.34..134697.34 rows=1000000 width=6) (actual time=461.483..646.305 rows=999699 loops=3)
+                           ->  Sort  (cost=129697.34..132197.34 rows=1000000 width=6) (actual time=461.482..578.001 rows=999699 loops=3)
+                                 Sort Key: n.int_ref
+                                 Sort Method: external merge  Disk: 10760kB
+                                 Worker 0:  Sort Method: external merge  Disk: 10760kB
+                                 Worker 1:  Sort Method: external merge  Disk: 10760kB
+                                 ->  Seq Scan on numeric_table n  (cost=0.00..16365.00 rows=1000000 width=6) (actual time=0.024..38.989 rows=1000000 loops=3)
+ Planning Time: 0.384 ms
+ Execution Time: 865.728 ms
+(18 rows)
+
+Time: 866.367 ms
+
+--- 5b. STOCK EMULATION: int_table.id::numeric = numeric_table.int_ref ---
+                                                                                           QUERY PLAN                                                                                           
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=198602.17..198602.18 rows=1 width=8) (actual time=440.580..442.316 rows=1 loops=1)
+   ->  Gather  (cost=198601.96..198602.17 rows=2 width=8) (actual time=438.355..442.313 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         ->  Partial Aggregate  (cost=197601.96..197601.97 rows=1 width=8) (actual time=437.034..437.034 rows=1 loops=3)
+               ->  Merge Join  (cost=129702.77..195560.76 rows=816478 width=0) (actual time=148.108..430.515 rows=333333 loops=3)
+                     Merge Cond: (n.int_ref = ((i.id)::numeric))
+                     ->  Parallel Index Only Scan using idx_numeric_table_int_ref on numeric_table n  (cost=0.42..45610.29 rows=416667 width=6) (actual time=1.171..91.180 rows=333333 loops=3)
+                           Heap Fetches: 1000000
+                     ->  Materialize  (cost=129702.34..134702.34 rows=1000000 width=4) (actual time=146.875..254.617 rows=1122033 loops=3)
+                           ->  Sort  (cost=129702.34..132202.34 rows=1000000 width=4) (actual time=146.872..208.103 rows=999821 loops=3)
+                                 Sort Key: ((i.id)::numeric)
+                                 Sort Method: external merge  Disk: 20584kB
+                                 Worker 0:  Sort Method: external merge  Disk: 20592kB
+                                 Worker 1:  Sort Method: external merge  Disk: 20592kB
+                                 ->  Seq Scan on int_table i  (cost=0.00..16370.00 rows=1000000 width=4) (actual time=0.026..59.357 rows=1000000 loops=3)
+ Planning Time: 0.120 ms
+ Execution Time: 445.619 ms
+(18 rows)
+
+Time: 445.943 ms
+RESET
+Time: 0.070 ms
+RESET
+Time: 0.050 ms
+RESET
+Time: 0.042 ms
+
+================================================================================
+=== TEST 6: Indexed Nested Loop Joins ===
+================================================================================
+SET
+Time: 0.052 ms
+SET
+Time: 0.042 ms
+SET
+Time: 0.031 ms
+
+--- 6a. WITH EXTENSION: Nested Loop with Index Scan on int_table ---
+                                                                     QUERY PLAN                                                                      
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=3892.19..3892.20 rows=1 width=8) (actual time=2.380..2.380 rows=1 loops=1)
+   ->  Nested Loop  (cost=0.43..3889.69 rows=1000 width=0) (actual time=0.015..2.361 rows=1000 loops=1)
+         ->  Limit  (cost=0.00..16.36 rows=1000 width=6) (actual time=0.004..0.064 rows=1000 loops=1)
+               ->  Seq Scan on numeric_table  (cost=0.00..16365.00 rows=1000000 width=6) (actual time=0.003..0.035 rows=1000 loops=1)
+         ->  Memoize  (cost=0.43..7.55 rows=1 width=4) (actual time=0.002..0.002 rows=1 loops=1000)
+               Cache Key: numeric_table.int_ref
+               Cache Mode: logical
+               Hits: 1  Misses: 999  Evictions: 0  Overflows: 0  Memory Usage: 105kB
+               ->  Index Only Scan using int_table_pkey on int_table i  (cost=0.42..7.54 rows=1 width=4) (actual time=0.002..0.002 rows=1 loops=999)
+                     Index Cond: (id = numeric_table.int_ref)
+                     Heap Fetches: 999
+ Planning Time: 0.067 ms
+ Execution Time: 2.408 ms
+(13 rows)
+
+Time: 3.255 ms
+
+--- 6b. STOCK EMULATION: Nested Loop WITHOUT Index (cast defeats index) ---
+                                                                 QUERY PLAN                                                                 
+--------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=17521290.82..17521290.84 rows=1 width=8) (actual time=50233.212..50233.213 rows=1 loops=1)
+   ->  Nested Loop  (cost=0.00..17516388.86 rows=1960784 width=0) (actual time=1.528..50233.128 rows=1000 loops=1)
+         Join Filter: (numeric_table.int_ref = (i.id)::numeric)
+         Rows Removed by Join Filter: 999999000
+         ->  Seq Scan on int_table i  (cost=0.00..16370.00 rows=1000000 width=4) (actual time=0.003..41.482 rows=1000000 loops=1)
+         ->  Materialize  (cost=0.00..21.36 rows=1000 width=6) (actual time=0.000..0.017 rows=1000 loops=1000000)
+               ->  Limit  (cost=0.00..16.36 rows=1000 width=6) (actual time=0.001..0.058 rows=1000 loops=1)
+                     ->  Seq Scan on numeric_table  (cost=0.00..16365.00 rows=1000000 width=6) (actual time=0.001..0.027 rows=1000 loops=1)
+ Planning Time: 0.034 ms
+ Execution Time: 50233.233 ms
+(10 rows)
+
+Time: 50233.473 ms (00:50.233)
+RESET
+Time: 0.106 ms
+RESET
+Time: 0.044 ms
+RESET
+Time: 0.040 ms
+
+================================================================================
+=== TEST 7: Float Joins (Hash and Nested Loop only, no Merge) ===
+================================================================================
+SET
+Time: 0.054 ms
+
+--- 7a. WITH EXTENSION: int_table.id = float_table.int_ref (Hash or NL) ---
+                                                                         QUERY PLAN                                                                          
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=38134.16..38134.17 rows=1 width=8) (actual time=138.913..142.384 rows=1 loops=1)
+   ->  Gather  (cost=38133.95..38134.16 rows=2 width=8) (actual time=138.743..142.380 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         ->  Partial Aggregate  (cost=37133.95..37133.96 rows=1 width=8) (actual time=136.604..136.606 rows=1 loops=3)
+               ->  Parallel Hash Join  (cost=17373.00..36092.28 rows=416667 width=0) (actual time=66.849..129.761 rows=333333 loops=3)
+                     Hash Cond: (i.id = f.int_ref)
+                     ->  Parallel Seq Scan on int_table i  (cost=0.00..10536.67 rows=416667 width=4) (actual time=0.004..11.604 rows=333333 loops=3)
+                     ->  Parallel Hash  (cost=10536.67..10536.67 rows=416667 width=8) (actual time=31.738..31.739 rows=333333 loops=3)
+                           Buckets: 262144  Batches: 8  Memory Usage: 7008kB
+                           ->  Parallel Seq Scan on float_table f  (cost=0.00..10536.67 rows=416667 width=8) (actual time=0.015..12.484 rows=333333 loops=3)
+ Planning Time: 0.750 ms
+ Execution Time: 142.423 ms
+(13 rows)
+
+Time: 143.747 ms
+
+--- 7b. STOCK EMULATION: int_table.id::float8 = float_table.int_ref ---
+                                                                         QUERY PLAN                                                                          
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=41527.41..41527.42 rows=1 width=8) (actual time=126.363..128.554 rows=1 loops=1)
+   ->  Gather  (cost=41527.20..41527.41 rows=2 width=8) (actual time=126.116..128.551 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         ->  Partial Aggregate  (cost=40527.20..40527.21 rows=1 width=8) (actual time=124.594..124.595 rows=1 loops=3)
+               ->  Parallel Hash Join  (cost=17373.00..38408.38 rows=847528 width=0) (actual time=72.484..118.247 rows=333333 loops=3)
+                     Hash Cond: ((i.id)::double precision = f.int_ref)
+                     ->  Parallel Seq Scan on int_table i  (cost=0.00..10536.67 rows=416667 width=4) (actual time=0.004..11.918 rows=333333 loops=3)
+                     ->  Parallel Hash  (cost=10536.67..10536.67 rows=416667 width=8) (actual time=38.003..38.004 rows=333333 loops=3)
+                           Buckets: 262144  Batches: 8  Memory Usage: 6976kB
+                           ->  Parallel Seq Scan on float_table f  (cost=0.00..10536.67 rows=416667 width=8) (actual time=0.019..15.861 rows=333333 loops=3)
+ Planning Time: 0.058 ms
+ Execution Time: 128.567 ms
+(13 rows)
+
+Time: 128.784 ms
+RESET
+Time: 0.078 ms
+
+================================================================================
+=== TEST 8: Planner Choice (default settings) ===
+================================================================================
+
+--- 8a. WITH EXTENSION: Planner picks best strategy for int=numeric join ---
+                                                                        QUERY PLAN                                                                         
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=35924.30..35924.31 rows=1 width=8) (actual time=148.272..150.250 rows=1 loops=1)
+   ->  Gather  (cost=35924.09..35924.30 rows=2 width=8) (actual time=148.114..150.247 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         ->  Partial Aggregate  (cost=34924.09..34924.10 rows=1 width=8) (actual time=146.559..146.560 rows=1 loops=3)
+               ->  Parallel Hash Join  (cost=17373.00..33882.42 rows=416667 width=0) (actual time=89.573..140.057 rows=333333 loops=3)
+                     Hash Cond: (n.int_ref = i.id)
+                     ->  Parallel Seq Scan on numeric_table n  (cost=0.00..10531.67 rows=416667 width=6) (actual time=0.003..13.110 rows=333333 loops=3)
+                     ->  Parallel Hash  (cost=10536.67..10536.67 rows=416667 width=4) (actual time=36.895..36.896 rows=333333 loops=3)
+                           Buckets: 262144  Batches: 8  Memory Usage: 7008kB
+                           ->  Parallel Seq Scan on int_table i  (cost=0.00..10536.67 rows=416667 width=4) (actual time=0.002..11.783 rows=333333 loops=3)
+ Planning Time: 0.412 ms
+ Execution Time: 150.263 ms
+(13 rows)
+
+Time: 150.813 ms
+
+--- 8b. STOCK EMULATION: Planner constrained by cast ---
+                                                                          QUERY PLAN                                                                           
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=41315.42..41315.43 rows=1 width=8) (actual time=169.421..171.579 rows=1 loops=1)
+   ->  Gather  (cost=41315.20..41315.41 rows=2 width=8) (actual time=169.221..171.574 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         ->  Partial Aggregate  (cost=40315.20..40315.21 rows=1 width=8) (actual time=167.846..167.873 rows=1 loops=3)
+               ->  Parallel Hash Join  (cost=17368.00..38274.01 rows=816478 width=0) (actual time=102.257..161.095 rows=333333 loops=3)
+                     Hash Cond: ((i.id)::numeric = n.int_ref)
+                     ->  Parallel Seq Scan on int_table i  (cost=0.00..10536.67 rows=416667 width=4) (actual time=0.004..12.447 rows=333333 loops=3)
+                     ->  Parallel Hash  (cost=10531.67..10531.67 rows=416667 width=6) (actual time=45.554..45.555 rows=333333 loops=3)
+                           Buckets: 262144  Batches: 8  Memory Usage: 7008kB
+                           ->  Parallel Seq Scan on numeric_table n  (cost=0.00..10531.67 rows=416667 width=6) (actual time=0.004..12.920 rows=333333 loops=3)
+ Planning Time: 0.076 ms
+ Execution Time: 171.593 ms
+(13 rows)
+
+Time: 171.835 ms
+
+================================================================================
+=== BENCHMARK COMPLETE ===
+================================================================================
+
+Key observations to look for:
+1. Extension uses Index Scan; Stock uses Seq Scan (Test 2, 3)
+2. Extension enables Hash Join cross-type; Stock may not (Test 4)
+3. Extension enables Merge Join for int×numeric (Test 5)
+4. Extension enables Indexed Nested Loop; Stock does full scan (Test 6)
+5. Fractional constants are correctly transformed (Test 1)
+

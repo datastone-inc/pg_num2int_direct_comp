@@ -15,7 +15,9 @@ MODULES = pg_num2int_direct_comp
 # Phase 10: merge_joins (documents why merge joins are not supported in v1.0)
 # Phase 11: performance
 # Phase 12: selectivity (constant predicate optimization FR-015/016/017)
-REGRESS = numeric_int_ops float_int_ops index_usage range_boundary transitivity edge_cases null_handling special_values index_nested_loop hash_joins merge_joins performance selectivity
+# doc_examples: validates SQL examples from README.md and doc/*.md
+# extension_lifecycle: tests DROP/CREATE extension cycles with cleanup trigger
+REGRESS = numeric_int_ops float_int_ops index_usage range_boundary transitivity edge_cases null_handling special_values index_nested_loop hash_joins merge_joins performance selectivity doc_examples extension_lifecycle
 
 # Build configuration
 PG_CONFIG = pg_config

@@ -1,0 +1,130 @@
+-- Extension Lifecycle Tests
+-- Tests DROP/CREATE extension cycles to verify cleanup works correctly.
+-- This test requires superuser privileges to create event triggers.
+-- Note: The extension cleanup event trigger fires on DROP EXTENSION
+-- and removes operators/functions added to built-in operator families.
+-- Without this cleanup, CREATE EXTENSION would fail with "operator already exists".
+-- Start with extension loaded (from setup)
+SELECT extname FROM pg_extension WHERE extname = 'pg_num2int_direct_comp';
+        extname         
+------------------------
+ pg_num2int_direct_comp
+(1 row)
+
+-- Verify event trigger exists and is owned by extension
+SELECT evtname, evtenabled 
+FROM pg_event_trigger 
+WHERE evtname = 'pg_num2int_direct_comp_drop_trigger';
+               evtname               | evtenabled 
+-------------------------------------+------------
+ pg_num2int_direct_comp_drop_trigger | O
+(1 row)
+
+-- Verify the trigger is part of the extension
+SELECT pg_describe_object(d.classid, d.objid, d.objsubid) AS object_desc
+FROM pg_depend d
+JOIN pg_extension e ON e.oid = d.refobjid
+WHERE d.refclassid = 'pg_extension'::regclass
+AND e.extname = 'pg_num2int_direct_comp'
+AND d.classid = 'pg_event_trigger'::regclass;
+                    object_desc                    
+---------------------------------------------------
+ event trigger pg_num2int_direct_comp_drop_trigger
+(1 row)
+
+-- Test basic functionality before DROP
+SELECT 10::numeric = 10::int4 AS before_drop_test;
+ before_drop_test 
+------------------
+ t
+(1 row)
+
+-- DROP and recreate extension
+DROP EXTENSION pg_num2int_direct_comp;
+NOTICE:  pg_num2int_direct_comp: cleaned up operator family entries
+-- Verify no operators remain in numeric_ops for int types
+-- (These would have been added by the extension and should be cleaned up)
+SELECT COUNT(*) AS leftover_operators
+FROM pg_amop ao
+JOIN pg_opfamily of ON ao.amopfamily = of.oid
+JOIN pg_am am ON of.opfmethod = am.oid
+WHERE of.opfname = 'numeric_ops' 
+AND am.amname = 'btree'
+AND ao.amoplefttype = 'int4'::regtype
+AND ao.amoprighttype = 'int4'::regtype;
+ leftover_operators 
+--------------------
+                  0
+(1 row)
+
+-- Recreate extension
+CREATE EXTENSION pg_num2int_direct_comp;
+-- Test functionality after reinstall
+SELECT 10::numeric = 10::int4 AS after_reinstall_test;
+ after_reinstall_test 
+----------------------
+ t
+(1 row)
+
+-- Verify event trigger was recreated
+SELECT evtname FROM pg_event_trigger 
+WHERE evtname = 'pg_num2int_direct_comp_drop_trigger';
+               evtname               
+-------------------------------------
+ pg_num2int_direct_comp_drop_trigger
+(1 row)
+
+-- Second DROP/CREATE cycle
+DROP EXTENSION pg_num2int_direct_comp;
+NOTICE:  pg_num2int_direct_comp: cleaned up operator family entries
+CREATE EXTENSION pg_num2int_direct_comp;
+SELECT 10::numeric = 10::int4 AS second_cycle_test;
+ second_cycle_test 
+-------------------
+ t
+(1 row)
+
+-- ============================================================================
+-- Test syscache callback: OID cache must be invalidated after DROP/CREATE
+-- Without proper cache invalidation, support function won't recognize new
+-- operator OIDs and index optimization will fail (shows '42'::numeric instead of 42)
+-- ============================================================================
+-- First, use the cross-type operator to populate the OID cache
+CREATE TEMPORARY TABLE lifecycle_test (id INT4 PRIMARY KEY);
+INSERT INTO lifecycle_test VALUES (42);
+ANALYZE lifecycle_test;
+-- Use a prepared statement to trigger the support function
+PREPARE lifecycle_find(numeric) AS SELECT * FROM lifecycle_test WHERE id = $1;
+EXPLAIN (COSTS OFF) EXECUTE lifecycle_find(42);
+         QUERY PLAN         
+----------------------------
+ Seq Scan on lifecycle_test
+   Filter: (id = 42)
+(2 rows)
+
+-- Should show: Filter: (id = 42)  -- NOT '42'::numeric
+DEALLOCATE lifecycle_find;
+-- DROP and CREATE to get new operator OIDs
+DROP EXTENSION pg_num2int_direct_comp;
+NOTICE:  pg_num2int_direct_comp: cleaned up operator family entries
+CREATE EXTENSION pg_num2int_direct_comp;
+-- Test that support function works with NEW operator OIDs
+-- (this fails if syscache callback doesn't invalidate the cache)
+PREPARE lifecycle_find2(numeric) AS SELECT * FROM lifecycle_test WHERE id = $1;
+EXPLAIN (COSTS OFF) EXECUTE lifecycle_find2(42);
+         QUERY PLAN         
+----------------------------
+ Seq Scan on lifecycle_test
+   Filter: (id = 42)
+(2 rows)
+
+-- Should show: Filter: (id = 42)  -- NOT '42'::numeric
+DEALLOCATE lifecycle_find2;
+DROP TABLE lifecycle_test;
+-- Final verification
+SELECT 'Extension lifecycle test passed' AS result;
+             result              
+---------------------------------
+ Extension lifecycle test passed
+(1 row)
+

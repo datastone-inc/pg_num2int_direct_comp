@@ -63,9 +63,9 @@ Each comment includes:
 - **Category**: Documentation  
 - **Priority**: P3 (Low)  
 - **Status**: Resolved  
-- **File(s)**: [README.md](README.md#L18), [doc/api-reference.md](doc/api-reference.md#L3)  
+- **File(s)**: [README.md](README.md#L18), [doc/operator-reference.md](doc/operator-reference.md#L3)  
 - **Comment**: Operator count discrepancy. README claims "72 operators (54 forward + 18 commutator)" but the math doesn't add up. 9 type combinations × 6 operators = 54 forward operators. Commutators are the reverse direction, so that's another 54, not 18. Total should be 108 operators, or if counting only the explicitly-declared ones as "forward" and the auto-generated commutators separately, clarify the counting methodology.  
-- **Resolution**: Verified actual operator count in SQL file: 108 operators (18 per operator type = 9 type pairs × 2 directions). Updated README and api-reference.md to correctly state "108 operators (6 comparison types × 9 type pairs × 2 directions)" with clear explanation of the counting methodology. 
+- **Resolution**: Verified actual operator count in SQL file: 108 operators (18 per operator type = 9 type pairs × 2 directions). Updated README and operator-reference.md to correctly state "108 operators (6 comparison types × 9 type pairs × 2 directions)" with clear explanation of the counting methodology. 
 
 **CR-003**  
 
@@ -128,8 +128,8 @@ Each comment includes:
 - **Category**: Documentation  
 - **Priority**: P2 (Medium)  
 - **Status**: Open  
-- **File(s)**: [specs/001-num-int-direct-comp/spec.md](specs/001-num-int-direct-comp/spec.md#L111-L119), [doc/api-reference.md](doc/api-reference.md)  
-- **Comment**: Spec Edge Cases section lists critical behaviors (NaN, Infinity, overflow, NULL consistency) but these are not systematically documented in API reference. Add a "Special Values" section to api-reference.md documenting behavior for: NaN, ±Infinity, NULL, out-of-range numeric values.  
+- **File(s)**: [specs/001-num-int-direct-comp/spec.md](specs/001-num-int-direct-comp/spec.md#L111-L119), [doc/operator-reference.md](doc/operator-reference.md)  
+- **Comment**: Spec Edge Cases section lists critical behaviors (NaN, Infinity, overflow, NULL consistency) but these are not systematically documented in API reference. Add a "Special Values" section to operator-reference.md documenting behavior for: NaN, ±Infinity, NULL, out-of-range numeric values.  
 - **Resolution**:
 
 ---

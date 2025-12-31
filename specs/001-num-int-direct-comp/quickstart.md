@@ -22,8 +22,8 @@ make --version
 
 ```bash
 # Clone repository
-git clone https://github.com/datastone-inc/pg-num2int-direct-comp.git
-cd pg-num2int-direct-comp
+git clone https://github.com/datastone-inc/pg_num2int_direct_comp.git
+cd pg_num2int_direct_comp
 
 # Checkout feature branch
 git checkout 001-num-int-direct-comp

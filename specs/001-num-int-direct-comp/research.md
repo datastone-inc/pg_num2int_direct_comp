@@ -830,6 +830,94 @@ Var *new_var = (Var *) copyObject(var_node);  // Don't reuse original pointer
 
 **Lesson**: PostgreSQL's planner expects independent node trees for different clauses. Use `copyObject()` from `nodes/nodeFuncs.h` to ensure clean copies.
 
+### 7.6 Event Trigger Required for Clean Extension Uninstall
+
+**Problem Encountered**: After DROP EXTENSION followed by CREATE EXTENSION, the second CREATE failed with "operator already exists in operator family" errors.
+
+**Root Cause**: When adding our cross-type operators to built-in operator families (like `integer_ops` and `numeric_ops`), PostgreSQL tracks that the OPERATOR is owned by the extension, but the operator family membership (the `pg_amop` entry) is NOT tracked as extension-owned. On DROP EXTENSION:
+- PostgreSQL drops the operators (extension-owned)
+- PostgreSQL does NOT remove the operators from operator families (not extension-owned)
+- Stale `pg_amop` entries remain pointing to now-deleted operators
+- CREATE EXTENSION tries to add operators to families → "already exists" error
+
+**Solution**: Use an event trigger with `ddl_command_start` event to clean up operator family memberships BEFORE the DROP completes:
+
+```sql
+CREATE OR REPLACE FUNCTION pg_num2int_direct_comp_cleanup()
+RETURNS event_trigger AS $$
+DECLARE
+    obj record;
+BEGIN
+    FOR obj IN SELECT * FROM pg_event_trigger_dropped_objects() LOOP
+        IF obj.object_type = 'extension' AND 
+           obj.object_name = 'pg_num2int_direct_comp' THEN
+            -- Remove cross-type operators from operator families
+            DELETE FROM pg_amop WHERE amopopr IN (
+                SELECT oid FROM pg_operator 
+                WHERE oprname IN ('=','<>','<','>','<=','>=')
+                AND ((oprleft IN (21,23,20) AND oprright IN (1700,700,701))
+                  OR (oprleft IN (1700,700,701) AND oprright IN (21,23,20)))
+            );
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE EVENT TRIGGER pg_num2int_direct_comp_drop_trigger
+    ON ddl_command_start
+    WHEN TAG IN ('DROP EXTENSION')
+    EXECUTE FUNCTION pg_num2int_direct_comp_cleanup();
+```
+
+**Why `ddl_command_start`**: The `sql_drop` event fires AFTER the drop, when operators are already gone. We need `ddl_command_start` which fires BEFORE, so we can identify and clean up the operator family entries while the operators still exist.
+
+**Lesson**: When adding extension-created operators to built-in operator families, the family membership is NOT automatically cleaned up. An event trigger is required for proper uninstallation.
+
+### 7.7 OID Cache Invalidation via Syscache Callback
+
+**Problem Encountered**: After DROP/CREATE EXTENSION cycle, the support function's index optimization stopped working. EXPLAIN showed `Filter: (id = '42'::numeric)` instead of the expected `Filter: (id = 42)`.
+
+**Root Cause**: The static OID cache (`oid_cache`) was populated with operator OIDs on first use and marked `initialized = true`. After DROP/CREATE EXTENSION:
+- DROP removes old operators (with OIDs like 12345, 12346, ...)
+- CREATE creates new operators (with NEW OIDs like 12400, 12401, ...)
+- The cache still holds OLD OIDs and `initialized = true`
+- Support function checks `if (opno == oid_cache.int4_eq_numeric_oid)` → no match
+- Falls through without transforming the clause → no index optimization
+
+**Solution**: Register a syscache invalidation callback in `_PG_init()` that invalidates the cache when operators change:
+
+```c
+#include "utils/inval.h"
+
+static void
+operator_cache_invalidation_callback(Datum arg, int cacheid, uint32 hashvalue)
+{
+    oid_cache.initialized = false;
+}
+
+void
+_PG_init(void)
+{
+    ereport(DEBUG1,
+            (errmsg("pg_num2int_direct_comp: _PG_init() - registering syscache callback")));
+    
+    CacheRegisterSyscacheCallback(OPEROID,
+                                  operator_cache_invalidation_callback,
+                                  (Datum) 0);
+}
+```
+
+**How It Works**:
+1. `_PG_init()` is called once when the shared library is first loaded into a backend
+2. `CacheRegisterSyscacheCallback(OPEROID, ...)` registers our callback with PostgreSQL's syscache system
+3. When any operator is created/dropped/modified (e.g., DROP EXTENSION), PostgreSQL fires all registered OPEROID callbacks
+4. Our callback sets `oid_cache.initialized = false`
+5. Next support function call sees `initialized == false`, re-lookups OIDs, gets the new OIDs
+
+**Why This Works Even Though .so Stays Loaded**: The callback registration persists for the entire backend session. Even though the library isn't reloaded, PostgreSQL's syscache invalidation mechanism notifies all registered callbacks whenever the relevant catalog changes.
+
+**Lesson**: Static OID caches in C extensions must be invalidated when catalog objects change. Use `CacheRegisterSyscacheCallback()` in `_PG_init()` to handle DROP/CREATE EXTENSION cycles correctly.
+
 ## Summary of Implementation Requirements
 
 Based on implementation experience:
@@ -841,6 +929,8 @@ Based on implementation experience:
 5. **Node copying**: Use `copyObject()` for Var nodes in transformed clauses
 6. **Lossy flag**: Set `req->lossy = false` for exact transformations
 7. **Reference implementation**: Study `src/backend/utils/adt/like_support.c` for complete pattern
+8. **Event trigger for cleanup**: When adding operators to built-in families, use `ddl_command_start` event trigger to clean up `pg_amop` entries on DROP EXTENSION
+9. **Syscache invalidation**: Register `CacheRegisterSyscacheCallback(OPEROID, ...)` in `_PG_init()` to invalidate OID cache when operators change
 
 ---
 

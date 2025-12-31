@@ -1,4 +1,4 @@
-# API Reference
+# Operator Reference and Usage Guide
 
 Complete reference for all 108 comparison operators provided by pg_num2int_direct_comp.
 
@@ -123,7 +123,6 @@ Applied to: `=` operators only
 Enables: Hash joins for equality-based JOIN operations
 
 Example:
-
 ```sql
 SELECT * FROM a JOIN b ON a.int_col = b.numeric_col;
 -- Can use Hash Join strategy
@@ -132,14 +131,12 @@ SELECT * FROM a JOIN b ON a.int_col = b.numeric_col;
 ### COMMUTATOR
 
 All operators have commutators (reversed argument order):
-
 - `numeric = int4` commutes with `int4 = numeric`
 - `float4 < int2` commutes with `int2 > float4`
 
 ### NEGATOR
 
 All operators have negators (logical opposites):
-
 - `=` negates with `<>`
 - `<` negates with `>=`
 - `>` negates with `<=`
@@ -153,7 +150,6 @@ Enables: Merge joins for equality-based JOIN operations on pre-sorted data.
 ### Operator Family Membership
 
 **Btree Families** (enables index scans and merge joins):
-
 - Cross-type operators added to `integer_ops`, `numeric_ops`, and `float_ops` btree families
 - Each operator registered with standard btree strategy (1=<, 2=<=, 3==, 4=>=, 5=>)
 - Each type pair has a dedicated comparison support function (FUNCTION 1)
@@ -162,7 +158,6 @@ Enables: Merge joins for equality-based JOIN operations on pre-sorted data.
 - Enables merge joins between integer and numeric/float columns
 
 **Hash Families** (enables hash joins):
-
 - Cross-type operators added to `integer_ops`, `numeric_ops`, and `float_ops` hash families
 - Builtin same-type hash functions also added for consistent hashing within each family
 - Integer hash wrapper functions cast to higher-precision type before hashing
@@ -170,7 +165,6 @@ Enables: Merge joins for equality-based JOIN operations on pre-sorted data.
 - All equality operators have HASHES property
 
 **DROP EXTENSION Handling**:
-
 - Operator family entries (`pg_amop`) added to builtin families are not automatically tracked as extension-owned by PostgreSQL
 - An event trigger runs on DROP EXTENSION to remove these entries, enabling clean reinstallation
 - The support function's internal operator OID cache is invalidated via an OPEROID syscache callback when operators are dropped
@@ -191,7 +185,6 @@ Enables: Merge joins for equality-based JOIN operations on pre-sorted data.
 - Enables index scans via predicate transformation
 
 **Example**:
-
 ```sql
 CREATE INDEX ON table(intkey1, intkey2);
 -- Query with constants
@@ -248,7 +241,7 @@ SELECT 9007199254740993::int8 = 9007199254740993::float8;  -- false
 
 - **Precision**: Arbitrary (limited by available memory)
 - **Exact range**: No inherent limits
-- **Integer types**:
+- **Integer types**: 
   - int2: -32,768 to 32,767
   - int4: -2,147,483,648 to 2,147,483,647
   - int8: -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807

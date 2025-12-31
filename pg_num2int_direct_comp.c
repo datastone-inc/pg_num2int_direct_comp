@@ -32,6 +32,7 @@
 #include "utils/lsyscache.h"
 #include "utils/numeric.h"
 #include "utils/syscache.h"
+#include "utils/inval.h"
 #include "fmgr.h"
 #include <math.h>
 
@@ -39,6 +40,35 @@ PG_MODULE_MAGIC;
 
 /* Static per-backend OID cache */
 static OperatorOidCache oid_cache = {false};
+
+/**
+ * @brief Syscache invalidation callback for operator changes
+ * 
+ * Called by PostgreSQL when any operator is created, dropped, or modified.
+ * Invalidates our cached OIDs so they are re-looked up on next use.
+ */
+static void
+operator_cache_invalidation_callback(Datum arg, int cacheid, uint32 hashvalue)
+{
+    oid_cache.initialized = false;
+}
+
+/**
+ * @brief Module initialization - called once when shared library is loaded
+ * 
+ * Registers a syscache invalidation callback so our OID cache is automatically
+ * invalidated when operators are created/dropped (e.g., DROP/CREATE EXTENSION).
+ */
+void
+_PG_init(void)
+{
+    ereport(DEBUG1,
+            (errmsg("pg_num2int_direct_comp: _PG_init() - registering OPEROID syscache callback")));
+    
+    CacheRegisterSyscacheCallback(OPEROID,
+                                  operator_cache_invalidation_callback,
+                                  (Datum) 0);
+}
 
 /**
  * @brief Initialize the operator OID cache

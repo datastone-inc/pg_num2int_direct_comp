@@ -27,3 +27,5 @@ Start responses immediately with substantive content. Skip these unnecessary pre
 - Consider performance implications for database operations
 - Reference the constitution.md for code style and architectural guidance
 - Verify changes don't break existing functionality
+- Use file editing tools (replace_string_in_file, multi_replace_string_in_file) instead of terminal commands (sed, awk) for modifying source files, so changes can be reviewed and undone
+- Never test SQL against the `postgres` database; use a dedicated test database like `pg_num2int_test`

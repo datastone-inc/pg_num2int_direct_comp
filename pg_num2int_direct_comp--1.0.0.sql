@@ -2270,3 +2270,144 @@ ALTER OPERATOR FAMILY float_ops USING hash ADD
   -- float8 = int8 (both directions)
   OPERATOR 1 = (float8, int8),
   OPERATOR 1 = (int8, float8);
+
+-- ============================================================================
+-- Extension Cleanup (Event Trigger for DROP EXTENSION)
+-- ============================================================================
+--
+-- When we add operators and functions to PostgreSQL's built-in operator families
+-- (numeric_ops, integer_ops, float_ops), these entries are not tracked as
+-- extension-owned objects. This means DROP EXTENSION does not remove them,
+-- and a subsequent CREATE EXTENSION would fail with "operator already exists".
+--
+-- This event trigger runs BEFORE DROP EXTENSION executes, removing the
+-- operator family entries we added so the extension can be cleanly reinstalled.
+--
+-- DESIGN NOTE: Why a hardcoded list instead of dynamic tracking?
+-- -------------------------------------------------------------
+-- An alternative approach would be to use ddl_command_end triggers to track
+-- ALTER OPERATOR FAMILY ... ADD statements dynamically (storing in a table or
+-- GUC). However, the hardcoded approach is preferred here because:
+--
+--   1. The operator family entries are stable (designed once, rarely changed)
+--   2. Explicit list is auditable - you can read exactly what gets cleaned up
+--   3. Single source of truth - ADD statements and DROP list are in same file
+--   4. Simpler failure modes - no risk of tracking state becoming inconsistent
+--
+-- VALIDATION: The extension_lifecycle.sql regression test catches any omissions.
+-- If an operator family entry is added without updating this cleanup list, the
+-- DROP/CREATE cycle test will fail with "operator already exists", forcing the
+-- developer to fix the list before the change can be merged.
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION pg_num2int_direct_comp_cleanup()
+RETURNS event_trigger
+LANGUAGE plpgsql AS $func$
+DECLARE
+    ops text[] := ARRAY[
+        -- Btree numeric_ops: int×int operators and functions
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 1 (int2, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 2 (int2, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 3 (int2, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 4 (int2, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 5 (int2, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP FUNCTION 1 (int2, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 1 (int4, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 2 (int4, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 3 (int4, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 4 (int4, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 5 (int4, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP FUNCTION 1 (int4, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 1 (int8, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 2 (int8, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 3 (int8, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 4 (int8, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 5 (int8, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP FUNCTION 1 (int8, int8)',
+        -- Cross-integer comparisons in numeric_ops btree
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 1 (int2, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 2 (int2, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 3 (int2, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 4 (int2, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 5 (int2, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP FUNCTION 1 (int2, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 1 (int4, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 2 (int4, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 3 (int4, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 4 (int4, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 5 (int4, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP FUNCTION 1 (int4, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 1 (int2, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 2 (int2, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 3 (int2, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 4 (int2, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 5 (int2, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP FUNCTION 1 (int2, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 1 (int8, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 2 (int8, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 3 (int8, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 4 (int8, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 5 (int8, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP FUNCTION 1 (int8, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 1 (int4, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 2 (int4, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 3 (int4, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 4 (int4, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 5 (int4, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP FUNCTION 1 (int4, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 1 (int8, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 2 (int8, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 3 (int8, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 4 (int8, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP OPERATOR 5 (int8, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING btree DROP FUNCTION 1 (int8, int4)',
+        -- Hash numeric_ops: integer hash functions
+        'ALTER OPERATOR FAMILY numeric_ops USING hash DROP FUNCTION 1 (int2, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING hash DROP FUNCTION 2 (int2, int2)',
+        'ALTER OPERATOR FAMILY numeric_ops USING hash DROP FUNCTION 1 (int4, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING hash DROP FUNCTION 2 (int4, int4)',
+        'ALTER OPERATOR FAMILY numeric_ops USING hash DROP FUNCTION 1 (int8, int8)',
+        'ALTER OPERATOR FAMILY numeric_ops USING hash DROP FUNCTION 2 (int8, int8)',
+        -- Hash float_ops: integer hash functions
+        'ALTER OPERATOR FAMILY float_ops USING hash DROP FUNCTION 1 (int2, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING hash DROP FUNCTION 2 (int2, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING hash DROP FUNCTION 1 (int4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING hash DROP FUNCTION 2 (int4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING hash DROP FUNCTION 1 (int8, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING hash DROP FUNCTION 2 (int8, int8)',
+        -- Btree integer_ops: numeric×numeric operators
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (numeric, numeric)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (numeric, numeric)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (numeric, numeric)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (numeric, numeric)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (numeric, numeric)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (numeric, numeric)'
+    ];
+    stmt text;
+BEGIN
+    -- Only process DROP EXTENSION for this specific extension
+    IF NOT (current_query() ~* 'DROP\s+EXTENSION.*pg_num2int_direct_comp') THEN
+        RETURN;
+    END IF;
+    
+    -- Execute each cleanup statement, ignoring errors (operator may not exist)
+    FOREACH stmt IN ARRAY ops LOOP
+        BEGIN
+            EXECUTE stmt;
+        EXCEPTION WHEN OTHERS THEN
+            -- Silently ignore - operator/function may not have been added
+            NULL;
+        END;
+    END LOOP;
+    
+    RAISE NOTICE 'pg_num2int_direct_comp: cleaned up operator family entries';
+END;
+$func$;
+
+COMMENT ON FUNCTION pg_num2int_direct_comp_cleanup() IS
+'Event trigger function to clean up operator family entries on DROP EXTENSION';
+
+CREATE EVENT TRIGGER pg_num2int_direct_comp_drop_trigger 
+ON ddl_command_start
+WHEN TAG IN ('DROP EXTENSION')
+EXECUTE FUNCTION pg_num2int_direct_comp_cleanup();
