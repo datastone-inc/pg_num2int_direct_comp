@@ -17,7 +17,7 @@
 \echo Use "CREATE EXTENSION pg_num2int_direct_comp" to load this file. \quit
 
 -- Support function for index optimization
-CREATE OR REPLACE FUNCTION num2int_support(internal)
+CREATE FUNCTION num2int_support(internal)
 RETURNS internal
 AS 'MODULE_PATHNAME', 'num2int_support'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
@@ -26,124 +26,118 @@ COMMENT ON FUNCTION num2int_support(internal) IS
 'Support function for index optimization of numeric/integer comparisons';
 
 -- ============================================================================
--- Phase 3: Equality and Inequality Operators (User Story 1 - MVP)
+-- Equality and Inequality Operators
 -- ============================================================================
 
 -- Numeric × Integer Equality Functions
-CREATE OR REPLACE FUNCTION numeric_eq_int2(numeric, int2)
+CREATE FUNCTION numeric_eq_int2(numeric, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_eq_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION numeric_eq_int4(numeric, int4)
+CREATE FUNCTION numeric_eq_int4(numeric, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_eq_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_eq_numeric(int4, numeric)
-RETURNS boolean
-AS 'MODULE_PATHNAME', 'int4_eq_numeric'
-LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
-SUPPORT num2int_support;
-
-CREATE OR REPLACE FUNCTION numeric_eq_int8(numeric, int8)
+CREATE FUNCTION numeric_eq_int8(numeric, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_eq_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
 -- Float4 × Integer Equality Functions
-CREATE OR REPLACE FUNCTION float4_eq_int2(float4, int2)
+CREATE FUNCTION float4_eq_int2(float4, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_eq_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_eq_int4(float4, int4)
+CREATE FUNCTION float4_eq_int4(float4, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_eq_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_eq_int8(float4, int8)
+CREATE FUNCTION float4_eq_int8(float4, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_eq_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
 -- Float8 × Integer Equality Functions
-CREATE OR REPLACE FUNCTION float8_eq_int2(float8, int2)
+CREATE FUNCTION float8_eq_int2(float8, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_eq_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_eq_int4(float8, int4)
+CREATE FUNCTION float8_eq_int4(float8, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_eq_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_eq_int8(float8, int8)
+CREATE FUNCTION float8_eq_int8(float8, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_eq_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
 -- Numeric × Integer Inequality Functions
-CREATE OR REPLACE FUNCTION numeric_ne_int2(numeric, int2)
+CREATE FUNCTION numeric_ne_int2(numeric, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_ne_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION numeric_ne_int4(numeric, int4)
+CREATE FUNCTION numeric_ne_int4(numeric, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_ne_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION numeric_ne_int8(numeric, int8)
+CREATE FUNCTION numeric_ne_int8(numeric, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_ne_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
 -- Float4 × Integer Inequality Functions
-CREATE OR REPLACE FUNCTION float4_ne_int2(float4, int2)
+CREATE FUNCTION float4_ne_int2(float4, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_ne_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_ne_int4(float4, int4)
+CREATE FUNCTION float4_ne_int4(float4, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_ne_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_ne_int8(float4, int8)
+CREATE FUNCTION float4_ne_int8(float4, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_ne_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
 -- Float8 × Integer Inequality Functions
-CREATE OR REPLACE FUNCTION float8_ne_int2(float8, int2)
+CREATE FUNCTION float8_ne_int2(float8, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_ne_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_ne_int4(float8, int4)
+CREATE FUNCTION float8_ne_int4(float8, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_ne_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_ne_int8(float8, int8)
+CREATE FUNCTION float8_ne_int8(float8, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_ne_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
@@ -170,18 +164,6 @@ CREATE OPERATOR = (
   LEFTARG = numeric,
   RIGHTARG = int4,
   FUNCTION = numeric_eq_int4,
-  COMMUTATOR = =,
-  NEGATOR = <>,
-  RESTRICT = eqsel,
-  JOIN = eqjoinsel,
-  HASHES,
-  MERGES
-);
-
-CREATE OPERATOR = (
-  LEFTARG = int4,
-  RIGHTARG = numeric,
-  FUNCTION = int4_eq_numeric,
   COMMUTATOR = =,
   NEGATOR = <>,
   RESTRICT = eqsel,
@@ -372,104 +354,110 @@ CREATE OPERATOR <> (
 -- ============================================================================
 
 -- Commutator Equality Functions
-CREATE OR REPLACE FUNCTION int2_eq_numeric(int2, numeric)
+CREATE FUNCTION int2_eq_numeric(int2, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_eq_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int2_eq_float4(int2, float4)
+CREATE FUNCTION int2_eq_float4(int2, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_eq_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int2_eq_float8(int2, float8)
+CREATE FUNCTION int2_eq_float8(int2, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_eq_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_eq_float4(int4, float4)
+CREATE FUNCTION int4_eq_numeric(int4, numeric)
+RETURNS boolean
+AS 'MODULE_PATHNAME', 'int4_eq_numeric'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
+SUPPORT num2int_support;
+
+CREATE FUNCTION int4_eq_float4(int4, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_eq_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_eq_float8(int4, float8)
+CREATE FUNCTION int4_eq_float8(int4, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_eq_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_eq_numeric(int8, numeric)
+CREATE FUNCTION int8_eq_numeric(int8, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_eq_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_eq_float4(int8, float4)
+CREATE FUNCTION int8_eq_float4(int8, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_eq_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_eq_float8(int8, float8)
+CREATE FUNCTION int8_eq_float8(int8, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_eq_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
 -- Commutator Inequality Functions
-CREATE OR REPLACE FUNCTION int2_ne_numeric(int2, numeric)
+CREATE FUNCTION int2_ne_numeric(int2, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_ne_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int2_ne_float4(int2, float4)
+CREATE FUNCTION int2_ne_float4(int2, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_ne_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int2_ne_float8(int2, float8)
+CREATE FUNCTION int2_ne_float8(int2, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_ne_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_ne_numeric(int4, numeric)
+CREATE FUNCTION int4_ne_numeric(int4, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_ne_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_ne_float4(int4, float4)
+CREATE FUNCTION int4_ne_float4(int4, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_ne_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_ne_float8(int4, float8)
+CREATE FUNCTION int4_ne_float8(int4, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_ne_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_ne_numeric(int8, numeric)
+CREATE FUNCTION int8_ne_numeric(int8, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_ne_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_ne_float4(int8, float4)
+CREATE FUNCTION int8_ne_float4(int8, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_ne_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_ne_float8(int8, float8)
+CREATE FUNCTION int8_ne_float8(int8, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_ne_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
@@ -508,6 +496,18 @@ CREATE OPERATOR = (
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
   HASHES
+);
+
+CREATE OPERATOR = (
+  LEFTARG = int4,
+  RIGHTARG = numeric,
+  FUNCTION = int4_eq_numeric,
+  COMMUTATOR = =,
+  NEGATOR = <>,
+  RESTRICT = eqsel,
+  JOIN = eqjoinsel,
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -659,224 +659,224 @@ CREATE OPERATOR <> (
 
 
 -- ============================================================================
--- Phase 5: Range Comparison Operators (User Story 2)
+-- Range Comparison Operators
 -- ============================================================================
 
 -- Less Than (<) Functions
-CREATE OR REPLACE FUNCTION numeric_lt_int2(numeric, int2)
+CREATE FUNCTION numeric_lt_int2(numeric, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_lt_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION numeric_lt_int4(numeric, int4)
+CREATE FUNCTION numeric_lt_int4(numeric, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_lt_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION numeric_lt_int8(numeric, int8)
+CREATE FUNCTION numeric_lt_int8(numeric, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_lt_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_lt_int2(float4, int2)
+CREATE FUNCTION float4_lt_int2(float4, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_lt_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_lt_int4(float4, int4)
+CREATE FUNCTION float4_lt_int4(float4, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_lt_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_lt_int8(float4, int8)
+CREATE FUNCTION float4_lt_int8(float4, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_lt_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_lt_int2(float8, int2)
+CREATE FUNCTION float8_lt_int2(float8, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_lt_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_lt_int4(float8, int4)
+CREATE FUNCTION float8_lt_int4(float8, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_lt_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_lt_int8(float8, int8)
+CREATE FUNCTION float8_lt_int8(float8, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_lt_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
 -- Greater Than (>) Functions
-CREATE OR REPLACE FUNCTION numeric_gt_int2(numeric, int2)
+CREATE FUNCTION numeric_gt_int2(numeric, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_gt_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION numeric_gt_int4(numeric, int4)
+CREATE FUNCTION numeric_gt_int4(numeric, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_gt_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION numeric_gt_int8(numeric, int8)
+CREATE FUNCTION numeric_gt_int8(numeric, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_gt_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_gt_int2(float4, int2)
+CREATE FUNCTION float4_gt_int2(float4, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_gt_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_gt_int4(float4, int4)
+CREATE FUNCTION float4_gt_int4(float4, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_gt_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_gt_int8(float4, int8)
+CREATE FUNCTION float4_gt_int8(float4, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_gt_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_gt_int2(float8, int2)
+CREATE FUNCTION float8_gt_int2(float8, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_gt_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_gt_int4(float8, int4)
+CREATE FUNCTION float8_gt_int4(float8, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_gt_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_gt_int8(float8, int8)
+CREATE FUNCTION float8_gt_int8(float8, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_gt_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
 -- Less Than or Equal (<=) Functions
-CREATE OR REPLACE FUNCTION numeric_le_int2(numeric, int2)
+CREATE FUNCTION numeric_le_int2(numeric, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_le_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION numeric_le_int4(numeric, int4)
+CREATE FUNCTION numeric_le_int4(numeric, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_le_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION numeric_le_int8(numeric, int8)
+CREATE FUNCTION numeric_le_int8(numeric, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_le_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_le_int2(float4, int2)
+CREATE FUNCTION float4_le_int2(float4, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_le_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_le_int4(float4, int4)
+CREATE FUNCTION float4_le_int4(float4, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_le_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_le_int8(float4, int8)
+CREATE FUNCTION float4_le_int8(float4, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_le_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_le_int2(float8, int2)
+CREATE FUNCTION float8_le_int2(float8, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_le_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_le_int4(float8, int4)
+CREATE FUNCTION float8_le_int4(float8, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_le_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_le_int8(float8, int8)
+CREATE FUNCTION float8_le_int8(float8, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_le_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
 -- Greater Than or Equal (>=) Functions
-CREATE OR REPLACE FUNCTION numeric_ge_int2(numeric, int2)
+CREATE FUNCTION numeric_ge_int2(numeric, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_ge_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION numeric_ge_int4(numeric, int4)
+CREATE FUNCTION numeric_ge_int4(numeric, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_ge_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION numeric_ge_int8(numeric, int8)
+CREATE FUNCTION numeric_ge_int8(numeric, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'numeric_ge_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_ge_int2(float4, int2)
+CREATE FUNCTION float4_ge_int2(float4, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_ge_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_ge_int4(float4, int4)
+CREATE FUNCTION float4_ge_int4(float4, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_ge_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float4_ge_int8(float4, int8)
+CREATE FUNCTION float4_ge_int8(float4, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float4_ge_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_ge_int2(float8, int2)
+CREATE FUNCTION float8_ge_int2(float8, int2)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_ge_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_ge_int4(float8, int4)
+CREATE FUNCTION float8_ge_int4(float8, int4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_ge_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION float8_ge_int8(float8, int8)
+CREATE FUNCTION float8_ge_int8(float8, int8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'float8_ge_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
@@ -1248,224 +1248,224 @@ CREATE OPERATOR >= (
 
 
 -- ============================================================================
--- Phase 5: Commutator Range Operators (int X op numeric/float)
+-- Commutator Range Operators (int X op numeric/float)
 -- ============================================================================
 
 -- Less Than (<) Commutator Functions
-CREATE OR REPLACE FUNCTION int2_lt_numeric(int2, numeric)
+CREATE FUNCTION int2_lt_numeric(int2, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_lt_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int2_lt_float4(int2, float4)
+CREATE FUNCTION int2_lt_float4(int2, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_lt_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int2_lt_float8(int2, float8)
+CREATE FUNCTION int2_lt_float8(int2, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_lt_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_lt_numeric(int4, numeric)
+CREATE FUNCTION int4_lt_numeric(int4, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_lt_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_lt_float4(int4, float4)
+CREATE FUNCTION int4_lt_float4(int4, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_lt_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_lt_float8(int4, float8)
+CREATE FUNCTION int4_lt_float8(int4, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_lt_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_lt_numeric(int8, numeric)
+CREATE FUNCTION int8_lt_numeric(int8, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_lt_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_lt_float4(int8, float4)
+CREATE FUNCTION int8_lt_float4(int8, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_lt_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_lt_float8(int8, float8)
+CREATE FUNCTION int8_lt_float8(int8, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_lt_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
 -- Greater Than (>) Commutator Functions
-CREATE OR REPLACE FUNCTION int2_gt_numeric(int2, numeric)
+CREATE FUNCTION int2_gt_numeric(int2, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_gt_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int2_gt_float4(int2, float4)
+CREATE FUNCTION int2_gt_float4(int2, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_gt_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int2_gt_float8(int2, float8)
+CREATE FUNCTION int2_gt_float8(int2, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_gt_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_gt_numeric(int4, numeric)
+CREATE FUNCTION int4_gt_numeric(int4, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_gt_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_gt_float4(int4, float4)
+CREATE FUNCTION int4_gt_float4(int4, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_gt_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_gt_float8(int4, float8)
+CREATE FUNCTION int4_gt_float8(int4, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_gt_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_gt_numeric(int8, numeric)
+CREATE FUNCTION int8_gt_numeric(int8, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_gt_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_gt_float4(int8, float4)
+CREATE FUNCTION int8_gt_float4(int8, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_gt_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_gt_float8(int8, float8)
+CREATE FUNCTION int8_gt_float8(int8, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_gt_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
 -- Less Than or Equal (<=) Commutator Functions
-CREATE OR REPLACE FUNCTION int2_le_numeric(int2, numeric)
+CREATE FUNCTION int2_le_numeric(int2, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_le_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int2_le_float4(int2, float4)
+CREATE FUNCTION int2_le_float4(int2, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_le_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int2_le_float8(int2, float8)
+CREATE FUNCTION int2_le_float8(int2, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_le_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_le_numeric(int4, numeric)
+CREATE FUNCTION int4_le_numeric(int4, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_le_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_le_float4(int4, float4)
+CREATE FUNCTION int4_le_float4(int4, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_le_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_le_float8(int4, float8)
+CREATE FUNCTION int4_le_float8(int4, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_le_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_le_numeric(int8, numeric)
+CREATE FUNCTION int8_le_numeric(int8, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_le_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_le_float4(int8, float4)
+CREATE FUNCTION int8_le_float4(int8, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_le_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_le_float8(int8, float8)
+CREATE FUNCTION int8_le_float8(int8, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_le_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
 -- Greater Than or Equal (>=) Commutator Functions
-CREATE OR REPLACE FUNCTION int2_ge_numeric(int2, numeric)
+CREATE FUNCTION int2_ge_numeric(int2, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_ge_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int2_ge_float4(int2, float4)
+CREATE FUNCTION int2_ge_float4(int2, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_ge_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int2_ge_float8(int2, float8)
+CREATE FUNCTION int2_ge_float8(int2, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int2_ge_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_ge_numeric(int4, numeric)
+CREATE FUNCTION int4_ge_numeric(int4, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_ge_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_ge_float4(int4, float4)
+CREATE FUNCTION int4_ge_float4(int4, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_ge_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int4_ge_float8(int4, float8)
+CREATE FUNCTION int4_ge_float8(int4, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int4_ge_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_ge_numeric(int8, numeric)
+CREATE FUNCTION int8_ge_numeric(int8, numeric)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_ge_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_ge_float4(int8, float4)
+CREATE FUNCTION int8_ge_float4(int8, float4)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_ge_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
 SUPPORT num2int_support;
 
-CREATE OR REPLACE FUNCTION int8_ge_float8(int8, float8)
+CREATE FUNCTION int8_ge_float8(int8, float8)
 RETURNS boolean
 AS 'MODULE_PATHNAME', 'int8_ge_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE
@@ -1842,64 +1842,64 @@ CREATE OPERATOR >= (
 -- First, create SQL-callable wrappers for btree comparison functions
 -- These are needed as support functions in btree operator families
 
-CREATE OR REPLACE FUNCTION numeric_cmp_int2(numeric, int2)
+CREATE FUNCTION numeric_cmp_int2(numeric, int2)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'numeric_cmp_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION numeric_cmp_int4(numeric, int4)
+CREATE FUNCTION numeric_cmp_int4(numeric, int4)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'numeric_cmp_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION numeric_cmp_int8(numeric, int8)
+CREATE FUNCTION numeric_cmp_int8(numeric, int8)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'numeric_cmp_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
 -- Reverse comparison functions for integer_ops btree family
 -- These are called with (int, numeric) argument order
-CREATE OR REPLACE FUNCTION int2_cmp_numeric(int2, numeric)
+CREATE FUNCTION int2_cmp_numeric(int2, numeric)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'int2_cmp_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION int4_cmp_numeric(int4, numeric)
+CREATE FUNCTION int4_cmp_numeric(int4, numeric)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'int4_cmp_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION int8_cmp_numeric(int8, numeric)
+CREATE FUNCTION int8_cmp_numeric(int8, numeric)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'int8_cmp_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION float4_cmp_int2(float4, int2)
+CREATE FUNCTION float4_cmp_int2(float4, int2)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'float4_cmp_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION float4_cmp_int4(float4, int4)
+CREATE FUNCTION float4_cmp_int4(float4, int4)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'float4_cmp_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION float4_cmp_int8(float4, int8)
+CREATE FUNCTION float4_cmp_int8(float4, int8)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'float4_cmp_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION float8_cmp_int2(float8, int2)
+CREATE FUNCTION float8_cmp_int2(float8, int2)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'float8_cmp_int2'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION float8_cmp_int4(float8, int4)
+CREATE FUNCTION float8_cmp_int4(float8, int4)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'float8_cmp_int4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION float8_cmp_int8(float8, int8)
+CREATE FUNCTION float8_cmp_int8(float8, int8)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'float8_cmp_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
@@ -1912,103 +1912,110 @@ LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 -- This guarantees: hash(10::int4) = hash(10.0::numeric)
 
 -- Hash int as numeric (for numeric_ops hash family)
-CREATE OR REPLACE FUNCTION hash_int2_as_numeric(int2)
+CREATE FUNCTION hash_int2_as_numeric(int2)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'hash_int2_as_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int2_as_numeric_extended(int2, int8)
+CREATE FUNCTION hash_int2_as_numeric_extended(int2, int8)
 RETURNS int8
 AS 'MODULE_PATHNAME', 'hash_int2_as_numeric_extended'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int4_as_numeric(int4)
+CREATE FUNCTION hash_int4_as_numeric(int4)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'hash_int4_as_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int4_as_numeric_extended(int4, int8)
+CREATE FUNCTION hash_int4_as_numeric_extended(int4, int8)
 RETURNS int8
 AS 'MODULE_PATHNAME', 'hash_int4_as_numeric_extended'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int8_as_numeric(int8)
+CREATE FUNCTION hash_int8_as_numeric(int8)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'hash_int8_as_numeric'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int8_as_numeric_extended(int8, int8)
+CREATE FUNCTION hash_int8_as_numeric_extended(int8, int8)
 RETURNS int8
 AS 'MODULE_PATHNAME', 'hash_int8_as_numeric_extended'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
 -- Hash int as float4 (for float_ops hash family)
-CREATE OR REPLACE FUNCTION hash_int2_as_float4(int2)
+CREATE FUNCTION hash_int2_as_float4(int2)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'hash_int2_as_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int2_as_float4_extended(int2, int8)
+CREATE FUNCTION hash_int2_as_float4_extended(int2, int8)
 RETURNS int8
 AS 'MODULE_PATHNAME', 'hash_int2_as_float4_extended'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int4_as_float4(int4)
+CREATE FUNCTION hash_int4_as_float4(int4)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'hash_int4_as_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int4_as_float4_extended(int4, int8)
+CREATE FUNCTION hash_int4_as_float4_extended(int4, int8)
 RETURNS int8
 AS 'MODULE_PATHNAME', 'hash_int4_as_float4_extended'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int8_as_float4(int8)
+CREATE FUNCTION hash_int8_as_float4(int8)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'hash_int8_as_float4'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int8_as_float4_extended(int8, int8)
+CREATE FUNCTION hash_int8_as_float4_extended(int8, int8)
 RETURNS int8
 AS 'MODULE_PATHNAME', 'hash_int8_as_float4_extended'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
 -- Hash int as float8 (for float_ops hash family)
-CREATE OR REPLACE FUNCTION hash_int2_as_float8(int2)
+CREATE FUNCTION hash_int2_as_float8(int2)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'hash_int2_as_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int2_as_float8_extended(int2, int8)
+CREATE FUNCTION hash_int2_as_float8_extended(int2, int8)
 RETURNS int8
 AS 'MODULE_PATHNAME', 'hash_int2_as_float8_extended'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int4_as_float8(int4)
+CREATE FUNCTION hash_int4_as_float8(int4)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'hash_int4_as_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int4_as_float8_extended(int4, int8)
+CREATE FUNCTION hash_int4_as_float8_extended(int4, int8)
 RETURNS int8
 AS 'MODULE_PATHNAME', 'hash_int4_as_float8_extended'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int8_as_float8(int8)
+CREATE FUNCTION hash_int8_as_float8(int8)
 RETURNS int4
 AS 'MODULE_PATHNAME', 'hash_int8_as_float8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
-CREATE OR REPLACE FUNCTION hash_int8_as_float8_extended(int8, int8)
+CREATE FUNCTION hash_int8_as_float8_extended(int8, int8)
 RETURNS int8
 AS 'MODULE_PATHNAME', 'hash_int8_as_float8_extended'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
--- Add numeric × int operators to numeric_ops btree family
+-- Add built-in int x int and numeric × int operators to numeric_ops btree family
 -- This enables merge join optimization and transitive inference
+-- when comparing numeric and integer types within numeric_ops context (e.g.,
+-- in a query with mixed-type join keys).
 --
--- CRITICAL: We must also add integer comparison operators so PostgreSQL can
--- compare integer values within numeric_ops context (e.g., during merge join sort).
+-- NOTE: Adding built-in operators here is safe because the custom
+-- cross-type operators defined above ensure transitivity and comparison
+-- semantics are correct.
+--
+-- NOTE: Built-in operators added here do not create extension dependencies,
+-- so DROP EXTENSION won't automatically remove them. Cleanup is handled by
+-- the pg_num2int_direct_comp_cleanup() event trigger defined below.
 ALTER OPERATOR FAMILY numeric_ops USING btree ADD
   -- Same-type integer comparisons (required for merge join sorting)
   -- int2 comparisons
@@ -2126,13 +2133,18 @@ ALTER OPERATOR FAMILY numeric_ops USING btree ADD
   OPERATOR 4 >= (int8, numeric),
   OPERATOR 5 > (int8, numeric);
 
--- Add int × numeric operators to integer_ops btree family
--- This enables merge joins and index access from the integer side.
--- Per spec US4: int×numeric operators must be in BOTH integer_ops AND numeric_ops.
+-- Add built-in int x int and int × numeric operators to integer_ops btree family
+-- This enables merge joins and index access from the integer side
+-- when comparing integer and numeric types within integer_ops context (e.g.,
+-- in a query with mixed-type join keys).
 --
--- CRITICAL: We must also add numeric's own operators and comparison function
--- so PostgreSQL can compare two numeric values within integer_ops context
--- (e.g., during merge join sort). We reference PostgreSQL's built-in operators.
+-- NOTE: Adding built-in numeric operators here is safe because the custom
+-- cross-type operators defined above ensure transitivity and comparison
+-- semantics are correct.
+--
+-- NOTE: Built-in operators added here do not create extension dependencies,
+-- so DROP EXTENSION won't automatically remove them. Cleanup is handled by
+-- the pg_num2int_direct_comp_cleanup() event trigger defined below.
 ALTER OPERATOR FAMILY integer_ops USING btree ADD
   -- Same-type numeric comparison (required for merge join sorting)
   FUNCTION 1 (numeric, numeric) numeric_cmp(numeric, numeric),
@@ -2192,8 +2204,8 @@ ALTER OPERATOR FAMILY integer_ops USING btree ADD
 
 -- ============================================================================
 -- NOTE: int×float operators are NOT added to float_ops btree family in v1.0
--- per spec US5 (deferred to reduce scope). Index optimization is provided via
--- support functions. Future versions may add btree family integration.
+-- (deferred to reduce scope). Index optimization is provided via support
+-- functions. Future versions may add btree family integration.
 -- ============================================================================
 
 -- ============================================================================
@@ -2212,6 +2224,13 @@ ALTER OPERATOR FAMILY integer_ops USING btree ADD
 -- This approach adds operators to higher-precision families (numeric_ops,
 -- float_ops) for the same reason as btree: to avoid enabling invalid 
 -- transitive inferences in integer_ops.
+--
+-- NOTE: Adding built-in integer operators here is safe because the custom
+-- cross-type operators defined above ensure correct equality semantics.
+--
+-- NOTE: Built-in operators added here do not create extension dependencies,
+-- so DROP EXTENSION won't automatically remove them. Cleanup is handled by
+-- the pg_num2int_direct_comp_cleanup() event trigger defined below.
 -- ============================================================================
 
 -- Add numeric = int operators to numeric_ops hash family
@@ -2276,10 +2295,10 @@ ALTER OPERATOR FAMILY float_ops USING hash ADD
 -- Extension Cleanup (Event Trigger for DROP EXTENSION)
 -- ============================================================================
 --
--- When we add operators and functions to PostgreSQL's built-in operator families
--- (numeric_ops, integer_ops, float_ops), these entries are not tracked as
--- extension-owned objects. This means DROP EXTENSION does not remove them,
--- and a subsequent CREATE EXTENSION would fail with "operator already exists".
+-- When we add built-in operators and functions to PostgreSQL's built-in
+-- operator families (numeric_ops, integer_ops, float_ops), these entries are
+-- not tracked as extension-owned objects. This means DROP EXTENSION does not
+-- remove them.
 --
 -- This event trigger runs BEFORE DROP EXTENSION executes, removing the
 -- operator family entries we added so the extension can be cleanly reinstalled.
@@ -2301,7 +2320,7 @@ ALTER OPERATOR FAMILY float_ops USING hash ADD
 -- developer to fix the list before the change can be merged.
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION pg_num2int_direct_comp_cleanup()
+CREATE FUNCTION pg_num2int_direct_comp_cleanup()
 RETURNS event_trigger
 LANGUAGE plpgsql AS $func$
 DECLARE
