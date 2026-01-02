@@ -312,6 +312,91 @@ WHERE a.int4_col = b.int4_col AND b.int4_col = 10.5;
 (1 row)
 
 -- ============================================================================
+-- Test Group 7: Out-of-range constant optimization
+-- Constants outside the integer range should be optimized to TRUE/FALSE
+-- ============================================================================
+-- Test 7a: int2 = value exceeding int2 max → always FALSE
+EXPLAIN (COSTS OFF) SELECT * FROM selectivity_test WHERE int2_col = 99999::numeric;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+SELECT count(*) FROM selectivity_test WHERE int2_col = 99999::numeric;
+ count 
+-------
+     0
+(1 row)
+
+-- Test 7b: int2 <> value exceeding int2 max → always TRUE (all rows)
+EXPLAIN (COSTS OFF) SELECT * FROM selectivity_test WHERE int2_col <> 99999::numeric;
+          QUERY PLAN          
+------------------------------
+ Seq Scan on selectivity_test
+(1 row)
+
+SELECT count(*) FROM selectivity_test WHERE int2_col <> 99999::numeric;
+ count 
+-------
+  1000
+(1 row)
+
+-- Test 7c: int2 < value exceeding int2 max → always TRUE
+EXPLAIN (COSTS OFF) SELECT * FROM selectivity_test WHERE int2_col < 99999::numeric;
+          QUERY PLAN          
+------------------------------
+ Seq Scan on selectivity_test
+(1 row)
+
+SELECT count(*) FROM selectivity_test WHERE int2_col < 99999::numeric;
+ count 
+-------
+  1000
+(1 row)
+
+-- Test 7d: int2 > value exceeding int2 max → always FALSE
+EXPLAIN (COSTS OFF) SELECT * FROM selectivity_test WHERE int2_col > 99999::numeric;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+SELECT count(*) FROM selectivity_test WHERE int2_col > 99999::numeric;
+ count 
+-------
+     0
+(1 row)
+
+-- Test 7e: int2 < value below int2 min → always FALSE
+EXPLAIN (COSTS OFF) SELECT * FROM selectivity_test WHERE int2_col < (-99999)::numeric;
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+SELECT count(*) FROM selectivity_test WHERE int2_col < (-99999)::numeric;
+ count 
+-------
+     0
+(1 row)
+
+-- Test 7f: int2 > value below int2 min → always TRUE
+EXPLAIN (COSTS OFF) SELECT * FROM selectivity_test WHERE int2_col > (-99999)::numeric;
+          QUERY PLAN          
+------------------------------
+ Seq Scan on selectivity_test
+(1 row)
+
+SELECT count(*) FROM selectivity_test WHERE int2_col > (-99999)::numeric;
+ count 
+-------
+  1000
+(1 row)
+
+-- ============================================================================
 -- Cleanup
 -- ============================================================================
 DROP TABLE selectivity_test;

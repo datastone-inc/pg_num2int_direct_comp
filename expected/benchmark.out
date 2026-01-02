@@ -1,0 +1,889 @@
+-- Comprehensive Performance Benchmark for pg_num2int_direct_comp
+-- Compares extension performance vs. stock PostgreSQL behavior
+--
+-- Tests:
+-- 1. Constant transformation (fractional → integer bounds)
+-- 2. Cross-type SARG key lookups (index scan with cross-type predicates)
+-- 3. Cross-type SARG range scans
+-- 4. Join strategies: Hash, Merge, Indexed Nested Loop
+-- 5. Stock PostgreSQL comparison (using explicit casts)
+--
+-- Stability techniques used:
+-- - Disable parallel workers to eliminate coordination jitter
+-- - High work_mem to force in-memory sorts (no disk spill variance)
+-- - Warmup queries before timed runs
+-- - Multiple runs per test for stability verification
+--
+-- NOTE: This is a long-running benchmark (~70 seconds) and is NOT included
+-- in the default regression suite. To run manually:
+--   make installcheck REGRESS=benchmark
+--
+-- For quick performance validation, use sql/performance.sql instead.
+-- pg_regress loads the extension automatically via regression_setup
+\pset pager off
+--------------------------------------------------------------------------------
+-- Stability Settings
+--------------------------------------------------------------------------------
+-- Disable parallel workers to eliminate worker startup/coordination variance
+SET max_parallel_workers_per_gather = 0;
+-- High work_mem forces in-memory quicksort instead of external merge
+-- This eliminates disk I/O variance between runs
+SET work_mem = '256MB';
+-- Ensure stable query plans
+SET random_page_cost = 1.1;  -- Encourage index usage on SSD
+--------------------------------------------------------------------------------
+-- Setup: Create test tables
+--------------------------------------------------------------------------------
+\echo '================================================================================'
+================================================================================
+\echo '=== SETUP: Creating test tables with 1M rows each ==='
+=== SETUP: Creating test tables with 1M rows each ===
+\echo '================================================================================'
+================================================================================
+DROP TABLE IF EXISTS int_table CASCADE;
+NOTICE:  table "int_table" does not exist, skipping
+DROP TABLE IF EXISTS numeric_table CASCADE;
+NOTICE:  table "numeric_table" does not exist, skipping
+DROP TABLE IF EXISTS float_table CASCADE;
+NOTICE:  table "float_table" does not exist, skipping
+-- Table with integer primary key (1M rows)
+CREATE TABLE int_table (
+    id int4 PRIMARY KEY,
+    val int4,
+    data text
+);
+INSERT INTO int_table 
+SELECT i, i % 10000, 'data_' || i 
+FROM generate_series(1, 1000000) i;
+CREATE INDEX idx_int_table_val ON int_table(val);
+-- Seed random for reproducible test data
+SELECT setseed(0.42);
+ setseed 
+---------
+ 
+(1 row)
+
+-- Table with numeric column for joins (1M rows)
+CREATE TABLE numeric_table (
+    id serial PRIMARY KEY,
+    int_ref numeric,  -- references int_table.id as numeric
+    amount numeric(10,2)
+);
+INSERT INTO numeric_table (int_ref, amount)
+SELECT (random() * 999999 + 1)::int, random() * 1000
+FROM generate_series(1, 1000000);
+CREATE INDEX idx_numeric_table_int_ref ON numeric_table(int_ref);
+-- Table with float8 column for joins (1M rows)
+CREATE TABLE float_table (
+    id serial PRIMARY KEY,
+    int_ref float8,  -- references int_table.id as float8
+    score float8
+);
+INSERT INTO float_table (int_ref, score)
+SELECT (random() * 999999 + 1)::int, random() * 100
+FROM generate_series(1, 1000000);
+CREATE INDEX idx_float_table_int_ref ON float_table(int_ref);
+ANALYZE int_table;
+ANALYZE numeric_table;
+ANALYZE float_table;
+\echo 'Setup complete: 3 tables with 1M rows each'
+Setup complete: 3 tables with 1M rows each
+\echo ''
+
+--------------------------------------------------------------------------------
+-- Warmup: Load tables into buffer cache
+--------------------------------------------------------------------------------
+\echo '================================================================================'
+================================================================================
+\echo '=== WARMUP: Loading tables into buffer cache ==='
+=== WARMUP: Loading tables into buffer cache ===
+\echo '================================================================================'
+================================================================================
+-- Sequential scan to warm buffer cache
+SELECT COUNT(*) FROM int_table;
+  count  
+---------
+ 1000000
+(1 row)
+
+SELECT COUNT(*) FROM numeric_table;
+  count  
+---------
+ 1000000
+(1 row)
+
+SELECT COUNT(*) FROM float_table;
+  count  
+---------
+ 1000000
+(1 row)
+
+-- Touch indexes
+SELECT COUNT(*) FROM int_table WHERE id = 1;
+ count 
+-------
+     1
+(1 row)
+
+SELECT COUNT(*) FROM int_table WHERE val = 1;
+ count 
+-------
+   100
+(1 row)
+
+SELECT COUNT(*) FROM numeric_table WHERE int_ref = 1;
+ count 
+-------
+     0
+(1 row)
+
+SELECT COUNT(*) FROM float_table WHERE int_ref = 1;
+ count 
+-------
+     2
+(1 row)
+
+\echo 'Warmup complete: tables and indexes in buffer cache'
+Warmup complete: tables and indexes in buffer cache
+\echo ''
+
+--------------------------------------------------------------------------------
+-- Test 1: Constant Transformation (fractional → integer bounds)
+--------------------------------------------------------------------------------
+\echo '================================================================================'
+================================================================================
+\echo '=== TEST 1: Constant Range Transformation ==='
+=== TEST 1: Constant Range Transformation ===
+\echo '=== Verifies: int_col > 10.5::numeric → int_col >= 11 ==='
+=== Verifies: int_col > 10.5::numeric → int_col >= 11 ===
+\echo '================================================================================'
+================================================================================
+-- With extension: should transform and use index
+\echo ''
+
+\echo '--- 1a. Greater than fractional (val > 10.5::numeric) - should become val >= 11 ---'
+--- 1a. Greater than fractional (val > 10.5::numeric) - should become val >= 11 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table WHERE val > 10.5::numeric;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Index Only Scan using idx_int_table_val on int_table (actual rows=998900 loops=1)
+         Filter: ((val)::numeric > 10.5)
+         Rows Removed by Filter: 1100
+         Heap Fetches: 0
+ Planning Time: 0.008 ms
+ Execution Time: 40.122 ms
+(7 rows)
+
+\echo ''
+
+\echo '--- 1b. Less than fractional (val < 10.5::numeric) - should become val <= 10 ---'
+--- 1b. Less than fractional (val < 10.5::numeric) - should become val <= 10 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table WHERE val < 10.5::numeric;
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Index Only Scan using idx_int_table_val on int_table (actual rows=1100 loops=1)
+         Filter: ((val)::numeric < 10.5)
+         Rows Removed by Filter: 998900
+         Heap Fetches: 0
+ Planning Time: 0.005 ms
+ Execution Time: 30.740 ms
+(7 rows)
+
+\echo ''
+
+\echo '--- 1c. Greater than or equal fractional (val >= 10.5::numeric) - should become val >= 11 ---'
+--- 1c. Greater than or equal fractional (val >= 10.5::numeric) - should become val >= 11 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table WHERE val >= 10.5::numeric;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Index Only Scan using idx_int_table_val on int_table (actual rows=998900 loops=1)
+         Filter: ((val)::numeric >= 10.5)
+         Rows Removed by Filter: 1100
+         Heap Fetches: 0
+ Planning Time: 0.006 ms
+ Execution Time: 39.958 ms
+(7 rows)
+
+\echo ''
+
+\echo '--- 1d. Equal to fractional (val = 10.5::numeric) - impossible, should be false ---'
+--- 1d. Equal to fractional (val = 10.5::numeric) - impossible, should be false ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table WHERE val = 10.5::numeric;
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Index Only Scan using idx_int_table_val on int_table (actual rows=0 loops=1)
+         Filter: ((val)::numeric = 10.5)
+         Rows Removed by Filter: 1000000
+         Heap Fetches: 0
+ Planning Time: 0.006 ms
+ Execution Time: 30.571 ms
+(7 rows)
+
+\echo ''
+
+\echo '--- 1e. Equal to whole number (val = 100.0::numeric) - should become val = 100 ---'
+--- 1e. Equal to whole number (val = 100.0::numeric) - should become val = 100 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table WHERE val = 100.0::numeric;
+                                      QUERY PLAN                                      
+--------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Index Only Scan using idx_int_table_val on int_table (actual rows=100 loops=1)
+         Filter: ((val)::numeric = 100.0)
+         Rows Removed by Filter: 999900
+         Heap Fetches: 0
+ Planning Time: 0.005 ms
+ Execution Time: 30.129 ms
+(7 rows)
+
+--------------------------------------------------------------------------------
+-- Test 2: Cross-Type SARG Key Lookups
+--------------------------------------------------------------------------------
+\echo ''
+
+\echo '================================================================================'
+================================================================================
+\echo '=== TEST 2: Cross-Type SARG Key Lookups (Extension vs Stock) ==='
+=== TEST 2: Cross-Type SARG Key Lookups (Extension vs Stock) ===
+\echo '================================================================================'
+================================================================================
+\echo ''
+
+\echo '--- 2a. WITH EXTENSION: id = 500000::numeric (should use Index Scan) ---'
+--- 2a. WITH EXTENSION: id = 500000::numeric (should use Index Scan) ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT * FROM int_table WHERE id = 500000::numeric;
+                  QUERY PLAN                   
+-----------------------------------------------
+ Seq Scan on int_table (actual rows=1 loops=1)
+   Filter: ((id)::numeric = '500000'::numeric)
+   Rows Removed by Filter: 999999
+ Planning Time: 0.016 ms
+ Execution Time: 34.297 ms
+(5 rows)
+
+\echo ''
+
+\echo '--- 2b. STOCK EMULATION: id::numeric = 500000::numeric (forces Seq Scan) ---'
+--- 2b. STOCK EMULATION: id::numeric = 500000::numeric (forces Seq Scan) ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT * FROM int_table WHERE id::numeric = 500000::numeric;
+                  QUERY PLAN                   
+-----------------------------------------------
+ Seq Scan on int_table (actual rows=1 loops=1)
+   Filter: ((id)::numeric = '500000'::numeric)
+   Rows Removed by Filter: 999999
+ Planning Time: 0.031 ms
+ Execution Time: 33.940 ms
+(5 rows)
+
+\echo ''
+
+\echo '--- 2c. WITH EXTENSION: id = 500000::float8 (should use Index Scan) ---'
+--- 2c. WITH EXTENSION: id = 500000::float8 (should use Index Scan) ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT * FROM int_table WHERE id = 500000::float8;
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Seq Scan on int_table (actual rows=1 loops=1)
+   Filter: ((id)::double precision = '500000'::double precision)
+   Rows Removed by Filter: 999999
+ Planning Time: 0.026 ms
+ Execution Time: 21.315 ms
+(5 rows)
+
+\echo ''
+
+\echo '--- 2d. STOCK EMULATION: id::float8 = 500000::float8 (forces Seq Scan) ---'
+--- 2d. STOCK EMULATION: id::float8 = 500000::float8 (forces Seq Scan) ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT * FROM int_table WHERE id::float8 = 500000::float8;
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Seq Scan on int_table (actual rows=1 loops=1)
+   Filter: ((id)::double precision = '500000'::double precision)
+   Rows Removed by Filter: 999999
+ Planning Time: 0.024 ms
+ Execution Time: 21.195 ms
+(5 rows)
+
+--------------------------------------------------------------------------------
+-- Test 3: Cross-Type SARG Range Scans
+--------------------------------------------------------------------------------
+\echo ''
+
+\echo '================================================================================'
+================================================================================
+\echo '=== TEST 3: Cross-Type SARG Range Scans (Extension vs Stock) ==='
+=== TEST 3: Cross-Type SARG Range Scans (Extension vs Stock) ===
+\echo '================================================================================'
+================================================================================
+\echo ''
+
+\echo '--- 3a. WITH EXTENSION: val BETWEEN 100::numeric AND 200::numeric ---'
+--- 3a. WITH EXTENSION: val BETWEEN 100::numeric AND 200::numeric ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table WHERE val >= 100::numeric AND val <= 200::numeric;
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Index Only Scan using idx_int_table_val on int_table (actual rows=10100 loops=1)
+         Filter: (((val)::numeric >= '100'::numeric) AND ((val)::numeric <= '200'::numeric))
+         Rows Removed by Filter: 989900
+         Heap Fetches: 0
+ Planning Time: 0.034 ms
+ Execution Time: 44.484 ms
+(7 rows)
+
+\echo ''
+
+\echo '--- 3b. STOCK EMULATION: val::numeric BETWEEN 100 AND 200 ---'
+--- 3b. STOCK EMULATION: val::numeric BETWEEN 100 AND 200 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table WHERE val::numeric >= 100 AND val::numeric <= 200;
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Index Only Scan using idx_int_table_val on int_table (actual rows=10100 loops=1)
+         Filter: (((val)::numeric >= '100'::numeric) AND ((val)::numeric <= '200'::numeric))
+         Rows Removed by Filter: 989900
+         Heap Fetches: 0
+ Planning Time: 0.017 ms
+ Execution Time: 44.257 ms
+(7 rows)
+
+--------------------------------------------------------------------------------
+-- Test 4: Hash Joins (Extension vs Stock) - 3 runs each
+--------------------------------------------------------------------------------
+\echo ''
+
+\echo '================================================================================'
+================================================================================
+\echo '=== TEST 4: Hash Joins (int4 = numeric) - 3 runs each ==='
+=== TEST 4: Hash Joins (int4 = numeric) - 3 runs each ===
+\echo '================================================================================'
+================================================================================
+-- Force hash join
+SET enable_mergejoin = off;
+SET enable_nestloop = off;
+SET enable_hashjoin = on;
+-- Warmup
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id = n.int_ref;
+  count  
+---------
+ 1000000
+(1 row)
+
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id::numeric = n.int_ref;
+  count  
+---------
+ 1000000
+(1 row)
+
+\echo ''
+
+\echo '--- 4a. WITH EXTENSION: int_table.id = numeric_table.int_ref (Hash Join) ---'
+--- 4a. WITH EXTENSION: int_table.id = numeric_table.int_ref (Hash Join) ---
+\echo '--- Run 1 ---'
+--- Run 1 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id = n.int_ref;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Hash Join (actual rows=1000000 loops=1)
+         Hash Cond: ((i.id)::numeric = n.int_ref)
+         ->  Seq Scan on int_table i (actual rows=1000000 loops=1)
+         ->  Hash (actual rows=1000000 loops=1)
+               Buckets: 1048576  Batches: 1  Memory Usage: 46259kB
+               ->  Seq Scan on numeric_table n (actual rows=1000000 loops=1)
+ Planning Time: 0.076 ms
+ Execution Time: 346.664 ms
+(9 rows)
+
+\echo '--- Run 2 ---'
+--- Run 2 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id = n.int_ref;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Hash Join (actual rows=1000000 loops=1)
+         Hash Cond: ((i.id)::numeric = n.int_ref)
+         ->  Seq Scan on int_table i (actual rows=1000000 loops=1)
+         ->  Hash (actual rows=1000000 loops=1)
+               Buckets: 1048576  Batches: 1  Memory Usage: 46259kB
+               ->  Seq Scan on numeric_table n (actual rows=1000000 loops=1)
+ Planning Time: 0.060 ms
+ Execution Time: 343.101 ms
+(9 rows)
+
+\echo '--- Run 3 ---'
+--- Run 3 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id = n.int_ref;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Hash Join (actual rows=1000000 loops=1)
+         Hash Cond: ((i.id)::numeric = n.int_ref)
+         ->  Seq Scan on int_table i (actual rows=1000000 loops=1)
+         ->  Hash (actual rows=1000000 loops=1)
+               Buckets: 1048576  Batches: 1  Memory Usage: 46259kB
+               ->  Seq Scan on numeric_table n (actual rows=1000000 loops=1)
+ Planning Time: 0.047 ms
+ Execution Time: 351.077 ms
+(9 rows)
+
+\echo ''
+
+\echo '--- 4b. STOCK EMULATION: int_table.id::numeric = numeric_table.int_ref ---'
+--- 4b. STOCK EMULATION: int_table.id::numeric = numeric_table.int_ref ---
+\echo '--- Run 1 ---'
+--- Run 1 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id::numeric = n.int_ref;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Hash Join (actual rows=1000000 loops=1)
+         Hash Cond: ((i.id)::numeric = n.int_ref)
+         ->  Seq Scan on int_table i (actual rows=1000000 loops=1)
+         ->  Hash (actual rows=1000000 loops=1)
+               Buckets: 1048576  Batches: 1  Memory Usage: 46259kB
+               ->  Seq Scan on numeric_table n (actual rows=1000000 loops=1)
+ Planning Time: 0.050 ms
+ Execution Time: 347.985 ms
+(9 rows)
+
+\echo '--- Run 2 ---'
+--- Run 2 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id::numeric = n.int_ref;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Hash Join (actual rows=1000000 loops=1)
+         Hash Cond: ((i.id)::numeric = n.int_ref)
+         ->  Seq Scan on int_table i (actual rows=1000000 loops=1)
+         ->  Hash (actual rows=1000000 loops=1)
+               Buckets: 1048576  Batches: 1  Memory Usage: 46259kB
+               ->  Seq Scan on numeric_table n (actual rows=1000000 loops=1)
+ Planning Time: 0.055 ms
+ Execution Time: 342.545 ms
+(9 rows)
+
+\echo '--- Run 3 ---'
+--- Run 3 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id::numeric = n.int_ref;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Hash Join (actual rows=1000000 loops=1)
+         Hash Cond: ((i.id)::numeric = n.int_ref)
+         ->  Seq Scan on int_table i (actual rows=1000000 loops=1)
+         ->  Hash (actual rows=1000000 loops=1)
+               Buckets: 1048576  Batches: 1  Memory Usage: 46259kB
+               ->  Seq Scan on numeric_table n (actual rows=1000000 loops=1)
+ Planning Time: 0.070 ms
+ Execution Time: 353.473 ms
+(9 rows)
+
+RESET enable_mergejoin;
+RESET enable_nestloop;
+RESET enable_hashjoin;
+--------------------------------------------------------------------------------
+-- Test 5: Merge Joins (Extension vs Stock) - int × numeric only
+-- Run 3 times each for stability (take median)
+--
+-- NOTE: We use enable_seqscan = off to force both plans to use the numeric
+-- index (idx_numeric_table_int_ref). Without this, PostgreSQL's cost model
+-- picks different plan shapes:
+--   - Extension: Index Scan int_table_pkey + Sort numeric_table
+--   - Stock: Index Scan idx_numeric_table_int_ref + Sort int_table::numeric
+--
+-- The planner's cost model treats all comparison functions equally
+-- (cpu_operator_cost = 0.0025), so it doesn't know that sorting int4 values
+-- is ~4x faster than sorting numeric values. This causes it to prefer the
+-- slower plan when using the extension.
+--
+-- By forcing both queries to use the numeric index, we get identical plan
+-- shapes and a fair apples-to-apples comparison of the join execution itself.
+--------------------------------------------------------------------------------
+\echo ''
+
+\echo '================================================================================'
+================================================================================
+\echo '=== TEST 5: Merge Joins (int4 = numeric) - 3 runs each ==='
+=== TEST 5: Merge Joins (int4 = numeric) - 3 runs each ===
+\echo '=== (enable_seqscan=off forces optimal plan for fair comparison) ==='
+=== (enable_seqscan=off forces optimal plan for fair comparison) ===
+\echo '================================================================================'
+================================================================================
+-- Force merge join with optimal plan
+SET enable_hashjoin = off;
+SET enable_nestloop = off;
+SET enable_mergejoin = on;
+SET enable_seqscan = off;  -- Force use of idx_numeric_table_int_ref
+-- Warmup runs (not timed in output)
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id = n.int_ref;
+  count  
+---------
+ 1000000
+(1 row)
+
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id::numeric = n.int_ref;
+  count  
+---------
+ 1000000
+(1 row)
+
+\echo ''
+
+\echo '--- 5a. WITH EXTENSION: int_table.id = numeric_table.int_ref (Merge Join) ---'
+--- 5a. WITH EXTENSION: int_table.id = numeric_table.int_ref (Merge Join) ---
+\echo '--- Run 1 ---'
+--- Run 1 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id = n.int_ref;
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Merge Join (actual rows=1000000 loops=1)
+         Merge Cond: (n.int_ref = ((i.id)::numeric))
+         ->  Index Only Scan using idx_numeric_table_int_ref on numeric_table n (actual rows=1000000 loops=1)
+               Heap Fetches: 1000000
+         ->  Sort (actual rows=1367571 loops=1)
+               Sort Key: ((i.id)::numeric)
+               Sort Method: quicksort  Memory: 55827kB
+               ->  Index Only Scan using int_table_pkey on int_table i (actual rows=1000000 loops=1)
+                     Heap Fetches: 0
+ Planning Time: 0.057 ms
+ Execution Time: 383.750 ms
+(12 rows)
+
+\echo '--- Run 2 ---'
+--- Run 2 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id = n.int_ref;
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Merge Join (actual rows=1000000 loops=1)
+         Merge Cond: (n.int_ref = ((i.id)::numeric))
+         ->  Index Only Scan using idx_numeric_table_int_ref on numeric_table n (actual rows=1000000 loops=1)
+               Heap Fetches: 1000000
+         ->  Sort (actual rows=1367571 loops=1)
+               Sort Key: ((i.id)::numeric)
+               Sort Method: quicksort  Memory: 55827kB
+               ->  Index Only Scan using int_table_pkey on int_table i (actual rows=1000000 loops=1)
+                     Heap Fetches: 0
+ Planning Time: 0.053 ms
+ Execution Time: 377.755 ms
+(12 rows)
+
+\echo '--- Run 3 ---'
+--- Run 3 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id = n.int_ref;
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Merge Join (actual rows=1000000 loops=1)
+         Merge Cond: (n.int_ref = ((i.id)::numeric))
+         ->  Index Only Scan using idx_numeric_table_int_ref on numeric_table n (actual rows=1000000 loops=1)
+               Heap Fetches: 1000000
+         ->  Sort (actual rows=1367571 loops=1)
+               Sort Key: ((i.id)::numeric)
+               Sort Method: quicksort  Memory: 55827kB
+               ->  Index Only Scan using int_table_pkey on int_table i (actual rows=1000000 loops=1)
+                     Heap Fetches: 0
+ Planning Time: 0.052 ms
+ Execution Time: 381.885 ms
+(12 rows)
+
+\echo ''
+
+\echo '--- 5b. STOCK EMULATION: int_table.id::numeric = numeric_table.int_ref ---'
+--- 5b. STOCK EMULATION: int_table.id::numeric = numeric_table.int_ref ---
+\echo '--- Run 1 ---'
+--- Run 1 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id::numeric = n.int_ref;
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Merge Join (actual rows=1000000 loops=1)
+         Merge Cond: (n.int_ref = ((i.id)::numeric))
+         ->  Index Only Scan using idx_numeric_table_int_ref on numeric_table n (actual rows=1000000 loops=1)
+               Heap Fetches: 1000000
+         ->  Sort (actual rows=1367571 loops=1)
+               Sort Key: ((i.id)::numeric)
+               Sort Method: quicksort  Memory: 55827kB
+               ->  Index Only Scan using int_table_pkey on int_table i (actual rows=1000000 loops=1)
+                     Heap Fetches: 0
+ Planning Time: 0.052 ms
+ Execution Time: 388.623 ms
+(12 rows)
+
+\echo '--- Run 2 ---'
+--- Run 2 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id::numeric = n.int_ref;
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Merge Join (actual rows=1000000 loops=1)
+         Merge Cond: (n.int_ref = ((i.id)::numeric))
+         ->  Index Only Scan using idx_numeric_table_int_ref on numeric_table n (actual rows=1000000 loops=1)
+               Heap Fetches: 1000000
+         ->  Sort (actual rows=1367571 loops=1)
+               Sort Key: ((i.id)::numeric)
+               Sort Method: quicksort  Memory: 55827kB
+               ->  Index Only Scan using int_table_pkey on int_table i (actual rows=1000000 loops=1)
+                     Heap Fetches: 0
+ Planning Time: 0.060 ms
+ Execution Time: 390.287 ms
+(12 rows)
+
+\echo '--- Run 3 ---'
+--- Run 3 ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id::numeric = n.int_ref;
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Merge Join (actual rows=1000000 loops=1)
+         Merge Cond: (n.int_ref = ((i.id)::numeric))
+         ->  Index Only Scan using idx_numeric_table_int_ref on numeric_table n (actual rows=1000000 loops=1)
+               Heap Fetches: 1000000
+         ->  Sort (actual rows=1367571 loops=1)
+               Sort Key: ((i.id)::numeric)
+               Sort Method: quicksort  Memory: 55827kB
+               ->  Index Only Scan using int_table_pkey on int_table i (actual rows=1000000 loops=1)
+                     Heap Fetches: 0
+ Planning Time: 0.050 ms
+ Execution Time: 379.722 ms
+(12 rows)
+
+RESET enable_hashjoin;
+RESET enable_nestloop;
+RESET enable_mergejoin;
+RESET enable_seqscan;
+--------------------------------------------------------------------------------
+-- Test 6: Indexed Nested Loop Joins (Extension vs Stock)
+--------------------------------------------------------------------------------
+\echo ''
+
+\echo '================================================================================'
+================================================================================
+\echo '=== TEST 6: Indexed Nested Loop Joins ==='
+=== TEST 6: Indexed Nested Loop Joins ===
+\echo '================================================================================'
+================================================================================
+-- Force nested loop with index
+SET enable_hashjoin = off;
+SET enable_mergejoin = off;
+SET enable_nestloop = on;
+-- Small probe set for nested loop
+\echo ''
+
+\echo '--- 6a. WITH EXTENSION: Nested Loop with Index Scan on int_table ---'
+--- 6a. WITH EXTENSION: Nested Loop with Index Scan on int_table ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) 
+FROM (SELECT int_ref FROM numeric_table LIMIT 1000) n
+JOIN int_table i ON i.id = n.int_ref;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Nested Loop (actual rows=1000 loops=1)
+         Join Filter: (numeric_table.int_ref = (i.id)::numeric)
+         Rows Removed by Join Filter: 999999000
+         ->  Seq Scan on int_table i (actual rows=1000000 loops=1)
+         ->  Materialize (actual rows=1000 loops=1000000)
+               ->  Limit (actual rows=1000 loops=1)
+                     ->  Seq Scan on numeric_table (actual rows=1000 loops=1)
+ Planning Time: 0.071 ms
+ Execution Time: 39094.671 ms
+(10 rows)
+
+\echo ''
+
+\echo '--- 6b. STOCK EMULATION: Nested Loop WITHOUT Index (cast defeats index) ---'
+--- 6b. STOCK EMULATION: Nested Loop WITHOUT Index (cast defeats index) ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) 
+FROM (SELECT int_ref FROM numeric_table LIMIT 1000) n
+JOIN int_table i ON i.id::numeric = n.int_ref;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Nested Loop (actual rows=1000 loops=1)
+         Join Filter: (numeric_table.int_ref = (i.id)::numeric)
+         Rows Removed by Join Filter: 999999000
+         ->  Seq Scan on int_table i (actual rows=1000000 loops=1)
+         ->  Materialize (actual rows=1000 loops=1000000)
+               ->  Limit (actual rows=1000 loops=1)
+                     ->  Seq Scan on numeric_table (actual rows=1000 loops=1)
+ Planning Time: 0.067 ms
+ Execution Time: 38187.751 ms
+(10 rows)
+
+RESET enable_hashjoin;
+RESET enable_mergejoin;
+RESET enable_nestloop;
+--------------------------------------------------------------------------------
+-- Test 7: Float joins (Hash only, no Merge)
+--------------------------------------------------------------------------------
+\echo ''
+
+\echo '================================================================================'
+================================================================================
+\echo '=== TEST 7: Float Joins (Hash and Nested Loop only, no Merge) ==='
+=== TEST 7: Float Joins (Hash and Nested Loop only, no Merge) ===
+\echo '================================================================================'
+================================================================================
+SET enable_mergejoin = off;
+\echo ''
+
+\echo '--- 7a. WITH EXTENSION: int_table.id = float_table.int_ref (Hash or NL) ---'
+--- 7a. WITH EXTENSION: int_table.id = float_table.int_ref (Hash or NL) ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table i JOIN float_table f ON i.id = f.int_ref;
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Hash Join (actual rows=1000000 loops=1)
+         Hash Cond: ((i.id)::double precision = f.int_ref)
+         ->  Seq Scan on int_table i (actual rows=1000000 loops=1)
+         ->  Hash (actual rows=1000000 loops=1)
+               Buckets: 1048576  Batches: 1  Memory Usage: 47255kB
+               ->  Seq Scan on float_table f (actual rows=1000000 loops=1)
+ Planning Time: 0.130 ms
+ Execution Time: 315.362 ms
+(9 rows)
+
+\echo ''
+
+\echo '--- 7b. STOCK EMULATION: int_table.id::float8 = float_table.int_ref ---'
+--- 7b. STOCK EMULATION: int_table.id::float8 = float_table.int_ref ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table i JOIN float_table f ON i.id::float8 = f.int_ref;
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Hash Join (actual rows=1000000 loops=1)
+         Hash Cond: ((i.id)::double precision = f.int_ref)
+         ->  Seq Scan on int_table i (actual rows=1000000 loops=1)
+         ->  Hash (actual rows=1000000 loops=1)
+               Buckets: 1048576  Batches: 1  Memory Usage: 47255kB
+               ->  Seq Scan on float_table f (actual rows=1000000 loops=1)
+ Planning Time: 0.076 ms
+ Execution Time: 311.259 ms
+(9 rows)
+
+RESET enable_mergejoin;
+--------------------------------------------------------------------------------
+-- Test 8: Planner choice (let planner pick best strategy)
+--------------------------------------------------------------------------------
+\echo ''
+
+\echo '================================================================================'
+================================================================================
+\echo '=== TEST 8: Planner Choice (default settings) ==='
+=== TEST 8: Planner Choice (default settings) ===
+\echo '================================================================================'
+================================================================================
+\echo ''
+
+\echo '--- 8a. WITH EXTENSION: Planner picks best strategy for int=numeric join ---'
+--- 8a. WITH EXTENSION: Planner picks best strategy for int=numeric join ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id = n.int_ref;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Hash Join (actual rows=1000000 loops=1)
+         Hash Cond: ((i.id)::numeric = n.int_ref)
+         ->  Seq Scan on int_table i (actual rows=1000000 loops=1)
+         ->  Hash (actual rows=1000000 loops=1)
+               Buckets: 1048576  Batches: 1  Memory Usage: 46259kB
+               ->  Seq Scan on numeric_table n (actual rows=1000000 loops=1)
+ Planning Time: 0.112 ms
+ Execution Time: 340.120 ms
+(9 rows)
+
+\echo ''
+
+\echo '--- 8b. STOCK EMULATION: Planner constrained by cast ---'
+--- 8b. STOCK EMULATION: Planner constrained by cast ---
+EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) 
+SELECT COUNT(*) FROM int_table i JOIN numeric_table n ON i.id::numeric = n.int_ref;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Hash Join (actual rows=1000000 loops=1)
+         Hash Cond: ((i.id)::numeric = n.int_ref)
+         ->  Seq Scan on int_table i (actual rows=1000000 loops=1)
+         ->  Hash (actual rows=1000000 loops=1)
+               Buckets: 1048576  Batches: 1  Memory Usage: 46259kB
+               ->  Seq Scan on numeric_table n (actual rows=1000000 loops=1)
+ Planning Time: 0.062 ms
+ Execution Time: 339.320 ms
+(9 rows)
+
+--------------------------------------------------------------------------------
+-- Summary
+--------------------------------------------------------------------------------
+\echo ''
+
+\echo '================================================================================'
+================================================================================
+\echo '=== BENCHMARK COMPLETE ==='
+=== BENCHMARK COMPLETE ===
+\echo '================================================================================'
+================================================================================
+\echo ''
+
+\echo 'Stability settings used:'
+Stability settings used:
+\echo '  - max_parallel_workers_per_gather = 0 (no parallel worker jitter)'
+  - max_parallel_workers_per_gather = 0 (no parallel worker jitter)
+\echo '  - work_mem = 256MB (in-memory sorts, no disk spill variance)'
+  - work_mem = 256MB (in-memory sorts, no disk spill variance)
+\echo '  - Warmup queries before timed runs (hot buffer cache)'
+  - Warmup queries before timed runs (hot buffer cache)
+\echo '  - 3 runs per join test (take median for reporting)'
+  - 3 runs per join test (take median for reporting)
+\echo ''
+
+\echo 'Key observations to look for:'
+Key observations to look for:
+\echo '1. Extension uses Index Scan; Stock uses Seq Scan (Test 2, 3)'
+1. Extension uses Index Scan; Stock uses Seq Scan (Test 2, 3)
+\echo '2. Extension enables Hash Join cross-type (Test 4)'
+2. Extension enables Hash Join cross-type (Test 4)
+\echo '3. Extension enables Merge Join for int×numeric (Test 5)'
+3. Extension enables Merge Join for int×numeric (Test 5)
+\echo '4. Extension enables Indexed Nested Loop; Stock does full scan (Test 6)'
+4. Extension enables Indexed Nested Loop; Stock does full scan (Test 6)
+\echo '5. Fractional constants are correctly transformed (Test 1)'
+5. Fractional constants are correctly transformed (Test 1)
+\echo ''
+
+-- Reset all settings
+RESET ALL;
+-- Cleanup (optional - comment out to inspect tables)
+-- DROP TABLE IF EXISTS int_table CASCADE;
+-- DROP TABLE IF EXISTS numeric_table CASCADE;
+-- DROP TABLE IF EXISTS float_table CASCADE;

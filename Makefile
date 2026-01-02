@@ -17,6 +17,10 @@ MODULES = pg_num2int_direct_comp
 # Phase 12: selectivity (constant predicate optimization FR-015/016/017)
 # doc_examples: validates SQL examples from README.md and doc/*.md
 # extension_lifecycle: tests DROP/CREATE extension cycles with cleanup trigger
+#
+# Long-running tests (not included by default):
+# benchmark: comprehensive benchmark with 1M row tables (~70 seconds)
+#            Run manually with: make installcheck REGRESS=benchmark
 REGRESS = numeric_int_ops float_int_ops index_usage range_boundary transitivity edge_cases null_handling special_values index_nested_loop hash_joins merge_joins performance selectivity doc_examples extension_lifecycle
 
 # Build configuration

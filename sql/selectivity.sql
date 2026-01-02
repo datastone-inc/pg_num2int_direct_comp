@@ -149,6 +149,35 @@ SELECT COUNT(*) FROM selectivity_test a, selectivity_test b
 WHERE a.int4_col = b.int4_col AND b.int4_col = 10.5;
 
 -- ============================================================================
+-- Test Group 7: Out-of-range constant optimization
+-- Constants outside the integer range should be optimized to TRUE/FALSE
+-- ============================================================================
+
+-- Test 7a: int2 = value exceeding int2 max → always FALSE
+EXPLAIN (COSTS OFF) SELECT * FROM selectivity_test WHERE int2_col = 99999::numeric;
+SELECT count(*) FROM selectivity_test WHERE int2_col = 99999::numeric;
+
+-- Test 7b: int2 <> value exceeding int2 max → always TRUE (all rows)
+EXPLAIN (COSTS OFF) SELECT * FROM selectivity_test WHERE int2_col <> 99999::numeric;
+SELECT count(*) FROM selectivity_test WHERE int2_col <> 99999::numeric;
+
+-- Test 7c: int2 < value exceeding int2 max → always TRUE
+EXPLAIN (COSTS OFF) SELECT * FROM selectivity_test WHERE int2_col < 99999::numeric;
+SELECT count(*) FROM selectivity_test WHERE int2_col < 99999::numeric;
+
+-- Test 7d: int2 > value exceeding int2 max → always FALSE
+EXPLAIN (COSTS OFF) SELECT * FROM selectivity_test WHERE int2_col > 99999::numeric;
+SELECT count(*) FROM selectivity_test WHERE int2_col > 99999::numeric;
+
+-- Test 7e: int2 < value below int2 min → always FALSE
+EXPLAIN (COSTS OFF) SELECT * FROM selectivity_test WHERE int2_col < (-99999)::numeric;
+SELECT count(*) FROM selectivity_test WHERE int2_col < (-99999)::numeric;
+
+-- Test 7f: int2 > value below int2 min → always TRUE
+EXPLAIN (COSTS OFF) SELECT * FROM selectivity_test WHERE int2_col > (-99999)::numeric;
+SELECT count(*) FROM selectivity_test WHERE int2_col > (-99999)::numeric;
+
+-- ============================================================================
 -- Cleanup
 -- ============================================================================
 DROP TABLE selectivity_test;

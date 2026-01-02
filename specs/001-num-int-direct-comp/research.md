@@ -1,7 +1,7 @@
 # Research: Direct Exact Comparison for Numeric and Integer Types
 
-**Feature**: 001-num-int-direct-comp  
-**Created**: 2025-12-23  
+**Feature**: 001-num-int-direct-comp
+**Created**: 2025-12-23
 **Purpose**: Technical research for implementing exact comparison operators between numeric and integer types in PostgreSQL
 
 ## Research Tasks
@@ -33,7 +33,7 @@ numeric_cmp_int4_internal(Numeric num, int32 i4) {
   Numeric num_trunc = DatumGetNumeric(
     DirectFunctionCall2(numeric_trunc, NumericGetDatum(num), Int32GetDatum(0))
   );
-  
+
   // Check bounds: if num_trunc outside int4 range → comparison based on sign
   if (numeric_is_greater_than_int4_max(num_trunc)) {
     return 1;  // numeric > int4
@@ -41,12 +41,12 @@ numeric_cmp_int4_internal(Numeric num, int32 i4) {
   if (numeric_is_less_than_int4_min(num_trunc)) {
     return -1;  // numeric < int4
   }
-  
+
   // Convert truncated numeric to int4 and compare
   int32 num_as_int = DatumGetInt32(
     DirectFunctionCall1(numeric_int4, NumericGetDatum(num_trunc))
   );
-  
+
   if (num_as_int < i4) return -1;
   if (num_as_int > i4) return 1;
   return 0;
@@ -117,37 +117,37 @@ Datum
 num2int_support(PG_FUNCTION_ARGS) {
   Node *rawreq = (Node *) PG_GETARG_POINTER(0);
   Node *ret = NULL;
-  
+
   if (IsA(rawreq, SupportRequestIndexCondition)) {
     SupportRequestIndexCondition *req = (SupportRequestIndexCondition *) rawreq;
-    
+
     // Set lossy flag - our transformation is exact
     req->lossy = false;
-    
+
     // Initialize OID cache if needed
     init_oid_cache(&oid_cache);
-    
+
     // Extract the comparison: intcol = <numeric_constant>
     if (is_opclause(req->node)) {
       OpExpr *clause = (OpExpr *) req->node;
       Oid opno = clause->opno;
-      
+
       // Extract Var and Const nodes
       Var *var_node;
       Const *const_node;
       // ... identify which is which
-      
+
       // Check if this is one of our operators
       if (opno == oid_cache.int4_eq_numeric_oid || /* other operators... */) {
         // Convert numeric constant to integer using PostgreSQL's casting functions
         // For int4: OidFunctionCall1(1744, NumericGetDatum(num))  // int4(numeric)
         // For int2: OidFunctionCall1(1783, NumericGetDatum(num))  // int2(numeric)
         // For int8: OidFunctionCall1(1779, NumericGetDatum(num))  // int8(numeric)
-        
+
         // Create new Const with converted integer value
         Const *new_const = makeConst(INT4OID, -1, InvalidOid, sizeof(int32),
                                      Int32GetDatum(int_val), false, true);
-        
+
         // Build new OpExpr using standard int = int operator
         Var *new_var = (Var *) copyObject(var_node);
         OpExpr *new_clause = (OpExpr *) make_opclause(
@@ -156,13 +156,13 @@ num2int_support(PG_FUNCTION_ARGS) {
             (Expr *) new_var,
             (Expr *) new_const,
             InvalidOid, InvalidOid);
-        
+
         // CRITICAL: Return a List containing the transformed OpExpr
         ret = (Node *) list_make1(new_clause);
       }
     }
   }
-  
+
   PG_RETURN_POINTER(ret);
 }
 ```
@@ -246,12 +246,12 @@ init_oid_cache(void) {
   if (oid_cache.initialized) {
     return;
   }
-  
+
   // Lookup OIDs via catalog (one-time per backend)
-  oid_cache.numeric_eq_int2_oid = 
+  oid_cache.numeric_eq_int2_oid =
     get_opfamily_member(...);
   // ... initialize all operator OIDs
-  
+
   oid_cache.initialized = true;
 }
 
@@ -259,7 +259,7 @@ init_oid_cache(void) {
 Datum
 some_support_func(PG_FUNCTION_ARGS) {
   init_oid_cache();  // Fast no-op if already initialized
-  
+
   if (clause->opno == oid_cache.numeric_eq_int4_oid) {
     // Handle numeric = int4 case
   }
@@ -343,11 +343,11 @@ CREATE OPERATOR = (
 
 **Without btree family membership**:
 ```sql
-EXPLAIN SELECT COUNT(*) 
-FROM test_int i JOIN test_numeric n ON i.val = n.val 
+EXPLAIN SELECT COUNT(*)
+FROM test_int i JOIN test_numeric n ON i.val = n.val
 WHERE i.val < 100;
 
-                    QUERY PLAN                    
+                    QUERY PLAN
 --------------------------------------------------
  Aggregate
    ->  Hash Join
@@ -362,7 +362,7 @@ WHERE i.val < 100;
 
 **With btree family membership** (operators in numeric_ops):
 ```sql
-                    QUERY PLAN                            
+                    QUERY PLAN
 ----------------------------------------------------------
  Aggregate
    ->  Nested Loop
@@ -421,12 +421,12 @@ ALTER OPERATOR FAMILY numeric_ops USING btree ADD
   OPERATOR 3 = (numeric, int2),
   OPERATOR 4 >= (numeric, int2),
   OPERATOR 5 > (numeric, int2),
-  
+
   -- numeric <op> int4 with support function
   FUNCTION 1 (numeric, int4) numeric_cmp_int4(numeric, int4),
   OPERATOR 1 < (numeric, int4),
   -- ... (repeat for all 6 type combinations: numeric×int2/4/8 both directions)
-  
+
 -- Add float4/8 × int operators to float_ops btree family
 ALTER OPERATOR FAMILY float_ops USING btree ADD
   FUNCTION 1 (float4, int2) float4_cmp_int2(float4, int2),
@@ -493,7 +493,7 @@ Testing revealed that PostgreSQL's native cross-type operators (e.g., `int2 = in
 -- PostgreSQL only has hashint2(int2), hashint4(int4), hashint8(int8)
 -- Yet int2 = int8 hash joins work via implicit casting
 SELECT hashint4(10), hash_numeric(10::int4), hash_numeric(10.0::numeric);
-  hashint4   | hash_numeric | hash_numeric 
+  hashint4   | hash_numeric | hash_numeric
 -------------+--------------+--------------
  -1905060026 |   1324868424 |   1324868424  -- int4→numeric cast works!
 ```
@@ -534,7 +534,7 @@ ALTER OPERATOR FAMILY numeric_ops USING hash ADD
   FUNCTION 2 (int4, int4) hash_int4_as_numeric_extended(int4, int8),
   FUNCTION 1 (int8, int8) hash_int8_as_numeric(int8),
   FUNCTION 2 (int8, int8) hash_int8_as_numeric_extended(int8, int8),
-  
+
   -- Operators
   OPERATOR 1 = (numeric, int2),
   OPERATOR 1 = (int2, numeric),
@@ -594,7 +594,7 @@ CREATE INDEX idx_value ON test_int4(value);
 INSERT INTO test_int4 (value) SELECT generate_series(1, 1000);
 
 -- Should use index scan
-EXPLAIN (COSTS OFF) 
+EXPLAIN (COSTS OFF)
 SELECT * FROM test_int4 WHERE value = 500.0::numeric;
 
 -- Expected output should show "Index Scan using idx_value"
@@ -631,7 +631,7 @@ The extension implementation strategy is:
 1. **Comparison functions**: C functions using PostgreSQL's `numeric_trunc()` and bounds checking primitives
 2. **Index integration**: `SupportRequestIndexCondition` support functions modeled after LIKE operator
 3. **Performance optimization**: Lazy per-backend OID cache for operator lookups
-4. **Btree family membership**: 
+4. **Btree family membership**:
    - int×numeric: BOTH `integer_ops` AND `numeric_ops` families (enables merge joins)
    - int×float: `float_ops` hash family only (btree integration deferred)
 5. **MERGES property**: Added to int×numeric equality operators for merge join support
@@ -749,7 +749,7 @@ int16 val = DatumGetInt16(result);
 Datum result = OidFunctionCall1(1744, NumericGetDatum(num));
 int32 val = DatumGetInt32(result);
 
-// For int8: OID 1779  
+// For int8: OID 1779
 Datum result = OidFunctionCall1(1779, NumericGetDatum(num));
 int64 val = DatumGetInt64(result);
 ```
@@ -849,11 +849,11 @@ DECLARE
     obj record;
 BEGIN
     FOR obj IN SELECT * FROM pg_event_trigger_dropped_objects() LOOP
-        IF obj.object_type = 'extension' AND 
+        IF obj.object_type = 'extension' AND
            obj.object_name = 'pg_num2int_direct_comp' THEN
             -- Remove cross-type operators from operator families
             DELETE FROM pg_amop WHERE amopopr IN (
-                SELECT oid FROM pg_operator 
+                SELECT oid FROM pg_operator
                 WHERE oprname IN ('=','<>','<','>','<=','>=')
                 AND ((oprleft IN (21,23,20) AND oprright IN (1700,700,701))
                   OR (oprleft IN (1700,700,701) AND oprright IN (21,23,20)))
@@ -900,7 +900,7 @@ _PG_init(void)
 {
     ereport(DEBUG1,
             (errmsg("pg_num2int_direct_comp: _PG_init() - registering syscache callback")));
-    
+
     CacheRegisterSyscacheCallback(OPEROID,
                                   operator_cache_invalidation_callback,
                                   (Datum) 0);
@@ -948,7 +948,7 @@ This section documents the key insights that transformed the project from a basi
 - For int×numeric: adding to BOTH `integer_ops` AND `numeric_ops` enables merge joins from either side
 - For int×float: btree family integration deferred (support functions still enable index optimization)
 
-**Key Realization**: 
+**Key Realization**:
 - Family membership + support functions = index optimization
 - MERGES property + symmetric family registration = merge join optimization
 - Exact operator semantics guarantee transitivity is safe
@@ -1001,7 +1001,7 @@ Datum hash_int4_as_numeric(PG_FUNCTION_ARGS) {
   - Symmetric registration enables merge joins from either side
   - MERGES property on equality operators
   - Transitivity is safe because exact operators only return TRUE for mathematically equal values
-  
+
 **Strategy for int×float** (72 operators):
 - ✅ **Add to `float_ops` hash family** → enables hash joins
 - ⚠️ **Btree family integration deferred** → reduces v1.0 scope
@@ -1126,7 +1126,7 @@ Datum
 num2int_support(PG_FUNCTION_ARGS)
 {
     Node *rawreq = (Node *) PG_GETARG_POINTER(0);
-    
+
     if (IsA(rawreq, SupportRequestSimplify))
     {
         SupportRequestSimplify *req = (SupportRequestSimplify *) rawreq;
@@ -1134,9 +1134,9 @@ num2int_support(PG_FUNCTION_ARGS)
         // Transform: int_col = 10.5::numeric → FALSE
         // Return transformed expression or NULL if no transformation
     }
-    
+
     // SupportRequestIndexCondition no longer needed if Simplify handles all cases
-    
+
     PG_RETURN_POINTER(NULL);
 }
 ```
@@ -1168,3 +1168,306 @@ The `SupportRequestSimplify` handler should:
 5. **Build replacement expression**: Use `makeBoolConst()` for FALSE, or build new OpExpr with integer constant
 
 **Key insight**: `SupportRequestSimplify` effectively replaces `SupportRequestIndexCondition` for constant predicates while enabling btree family benefits for joins.
+
+---
+
+## 10. Performance Optimizations (v1.0 Implementation)
+
+**Date Added**: 2026-01-02
+
+This section documents internal performance optimizations implemented to reduce per-comparison overhead. These optimizations are invisible at small volumes, but significantly improve throughput for high-volume comparisons.
+
+### 10.1 Problem Statement
+
+The initial implementation used PostgreSQL function calls for every comparison:
+
+```c
+// BEFORE: Every comparison did this
+Numeric val_as_numeric = int64_to_numeric(val);  // palloc + conversion
+Datum result = OidFunctionCall2Coll(1769, ...);  // numeric_cmp via syscache
+```
+
+**Issues**:
+1. `int64_to_numeric()` allocates memory for every comparison
+2. `OidFunctionCall*` has syscache lookup overhead
+3. Hash functions allocated temporary Numeric values
+4. OID cache used 108 individual struct fields
+
+### 10.2 Direct Numeric Structure Access
+
+**Decision**: Define macros to directly inspect PostgreSQL's internal Numeric format, avoiding function call overhead.
+
+**Rationale**:
+- PostgreSQL's Numeric on-disk format has been stable since PostgreSQL 8.3 (2008)
+- Direct access eliminates `OidFunctionCall` overhead for common operations
+- Macros are validated by regression tests against system catalog OIDs
+
+**Implementation** (in `pg_num2int_direct_comp.h`):
+```c
+// Numeric header flags
+#define NUM2INT_NUMERIC_SIGN_MASK   0xC000
+#define NUM2INT_NUMERIC_POS         0x0000
+#define NUM2INT_NUMERIC_NEG         0x4000
+#define NUM2INT_NUMERIC_SPECIAL     0xC000
+
+// Special value detection
+#define NUM2INT_NUMERIC_IS_NAN(n) (...)
+#define NUM2INT_NUMERIC_IS_PINF(n) (...)
+#define NUM2INT_NUMERIC_IS_NINF(n) (...)
+
+// Direct field extraction
+#define NUM2INT_NUMERIC_SIGN(n) (...)
+#define NUM2INT_NUMERIC_WEIGHT(n) (...)
+#define NUM2INT_NUMERIC_NDIGITS(n) (...)
+#define NUM2INT_NUMERIC_DIGITS(n) (...)
+
+// Quick integral check
+#define NUM2INT_NUMERIC_IS_INTEGRAL(n) \
+    (NUM2INT_NUMERIC_NDIGITS(n) <= (NUM2INT_NUMERIC_WEIGHT(n) + 1))
+```
+
+**Key Functions**:
+- `num2int_numeric_sign()` - Returns 1/-1/0 without function call
+- `num2int_numeric_is_integral()` - Checks for fractional part directly
+- `num2int_numeric_to_int64()` - Extracts integer value from digit array
+- `num2int_numeric_floor_to_int64()` - Computes floor for range comparisons
+
+### 10.3 Optimized Comparison Functions
+
+**Decision**: Replace `OidFunctionCall2Coll(1769, ...)` with direct digit array comparison.
+
+**Implementation**:
+```c
+static int
+numeric_cmp_int64_direct(Numeric num, int64 val)
+{
+    // 1. Handle special values (NaN, ±Inf)
+    if (NUM2INT_NUMERIC_IS_SPECIAL(num)) { ... }
+
+    // 2. Quick sign comparison
+    int num_sign = num2int_numeric_sign(num);
+    int val_sign = (val > 0) ? 1 : ((val < 0) ? -1 : 0);
+    if (num_sign != val_sign) return (num_sign < val_sign) ? -1 : 1;
+
+    // 3. Try direct int64 extraction
+    int64 num_as_int64;
+    if (num2int_numeric_to_int64(num, &num_as_int64)) {
+        // Simple integer comparison
+        if (num_as_int64 < val) return -1;
+        if (num_as_int64 > val) return 1;
+        return 0;
+    }
+
+    // 4. Fall back to floor computation for fractional values
+    ...
+}
+```
+
+**Equality Early-Out**:
+```c
+static bool
+numeric_eq_int64_direct(Numeric num, int64 val)
+{
+    // NaN/Inf never equal integers
+    if (NUM2INT_NUMERIC_IS_SPECIAL(num)) return false;
+
+    // Different signs → not equal
+    if (num2int_numeric_sign(num) != ((val > 0) ? 1 : ((val < 0) ? -1 : 0)))
+        return false;
+
+    // Extraction fails for fractions → not equal
+    int64 num_as_int64;
+    if (!num2int_numeric_to_int64(num, &num_as_int64))
+        return false;
+
+    return num_as_int64 == val;
+}
+```
+
+### 10.4 Stack-Based Hash Computation
+
+**Decision**: Compute hash matching `hash_numeric` output without allocating Numeric structure.
+
+**Rationale**:
+- Hash functions are called frequently during hash join build/probe
+- Eliminating `palloc` reduces memory pressure and improves cache locality
+- Algorithm: build base-10000 digit array on stack, hash it, XOR with weight
+
+**Implementation**:
+```c
+static Datum
+hash_int64_as_numeric_internal(int64 val)
+{
+    Num2IntNumericDigit digits[5];  // max 5 digits for int64 in base-10000
+    int ndigits = 0;
+
+    // Handle zero specially - hash_numeric returns -1 for zero
+    if (val == 0)
+        return UInt32GetDatum((uint32) -1);
+
+    // Extract base-10000 digits (least significant first)
+    uint64 uval = (val < 0) ? ... : (uint64) val;
+    while (uval > 0) {
+        digits[ndigits++] = (Num2IntNumericDigit)(uval % NUM2INT_NBASE);
+        uval /= NUM2INT_NBASE;
+    }
+
+    // Reverse to most significant first
+    // Strip trailing zeros
+    // Hash digit array and XOR with weight
+    return hash_any(digits, ndigits * sizeof(Num2IntNumericDigit)) ^ weight;
+}
+```
+
+**Verification**: Test ensures `hash_int8_as_numeric(val) = hash_numeric(val::numeric)` for all values.
+
+### 10.5 Out-of-Range Constant Optimization
+
+**Decision**: Detect constants outside integer type range and return TRUE/FALSE at plan time.
+
+**Rationale**:
+- `int2_col = 99999::numeric` is impossible (99999 > INT16_MAX)
+- Detecting this at plan time enables Result node with `One-Time Filter: false`
+- Avoids scanning any rows for impossible predicates
+
+**Implementation** (in `SupportRequestSimplify` handler):
+```c
+// In convert_const_to_int()
+if (result.int_val < PG_INT16_MIN) {
+    result.out_of_range_low = true;
+} else if (result.int_val > PG_INT16_MAX) {
+    result.out_of_range_high = true;
+}
+
+// In num2int_support() SupportRequestSimplify handler
+if (conv.out_of_range_high || conv.out_of_range_low) {
+    switch (op_type) {
+        case OP_TYPE_EQ:
+            ret = (Node *) makeBoolConst(false, false);
+            break;
+        case OP_TYPE_NE:
+            ret = (Node *) makeBoolConst(true, false);
+            break;
+        case OP_TYPE_LT:
+        case OP_TYPE_LE:
+            ret = (Node *) makeBoolConst(conv.out_of_range_high, false);
+            break;
+        case OP_TYPE_GT:
+        case OP_TYPE_GE:
+            ret = (Node *) makeBoolConst(conv.out_of_range_low, false);
+            break;
+    }
+}
+```
+
+### 10.6 Compact OID Cache
+
+**Decision**: Replace 108 individual struct fields with compact array-based lookup.
+
+**Rationale**:
+- Original cache had `Oid numeric_eq_int2_oid`, `Oid numeric_eq_int4_oid`, ... (108 fields)
+- Linear scan of 108 entries is fast enough (cache-friendly, < 1KB)
+- Stores funcid alongside oid to avoid syscache lookup in `find_operator_by_funcid()`
+
+**Implementation**:
+```c
+typedef struct {
+    Oid oid;       // Operator OID
+    Oid funcid;    // Implementing function OID
+    OpType type;   // OP_TYPE_EQ, OP_TYPE_LT, etc.
+} OperatorEntry;
+
+typedef struct OperatorOidCache {
+    int count;
+    OperatorEntry ops[108];
+} OperatorOidCache;
+
+// Lookup by operator OID
+OpType classify_operator(Oid opno) {
+    for (int i = 0; i < oid_cache.count; i++) {
+        if (oid_cache.ops[i].oid == opno)
+            return oid_cache.ops[i].type;
+    }
+    return OP_TYPE_UNKNOWN;
+}
+
+// Lookup by function OID (for SupportRequestSimplify)
+Oid find_operator_by_funcid(Oid funcid, OpType *op_type) {
+    for (int i = 0; i < oid_cache.count; i++) {
+        if (oid_cache.ops[i].funcid == funcid) {
+            *op_type = oid_cache.ops[i].type;
+            return oid_cache.ops[i].oid;
+        }
+    }
+    return InvalidOid;
+}
+```
+
+### 10.7 Numeric Boundary Cache
+
+**Decision**: Pre-compute Numeric representations of integer boundaries in `TopMemoryContext`.
+
+**Rationale**:
+- Range checks need `int64_to_numeric(PG_INT16_MIN)` repeatedly
+- Computing once at init time and caching avoids repeated allocations
+- `TopMemoryContext` ensures lifetime matches backend process
+
+**Implementation**:
+```c
+typedef struct NumericBoundaryCache {
+    bool initialized;
+    Numeric int2_min, int2_max;
+    Numeric int4_min, int4_max;
+    Numeric int8_min, int8_max;
+} NumericBoundaryCache;
+
+void init_numeric_boundaries(NumericBoundaryCache *cache) {
+    MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+    cache->int2_min = int64_to_numeric((int64) PG_INT16_MIN);
+    cache->int2_max = int64_to_numeric((int64) PG_INT16_MAX);
+    // ... other boundaries
+    MemoryContextSwitchTo(oldcontext);
+    cache->initialized = true;
+}
+```
+
+### 10.8 OID Stability Testing
+
+**Decision**: Add regression tests validating hardcoded PostgreSQL OIDs match system catalog.
+
+**Rationale**:
+- Extension uses hardcoded OIDs like `NUM2INT_INT4EQ_OID = 96`
+- PostgreSQL guarantees these OIDs are stable, but tests provide early warning
+- Tests in `extension_lifecycle.sql` verify all 24+ OIDs match `pg_proc`/`pg_operator`
+
+**Test Example**:
+```sql
+WITH oid_checks AS (
+    SELECT 1783 AS expected, oid AS actual, 'int2(numeric)' AS name
+    FROM pg_proc WHERE proname = 'int2' AND proargtypes[0] = 'numeric'::regtype
+    UNION ALL SELECT 96, oid, 'int4 = int4'
+    FROM pg_operator WHERE oprname = '=' AND oprleft = 'int4'::regtype
+    -- ... 22 more checks
+)
+SELECT COUNT(*) FILTER (WHERE expected != actual) AS oid_mismatches;
+-- Expected: 0 mismatches
+```
+
+### 10.9 Performance Impact
+
+**Benchmark comparison** (1M row table, indexed integer column):
+
+| Operation | Before (OidFunctionCall) | After (Direct) | Improvement |
+|-----------|-------------------------|----------------|-------------|
+| Point lookup (`id = 500000::numeric`) | ~0.025 ms | ~0.025 ms | Same (dominated by I/O) |
+| Hash join (1M × 1M) | ~170 ms | ~146 ms | ~15% faster |
+| Nested loop join (1000 × 1M indexed) | ~3 ms | ~3 ms | Same (dominated by I/O) |
+
+**Memory allocation reduction**:
+- Hash functions: Eliminated `palloc` for Numeric temp values
+- Comparisons: Eliminated `int64_to_numeric()` allocation per comparison
+
+**Note**: SQL-level benchmarks are dominated by I/O and planner costs. The internal optimizations primarily benefit:
+- High-volume row filtering (millions of comparisons)
+- Hash join build/probe phases
+- Memory-bound workloads

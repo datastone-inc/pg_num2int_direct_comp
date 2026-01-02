@@ -230,7 +230,7 @@ pg-num2int-direct-comp/
 ├── README.md                      # Project overview and quick start
 ├── LICENSE                        # MIT license
 ├── CHANGELOG.md                   # Version history
-├── PERFORMANCE.md                 # Benchmark results
+├── doc/benchmark.md               # Benchmark guide and results
 ├── CODE_REVIEW.md                 # Code review checklist
 │
 ├── sql/                           # Regression test SQL files

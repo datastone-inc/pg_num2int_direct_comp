@@ -38,7 +38,7 @@ Exact numeric-to-integer comparison operators for PostgreSQL
 - [Documentation](#documentation)
 - [Technical Details](#technical-details)
 - [Compatibility](#compatibility)
-- [Performance](#performance)
+- [Performance Benchmarking](#performance-benchmarking)
 - [Support](#support)
 - [License](#license)
 - [Acknowledgments](#acknowledgments)
@@ -91,7 +91,7 @@ INSERT INTO users VALUES (16777216, 'Alice'), (16777217, 'Bob');
 -- Application passes user ID as float4 parameter
 PREPARE find_user(float4) AS SELECT * FROM users WHERE id = $1;
 EXECUTE find_user(16777217);  -- Looking for Bob...
---    id    | name  
+--    id    | name
 -- ---------+-------
 --  16777216 | Alice   ← WRONG! and SLOW!
 --
@@ -100,7 +100,7 @@ EXECUTE find_user(16777217);  -- Looking for Bob...
 -- SLOW! because it does a sequential scan of users (cannot use index on id).
 ```
 
-> **Note**: This extension cannot fix this case (float4 parameter) because the value `16777217` is rounded to `16777216.0` when converted to float4, *before* any comparison happens. The solution is to use `int` or `numeric` parameters instead of float4 when exact integer values are needed. This extension fixes cases where you have SQL literals or expressions with cross-type comparisons.
+> **Note**: This extension cannot fix this wrong result case (float4 parameter) because the value `16777217` is rounded to `16777216.0` when converted to float4, *before* any comparison happens. The solution is to use `int` or `numeric` parameters instead of float4 when exact integer values are needed. This extension fixes cases where you have SQL literals or expressions with cross-type comparisons.
 
 #### Transitive Equality Violations
 
@@ -200,21 +200,21 @@ int compare_numeric_to_int(numeric num, int32 i) {
     // Handle special values (NaN, ±Infinity)
     if (is_nan(num)) return GREATER;  // NaN > everything in PostgreSQL
     if (is_inf(num)) return (positive ? GREATER : LESS);
-    
+
     // Check if num is outside int32 range
     if (num > INT32_MAX) return GREATER;
     if (num < INT32_MIN) return LESS;
-    
+
     // Truncate numeric to integer part
     int32 num_truncated = trunc(num);
-    
+
     // Compare integer values
     if (num_truncated > i) return GREATER;
     if (num_truncated < i) return LESS;
-    
+
     // Integer parts equal, check for nonzero fractional part
     if (has_fractional_part(num)) return (i > 0) ? GREATER : LESS;
-    
+
     // exact EQUALITY
     return EQUAL;
 }
@@ -246,7 +246,7 @@ EXPLAIN (COSTS OFF) EXECUTE find_product(42);
 --  Seq Scan on products
 --    Filter: ((id)::numeric = '42'::numeric)   ← full table scan!
 
--- With this extension: index scan (transforms to integer comparison)  
+-- With this extension: index scan (transforms to integer comparison)
 EXPLAIN (COSTS OFF) EXECUTE find_product(42);
 --  Index Scan using products_pkey on products
 --    Index Cond: (id = 42)                     ← uses primary key index
@@ -293,7 +293,7 @@ The extension provides cross-type hash functions that ensure equal values hash i
 
 ```sql
 -- Hash joins across int4 and numeric columns
-EXPLAIN (COSTS OFF) SELECT c.name, SUM(o.amount) 
+EXPLAIN (COSTS OFF) SELECT c.name, SUM(o.amount)
 FROM customers c                              -- c.id is int4
 JOIN orders o ON c.id = o.customer_id         -- o.customer_id is numeric
 GROUP BY c.name;
@@ -326,17 +326,19 @@ A natural question: isn't this per-comparison logic slower than PostgreSQL's sim
 
 The irony is that PostgreSQL's "fast" implicit cast approach is actually *slow* for real queries because it defeats the planner. **Correctness and performance are not at odds here. The correct approach enables fast query plans.**
 
+See [Performance Benchmarking](#performance-benchmarking) section for detailed metrics.
+
 ### Key Features
 
-- **Exact Precision**: `16777216::int4 = 16777217::float4` correctly returns `false` (detects float4 precision loss)
+- **Exact Precision**: `16777217::int4 = 16777216::float4` correctly returns `false` (detects float4 precision loss)
 - **Index Optimization**: Queries like `WHERE intkey = 10.0::numeric` use btree indexes via indexed nested loop joins
-- **Hash Join Support**: Large table equijoins use hash joins when appropriate
+- **Join Support**: Large table equijoins use merge joins and hash joins when appropriate
 - **Complete Coverage**: 108 operators (6 comparison types × 9 type pairs × 2 directions) covering all combinations of (numeric, float4, float8) with (int2, int4, int8) in both directions
 - **Automatic Type Compatibility**: Works seamlessly with PostgreSQL type aliases (serial/smallserial/bigserial are int4/int2/int8; decimal is numeric)
 
 ### Supported Types
 
-**Numeric Types**: `numeric`, `decimal` (alias for numeric), `float4` (real), `float8` (double precision)  
+**Numeric Types**: `numeric`, `decimal` (alias for numeric), `float4` (real), `float8` (double precision)
 **Integer Types**: `int2` (smallint), `int4` (integer), `int8` (bigint), `serial`, `smallserial`, `bigserial`
 
 Note: Serial types are automatically supported because PostgreSQL treats them as their underlying integer types (serial=int4, bigserial=int8, smallserial=int2).
@@ -537,7 +539,7 @@ See [Development Guide](doc/development.md#project-structure) for complete layou
 
 This extension uses two PostgreSQL mechanisms to ensure correct behavior across DROP/CREATE EXTENSION cycles:
 
-1. **Event Trigger for Operator Family Cleanup**: When adding cross-type operators to built-in operator families (like `integer_ops`), PostgreSQL doesn't track these memberships as extension-owned. An event trigger on `ddl_command_start` cleans up `pg_amop` entries when the extension is dropped, preventing "operator already exists" errors on reinstall.
+1. **Event Trigger for Operator Family Cleanup**: When adding built-in operators to existing operator families (like `integer_ops`), PostgreSQL doesn't track these memberships as extension-owned. An event trigger on `ddl_command_start` cleans up `pg_amop` entries when the extension is dropped, preventing "operator already exists" errors on reinstall.
 
 2. **Syscache Invalidation Callback**: The support function maintains a static cache of operator OIDs for performance. A callback registered via `CacheRegisterSyscacheCallback(OPEROID, ...)` in `_PG_init()` automatically invalidates this cache when operators change, ensuring index optimization works correctly after extension reinstallation.
 
@@ -548,12 +550,25 @@ See [Research & Design](specs/001-num-int-direct-comp/research.md) sections 7.6 
 - PostgreSQL 12, 13, 14, 15, 16
 - Linux, macOS, Windows (via MinGW)
 
-## Performance
+## Performance Benchmarking
 
 - **Index lookups**: Sub-millisecond on 1M+ row tables using indexed nested loop joins
 - **Hash joins**: Efficient for large table equijoins
+- **Merge joins**: 23% faster than stock with optimal plan, 56% less memory
 - **Overhead**: <10% vs native integer comparisons
 - **Optimized**: Uses PostgreSQL's built-in numeric primitives and hash functions
+
+For comprehensive performance testing, run the benchmark suite:
+
+```bash
+# Quick performance test (~seconds, 100K rows)
+make installcheck REGRESS=performance
+
+# Full benchmark (~70 seconds, 1M rows)
+make installcheck REGRESS=benchmark
+```
+
+See [Benchmark Guide](doc/benchmark.md) for detailed methodology, results, and analysis of the planner's cost model behavior with merge joins.
 
 ## Support
 
@@ -567,4 +582,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-This extension was developed by Dave Sharpe (<dave.sharpe@datastone.ca>) using VS Code Copilot in agent mode with [speckit](https://github.com/github/spec-kit) for spec-driven development. See [Development Guide](doc/development.md#development-methodology) for details.
+This extension was developed by Dave Sharpe (<dave.sharpe@datastone.ca>) using VS Code Copilot in agent mode with [speckit](https://github.com/github/spec-kit) for spec-driven development. See [Development Guide](doc/development.md#development-methodology) for details. My collegue Justin made a different solution for the same problem, which inspired me to create this extension.

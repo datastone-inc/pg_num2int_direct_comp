@@ -351,7 +351,7 @@ Range predicates with fractional boundaries are transformed to equivalent intege
 
 Cross-type comparisons with constant operands are transformed to native integer comparisons at plan time, achieving sub-millisecond execution with index scans on 1M+ row tables.
 
-See [PERFORMANCE.md](../PERFORMANCE.md) for benchmark details.
+See [Benchmark Guide](benchmark.md) for benchmark details.
 
 ## Best Practices
 

@@ -127,6 +127,57 @@ doc/                            # User documentation
 
 ---
 
+## Increment: Internal Performance Optimizations (Phase 13)
+
+**Date Added**: 2026-01-02
+**Research**: [research.md Section 10](research.md#10-performance-optimizations-v10-implementation)
+
+### Summary
+
+Implement direct Numeric structure access and allocation-free hash computation to reduce per-comparison overhead in high-volume operations.
+
+### Problem Statement
+
+Initial implementation used `OidFunctionCall` and `int64_to_numeric()` for every comparison:
+- Memory allocation on every comparison
+- Syscache lookup overhead for function calls
+- Hash functions allocated temporary Numeric values
+
+### Solution: Direct Structure Access
+
+| Optimization | Before | After |
+|--------------|--------|-------|
+| Numeric comparison | `OidFunctionCall2(numeric_cmp)` | `numeric_cmp_int64_direct()` |
+| Equality check | Full comparison | Sign early-out + direct extraction |
+| Hash computation | `int64_to_numeric() + hash_numeric()` | Stack-based digit array |
+| OID cache | 108 struct fields | Compact array with linear scan |
+
+### Key Components
+
+1. **NUM2INT_NUMERIC_* macros** - Direct header/digit access matching PostgreSQL internals
+2. **num2int_numeric_to_int64()** - Extract int64 from digit array
+3. **numeric_cmp_int64_direct()** - Full comparison without function calls
+4. **hash_int64_as_numeric_internal()** - Stack-based hash matching hash_numeric output
+5. **Out-of-range optimization** - `int2_col = 99999` → FALSE at plan time
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `pg_num2int_direct_comp.h` | NUM2INT_NUMERIC_* macros, NumericBoundaryCache |
+| `pg_num2int_direct_comp.c` | Direct comparison/hash functions |
+| `sql/extension_lifecycle.sql` | OID stability + hash consistency tests |
+| `sql/selectivity.sql` | Out-of-range constant tests |
+| `sql/edge_cases.sql` | Boundary value tests with implicit zeros |
+
+### Success Criteria
+
+- SC-010: All 15 regression tests pass
+- SC-011: Hash consistency: `hash_int8_as_numeric(val) = hash_numeric(val::numeric)`
+- SC-012: OID stability tests verify hardcoded OIDs match system catalog
+
+---
+
 ## Increment: Constant Predicate Optimization (FR-015 to FR-017)
 
 **Date Added**: 2025-12-29

@@ -544,6 +544,76 @@ Instead of detecting fractional parts, cast integers to the higher-precision typ
 
 ---
 
+## Phase 13: Internal Performance Optimizations
+
+**Goal**: Reduce per-comparison overhead for high-volume operations via direct structure access and allocation avoidance
+
+**Date Completed**: 2026-01-02  
+**Research**: [research.md Section 10](research.md#10-performance-optimizations-v10-implementation)
+
+**Rationale**: Initial implementation used `OidFunctionCall` and `int64_to_numeric()` for every comparison. These optimizations eliminate function call overhead and memory allocation in hot paths.
+
+### Direct Numeric Structure Access
+
+- [X] T224 [P] Define NUM2INT_NUMERIC_* macros in pg_num2int_direct_comp.h for direct header inspection ✅
+- [X] T225 [P] Define NUM2INT_NUMERIC_DIGITS/NDIGITS/WEIGHT macros for digit array access ✅
+- [X] T226 [P] Implement num2int_numeric_sign() using direct header access ✅
+- [X] T227 [P] Implement num2int_numeric_is_integral() checking ndigits <= weight + 1 ✅
+- [X] T228 [P] Implement num2int_numeric_to_int64() extracting value from digit array ✅
+- [X] T229 Implement num2int_numeric_floor_to_int64() for range boundary computation ✅
+
+### Optimized Comparison Functions
+
+- [X] T230 Implement numeric_cmp_int64_direct() bypassing OidFunctionCall ✅
+- [X] T231 Implement numeric_eq_int64_direct() with sign early-out ✅
+- [X] T232 Update numeric_cmp_int2/4/8_internal() to use numeric_cmp_int64_direct() ✅
+- [X] T233 Update numeric_eq/ne_int2/4/8() to use numeric_eq_int64_direct() ✅
+
+### Stack-Based Hash Computation
+
+- [X] T234 Implement hash_int64_as_numeric_internal() computing hash without palloc ✅
+- [X] T235 Implement hash_int64_as_numeric_extended_internal() with seed parameter ✅
+- [X] T236 Update hash_int2/4/8_as_numeric() to use stack-based implementation ✅
+- [X] T237 Add hash consistency tests to extension_lifecycle.sql ✅
+
+### Out-of-Range Constant Optimization
+
+- [X] T238 Add out_of_range_high/low flags to ConstConversion struct ✅
+- [X] T239 Detect out-of-range in convert_const_to_int() for int2/int4/int8 bounds ✅
+- [X] T240 Handle out-of-range in SupportRequestSimplify: EQ→FALSE, NE→TRUE, LT/GT logic ✅
+- [X] T241 Add out-of-range tests to sql/selectivity.sql (Test Group 7) ✅
+
+### Compact OID Cache
+
+- [X] T242 Define OperatorEntry struct with oid, funcid, type fields ✅
+- [X] T243 Replace 108 individual cache fields with OperatorEntry ops[108] array ✅
+- [X] T244 Update classify_operator() to use linear array scan ✅
+- [X] T245 Update find_operator_by_funcid() to use cached funcid ✅
+- [X] T246 Use temporary memory context in init_oid_cache() for intermediate allocations ✅
+
+### Numeric Boundary Cache
+
+- [X] T247 Define NumericBoundaryCache struct with int2/4/8 min/max Numeric values ✅
+- [X] T248 Implement init_numeric_boundaries() allocating in TopMemoryContext ✅
+- [X] T249 Call init_numeric_boundaries() from _PG_init() ✅
+
+### OID Stability Testing
+
+- [X] T250 Add OID validation tests to sql/extension_lifecycle.sql ✅
+- [X] T251 Test cast function OIDs (1783, 1744, 1779) match pg_proc ✅
+- [X] T252 Test integer operator OIDs (94-96, 410-415, 518-525) match pg_operator ✅
+- [X] T253 Test numeric function OIDs (1710, 1712, 1718, 1769) match pg_proc ✅
+
+### Verification
+
+- [X] T254 Run `make clean && make` - verify no warnings with -Wall ✅
+- [X] T255 Run `make installcheck` - verify all 15 tests pass ✅
+- [X] T256 Run benchmark_performance.sql - verify performance maintained ✅
+
+**Checkpoint**: Phase 13 COMPLETE - Internal performance optimizations implemented and verified.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -653,7 +723,7 @@ T053-T055 (build and verify)
 
 ## Implementation Strategy Summary
 
-**Total Tasks**: 223
+**Total Tasks**: 256
 
 **By Phase**:
 - Phase 1 (Setup): 9 tasks (T001-T009)
@@ -666,7 +736,8 @@ T053-T055 (build and verify)
 - Phase 8 (Hash/Join Support): 11 tasks (T140-T150)
 - Phase 9 (Performance): 6 tasks (T151-T153, T181-T183)
 - Phase 10 (Polish): 17 tasks (T184-T200)
-- Phase 12 (Constant Predicate Optimization): 23 tasks (T201-T223) ← NEW
+- Phase 12 (Constant Predicate Optimization): 23 tasks (T201-T223)
+- Phase 13 (Internal Performance Optimizations): 33 tasks (T224-T256) ← NEW
 
 **By Story**:
 - US1 (Equality): 37 tasks - 9 core functions + 18 wrappers + tests + SQL

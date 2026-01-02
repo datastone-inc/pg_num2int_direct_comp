@@ -5,7 +5,7 @@ All notable changes to pg_num2int_direct_comp will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2025-12-29
+## [1.0.0] - 2025-01-02
 
 ### Added
 
@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Impossible predicate detection: `int_col = 10.5::numeric` → `FALSE` (rows=0 estimate)
   - Exact match transformation: `int_col = 100::numeric` → `int_col = 100` (native operator)
   - Range boundary transformation: `int_col > 10.5` → `int_col >= 11` (correct integer semantics)
+  - **Out-of-range constant optimization**: `int2_col = 99999` → `FALSE` at plan time
 - **Merge join support** for int × numeric via dual btree family membership (integer_ops + numeric_ops)
 - **Extension lifecycle cleanup**: Event trigger to clean up operator family entries on DROP EXTENSION
   - Enables clean reinstallation without "operator already exists" errors
@@ -37,7 +38,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive test suite with 15 test files via pg_regress
 - Documentation: README, installation guide, user guide, API reference, research documentation
 - PostgreSQL version support: 12, 13, 14, 15, 16, 17
-- Performance benchmarks showing <10% overhead vs native comparisons
+
+### Performance Optimizations
+
+- **Direct Numeric Structure Access**: NUM2INT_NUMERIC_* macros bypass OidFunctionCall overhead
+- **Optimized Comparison Functions**: `numeric_cmp_int64_direct()` directly accesses digit arrays
+- **Stack-Based Hash Computation**: Hash functions use stack arrays, avoiding palloc/pfree
+- **Boundary Cache**: Pre-computed int2/4/8 min/max as Numeric values for range checks
+- **Compact OID Cache**: Array-based lookup with linear scan vs 108 individual struct fields
+- **OID Stability Tests**: Verify hardcoded OIDs match system catalog at extension load
+
+### Benchmark Results (2025-01-02)
+
+| Operation | Extension | Stock PostgreSQL | Speedup |
+|-----------|-----------|------------------|---------|
+| Point lookup | 0.025 ms (Index) | 17.3 ms (Seq Scan) | **~690x** |
+| Range scan | 0.8 ms (Bitmap) | 23.4 ms (Seq Scan) | **~29x** |
+| Nested Loop Join | 3 ms | 49,658 ms | **~16,500x** |
 
 ### Features
 
