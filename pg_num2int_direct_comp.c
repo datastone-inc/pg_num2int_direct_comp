@@ -116,6 +116,8 @@ init_numeric_boundaries(NumericBoundaryCache *cache)
  * Uses NUM2INT_NUMERIC_SIGN macro for direct header access.
  * For NaN, returns 0 (caller should check NUM2INT_NUMERIC_IS_NAN first).
  * For +Inf returns 1, for -Inf returns -1.
+ *
+ * Based on: src/backend/utils/adt/numeric.c numeric_sign()
  */
 int
 num2int_numeric_sign(Numeric num)
@@ -152,6 +154,9 @@ num2int_numeric_sign(Numeric num)
  * Uses the relationship: a value is integral when all digits fit within
  * the weight. If ndigits <= weight + 1, there are no fractional digits.
  * Infinities are considered integral (matches PostgreSQL behavior).
+ *
+ * Based on: src/backend/utils/adt/numeric.c numeric_is_integral()
+ *           (introduced in PostgreSQL 15)
  */
 bool
 num2int_numeric_is_integral(Numeric num)
@@ -192,88 +197,80 @@ num2int_numeric_is_integral(Numeric num)
  * conversion, avoiding the overhead of the standard numeric_int8() path.
  */
 bool
-num2int_numeric_to_int64(Numeric num, int64 *result)
+numeric_to_int64(Numeric num, int64 *result)
 {
-    int weight;
-    int ndigits;
-    int sign;
-    int i;
-    int64 val;
-    Num2IntNumericDigit *digits;
+  int weight;
+  int ndigits;
+  int sign;
+  int i;
+  int64 val;
+  Num2IntNumericDigit *digits;
 
-    /* Reject special values */
-    if (NUM2INT_NUMERIC_IS_SPECIAL(num))
-        return false;
+  /* Reject special values */
+  if (NUM2INT_NUMERIC_IS_SPECIAL(num))
+    return false;
 
-    ndigits = NUM2INT_NUMERIC_NDIGITS(num);
+  ndigits = NUM2INT_NUMERIC_NDIGITS(num);
 
-    /* Zero case */
-    if (ndigits == 0)
-    {
-        *result = 0;
-        return true;
-    }
-
-    weight = NUM2INT_NUMERIC_WEIGHT(num);
-    sign = NUM2INT_NUMERIC_SIGN(num);
-
-    /* Must be integral */
-    if (ndigits > weight + 1)
-        return false;
-
-    /*
-     * Quick range check: int64 max is about 9.2e18
-     * Each weight unit represents 10000^weight, so weight 4 = 10^16, weight 5 = 10^20
-     * Weight > 4 could overflow (but depends on leading digit)
-     * Weight <= 3 is definitely safe
-     */
-    if (weight > 4)
-        return false;
-
-    digits = NUM2INT_NUMERIC_DIGITS(num);
-    val = 0;
-
-    /* Accumulate digits, checking for overflow */
-    for (i = 0; i <= weight; i++)
-    {
-        int64 digit = (i < ndigits) ? digits[i] : 0;
-        int64 newval;
-
-        /* Check multiplication overflow */
-        if (val > PG_INT64_MAX / NUM2INT_NBASE)
-            return false;
-        newval = val * NUM2INT_NBASE;
-
-        /* Check addition overflow */
-        if (sign == NUM2INT_NUMERIC_POS)
-        {
-            if (digit > PG_INT64_MAX - newval)
-                return false;
-            newval += digit;
-        }
-        else
-        {
-            /* For negative, we build positive then negate */
-            if (digit > PG_INT64_MAX - newval)
-            {
-                /*
-                 * Special case: PG_INT64_MIN has magnitude one greater than
-                 * PG_INT64_MAX, so we can represent -9223372036854775808
-                 */
-                if (newval == PG_INT64_MAX - digit + 1 && i == weight)
-                {
-                    *result = PG_INT64_MIN;
-                    return true;
-                }
-                return false;
-            }
-            newval += digit;
-        }
-        val = newval;
-    }
-
-    *result = (sign == NUM2INT_NUMERIC_POS) ? val : -val;
+  /* Zero case */
+  if (ndigits == 0) {
+    *result = 0;
     return true;
+  }
+
+  weight = NUM2INT_NUMERIC_WEIGHT(num);
+  sign = NUM2INT_NUMERIC_SIGN(num);
+
+  /* Must be integral */
+  if (ndigits > weight + 1)
+    return false;
+
+  /*
+   * Quick range check: int64 max is about 9.2e18
+   * Each weight unit represents 10000^weight, so weight 4 = 10^16, weight 5 = 10^20
+   * Weight > 4 could overflow (but depends on leading digit)
+   * Weight <= 3 is definitely safe
+   */
+  if (weight > 4)
+    return false;
+
+  digits = NUM2INT_NUMERIC_DIGITS(num);
+  val = 0;
+  /* Accumulate digits, checking for overflow */
+  for (i = 0; i <= weight; i++) {
+    int64 digit = (i < ndigits) ? digits[i] : 0;
+    int64 newval;
+    /* Check multiplication overflow */
+    if (val > PG_INT64_MAX / NUM2INT_NBASE)
+      return false;
+    newval = val * NUM2INT_NBASE;
+
+    /* Check addition overflow */
+    if (sign == NUM2INT_NUMERIC_POS) {
+      if (digit > PG_INT64_MAX - newval)
+        return false;
+      newval += digit;
+    }
+    else {
+      /* For negative, we build positive then negate */
+      if (digit > PG_INT64_MAX - newval) {
+        /*
+         * Special case: PG_INT64_MIN has magnitude one greater than
+         * PG_INT64_MAX, so we can represent -9223372036854775808
+         */
+        if (newval == PG_INT64_MAX - digit + 1 && i == weight) {
+          *result = PG_INT64_MIN;
+          return true;
+        }
+        return false;
+      }
+      newval += digit;
+    }
+    val = newval;
+  }
+
+  *result = (sign == NUM2INT_NUMERIC_POS) ? val : -val;
+  return true;
 }
 
 /**
@@ -287,85 +284,87 @@ num2int_numeric_to_int64(Numeric num, int64 *result)
  * for negative numbers (floor rounds toward -infinity).
  */
 static bool
-num2int_numeric_floor_to_int64(Numeric num, int64 *result)
+numeric_floor_to_int64(Numeric num, int64 *result)
 {
-    int weight;
-    int ndigits;
-    int sign;
-    int integral_ndigits;
-    int64 floor_val;
-    int i;
-    Num2IntNumericDigit *digits;
+  int weight;
+  int ndigits;
+  int sign;
+  int integral_ndigits;
+  int64 floor_val;
+  int i;
+  Num2IntNumericDigit *digits;
 
-    ndigits = NUM2INT_NUMERIC_NDIGITS(num);
+  ndigits = NUM2INT_NUMERIC_NDIGITS(num);
 
-    /* Zero case */
-    if (ndigits == 0) {
-        *result = 0;
-        return true;
-    }
-
-    weight = NUM2INT_NUMERIC_WEIGHT(num);
-    sign = NUM2INT_NUMERIC_SIGN(num);
-    digits = NUM2INT_NUMERIC_DIGITS(num);
-
-    /*
-     * If weight > 4, the integral part exceeds int64 range.
-     * (weight 5 means 10000^5 = 10^20, but int64 max is ~9.2e18)
-     */
-    if (weight > 4)
-        return false;
-
-    /* Number of integral digits is weight + 1 */
-    integral_ndigits = weight + 1;
-
-    if (integral_ndigits <= 0) {
-        /*
-         * No integral digits (e.g., 0.5 has weight=-1).
-         * floor(positive fraction) = 0, floor(negative fraction) = -1
-         */
-        *result = (sign == NUM2INT_NUMERIC_POS) ? 0 : -1;
-        return true;
-    }
-
-    /* Check if value is integral (no fractional part) */
-    if (ndigits <= integral_ndigits) {
-        /* Integral - use existing extraction */
-        return num2int_numeric_to_int64(num, result);
-    }
-
-    /* Has fractional part - extract only integral digits
-       padding with zeros if ndigits < integral_ndigits */
-    floor_val = 0;
-    for (i = 0; i < integral_ndigits; i++) {
-        Num2IntNumericDigit digit = (i < ndigits) ? digits[i] : 0;
-
-        /* Overflow check for multiplication */
-        if (floor_val > PG_INT64_MAX / NUM2INT_NBASE)
-            return false;
-        floor_val = floor_val * NUM2INT_NBASE;
-
-        /* Overflow check for addition */
-        if (digit > PG_INT64_MAX - floor_val)
-            return false;
-        floor_val += digit;
-    }
-
-    /* Apply sign and floor adjustment for negative */
-    if (sign == NUM2INT_NUMERIC_POS) {
-        *result = floor_val;
-    } else {
-        /*
-         * For negative with fractional part: floor = -trunc - 1
-         * e.g., floor(-100.5) = -101, not -100
-         *
-         * No overflow: floor_val <= PG_INT64_MAX, so
-         * -floor_val - 1 >= PG_INT64_MIN.
-         */
-        *result = -floor_val - 1;
-    }
-
+  /* Zero case */
+  if (ndigits == 0) {
+    *result = 0;
     return true;
+  }
+
+  weight = NUM2INT_NUMERIC_WEIGHT(num);
+  sign = NUM2INT_NUMERIC_SIGN(num);
+  digits = NUM2INT_NUMERIC_DIGITS(num);
+
+  /*
+   * If weight > 4, the integral part exceeds int64 range.
+   * (weight 5 means 10000^5 = 10^20, but int64 max is ~9.2e18)
+   */
+  if (weight > 4)
+    return false;
+
+  /* Number of integral digits is weight + 1 */
+  integral_ndigits = weight + 1;
+
+  if (integral_ndigits <= 0) {
+    /*
+     * No integral digits (e.g., 0.5 has weight=-1).
+     * floor(positive fraction) = 0, floor(negative fraction) = -1
+     */
+    *result = (sign == NUM2INT_NUMERIC_POS) ? 0 : -1;
+    return true;
+  }
+
+  /* Check if value is integral (no fractional part) */
+  if (ndigits <= integral_ndigits) {
+    /* Integral - use existing extraction */
+    return numeric_to_int64(num, result);
+  }
+
+  /*
+   * Has fractional part - extract only integral digits
+   * padding with zeros if ndigits < integral_ndigits
+   */
+  floor_val = 0;
+  for (i = 0; i < integral_ndigits; i++) {
+    Num2IntNumericDigit digit = (i < ndigits) ? digits[i] : 0;
+
+    /* Overflow check for multiplication */
+    if (floor_val > PG_INT64_MAX / NUM2INT_NBASE)
+      return false;
+    floor_val = floor_val * NUM2INT_NBASE;
+
+    /* Overflow check for addition */
+    if (digit > PG_INT64_MAX - floor_val)
+      return false;
+    floor_val += digit;
+  }
+
+  /* Apply sign and floor adjustment for negative */
+  if (sign == NUM2INT_NUMERIC_POS) {
+    *result = floor_val;
+  } else {
+    /*
+     * For negative with fractional part: floor = -trunc - 1
+     * e.g., floor(-100.5) = -101, not -100
+     *
+     * No overflow: floor_val <= PG_INT64_MAX, so
+     * -floor_val - 1 >= PG_INT64_MIN.
+     */
+    *result = -floor_val - 1;
+  }
+
+  return true;
 }
 
 /**
@@ -685,7 +684,7 @@ convert_const_to_int(Const *const_node, Oid int_type) {
     /*
      * Extract floor value directly from digit array.
      */
-    if (num2int_numeric_floor_to_int64(num, &result.int_val)) {
+    if (numeric_floor_to_int64(num, &result.int_val)) {
       /* Check narrower ranges for int2/int4 */
       if (int_type == INT2OID) {
         if (result.int_val < PG_INT16_MIN) {
@@ -1257,7 +1256,7 @@ numeric_cmp_int64_direct(Numeric num, int64 val)
     return 0;
 
   /* Try direct int64 extraction */
-  if (num2int_numeric_to_int64(num, &num_as_int64)) {
+  if (numeric_to_int64(num, &num_as_int64)) {
     /* Successfully converted - simple integer comparison */
     if (num_as_int64 < val)
       return -1;
@@ -1378,7 +1377,7 @@ numeric_eq_int64_direct(Numeric num, int64 val) {
     return true;
 
   // Try extraction - fails for fractions and out-of-range → not equal
-  if (!num2int_numeric_to_int64(num, &num_as_int64))
+  if (!numeric_to_int64(num, &num_as_int64))
     return false;
 
   return num_as_int64 == val;

@@ -369,7 +369,7 @@ extern bool num2int_numeric_is_integral(Numeric num);
  * @return true if conversion succeeded, false if out of range or has fraction
  * @note Returns false for NaN/Inf values
  */
-extern bool num2int_numeric_to_int64(Numeric num, int64 *result);
+extern bool numeric_to_int64(Numeric num, int64 *result);
 
 /* Function declarations */
 
