@@ -1,0 +1,116 @@
+-- Test: Indexed Nested Loop Join Optimization
+-- Purpose: Demonstrate that btree family membership enables indexed nested loop joins
+-- This is the KEY optimization in v1.0 that provides excellent performance
+--
+-- How it works:
+-- 1. Operators added to numeric_ops and float_ops btree families
+-- 2. PostgreSQL can use btree indexes for cross-type join conditions
+-- 3. Inner table lookups use index with cross-type equality operator
+-- 4. Much faster than sequential scans for selective queries
+
+-- Load extension
+CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
+
+-- Create test tables
+CREATE TEMPORARY TABLE nl_int4 (id SERIAL PRIMARY KEY, val INT4);
+CREATE TEMPORARY TABLE nl_numeric (id SERIAL PRIMARY KEY, val NUMERIC);
+CREATE TEMPORARY TABLE nl_float8 (id SERIAL PRIMARY KEY, val FLOAT8);
+
+-- Populate with data
+INSERT INTO nl_int4 (val) SELECT generate_series(1, 10000);
+INSERT INTO nl_numeric (val) SELECT generate_series(1, 10000)::numeric;
+INSERT INTO nl_float8 (val) SELECT generate_series(1, 10000)::float8;
+
+-- Create indexes (critical for this optimization)
+CREATE INDEX idx_nl_int4_val ON nl_int4(val);
+CREATE INDEX idx_nl_numeric_val ON nl_numeric(val);
+CREATE INDEX idx_nl_float8_val ON nl_float8(val);
+
+-- Analyze tables
+ANALYZE nl_int4;
+ANALYZE nl_numeric;
+ANALYZE nl_float8;
+
+-- Test 1: Indexed nested loop with int4 = numeric
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*) 
+FROM nl_int4 i 
+JOIN nl_numeric n ON i.val = n.val
+WHERE i.val < 100;
+
+-- Expected: Nested Loop with Index Scan/Index Only Scan on both sides
+-- Key benefit: "Index Cond: (val = i.val)" using cross-type operator
+
+SELECT COUNT(*) AS actual_count
+FROM nl_int4 i 
+JOIN nl_numeric n ON i.val = n.val
+WHERE i.val < 100;
+
+-- Test 2: Indexed nested loop with numeric = int4 (reverse)
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*) 
+FROM nl_numeric n
+JOIN nl_int4 i ON n.val = i.val
+WHERE n.val < 100;
+
+-- Should also use indexed nested loop
+
+-- Test 3: Indexed nested loop with float8 = int4
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*) 
+FROM nl_float8 f
+JOIN nl_int4 i ON f.val = i.val
+WHERE f.val < 100;
+
+-- Test 4: Compare with non-selective query (should use hash join)
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*) 
+FROM nl_int4 i 
+JOIN nl_numeric n ON i.val = n.val
+WHERE i.val < 9000;
+
+-- Expected: Hash Join (better for large result sets)
+-- Planner chooses strategy based on statistics
+
+-- Test 5: Verify Index Cond uses cross-type operator
+EXPLAIN (COSTS OFF)
+SELECT n.* 
+FROM nl_int4 i 
+JOIN nl_numeric n ON n.val = i.val
+WHERE i.val = 42;
+
+-- Expected: Nested Loop
+--   -> Index Scan on nl_int4 (val = 42)
+--   -> Index Scan on nl_numeric (val = i.val)  <- Cross-type index condition
+
+SELECT n.val AS numeric_value
+FROM nl_int4 i 
+JOIN nl_numeric n ON n.val = i.val
+WHERE i.val = 42;
+
+-- Test 6: Verify btree family membership enables this
+SELECT 
+    op.oprname,
+    op.oprleft::regtype,
+    op.oprright::regtype,
+    amop.amopfamily::regclass::text as opfamily,
+    am.amname as access_method
+FROM pg_operator op
+JOIN pg_amop amop ON op.oid = amop.amopopr
+JOIN pg_am am ON amop.amopmethod = am.oid
+WHERE op.oprname = '='
+  AND am.amname = 'btree'
+  AND (
+    (op.oprleft = 'numeric'::regtype AND op.oprright = 'int4'::regtype) OR
+    (op.oprleft = 'int4'::regtype AND op.oprright = 'numeric'::regtype)
+  )
+ORDER BY op.oprleft, op.oprright;
+
+-- Expected: Both directions in numeric_ops btree family
+
+-- Clean up
+DROP TABLE nl_int4;
+DROP TABLE nl_numeric;
+DROP TABLE nl_float8;
+
+-- Summary

@@ -79,6 +79,7 @@ pointers are REQUIRED for resource management. Template metaprogramming complexi
 (SFINAE, CRTP, expression templates) is FORBIDDEN unless clearly justified.
 
 Encouraged C++ features:
+
 - RAII for automatic resource management
 - Smart pointers (unique_ptr, shared_ptr) instead of raw pointers
 - Standard library containers and algorithms
@@ -87,6 +88,7 @@ Encouraged C++ features:
 - Lambdas when needed (especially for std algorithms)
 
 Discouraged/forbidden C++ features:
+
 - Template metaprogramming tricks (SFINAE, enable_if)
 - CRTP (Curiously Recurring Template Pattern)
 - Expression templates
@@ -197,12 +199,19 @@ TDD is MANDATORY using PostgreSQL's pg_regress framework. Development cycle MUST
 
 Every feature, operator, function, or behavior change MUST have corresponding regression
 tests. Test coverage MUST include:
+
 - Normal operation cases
 - Boundary conditions
 - NULL handling
 - Error conditions with appropriate error messages
 - Index usage verification (EXPLAIN output)
 - Catalog integration
+- **Extension lifecycle** (CREATE/ALTER/DROP extension cycles MUST work without errors)
+
+Extension lifecycle testing is MANDATORY. The `extension_lifecycle` regression test MUST
+verify that `DROP EXTENSION` followed by `CREATE EXTENSION` succeeds without errors.
+This catches issues where operators or functions added to built-in operator families
+are not properly cleaned up on extension removal. The test MUST ensure that up/downgrade paths work for new extension versions.
 
 Example test structure:
 ```sql
@@ -229,6 +238,7 @@ and column names MUST use snake_case. SQL statements MUST be formatted for reada
 with aligned keywords and proper indentation.
 
 Extension SQL files MUST include:
+
 - Copyright notice (same format as C files)
 - File header comment with filename, description, and AI assistance caveat
 - psql execution guard (`\echo Use "CREATE EXTENSION..." \quit`)
@@ -249,6 +259,7 @@ Example extension installation script:
 -- Extension installation script for myextension version 1.0.0
 -- This file defines custom types, functions, and operators.
 --
+-- Author: Dave Sharpe
 -- This file was developed with assistance from AI tools.
 
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
@@ -314,6 +325,7 @@ Control files MUST specify `default_version`, `module_pathname`, `relocatable`, 
 `schema` where appropriate.
 
 Extension versions MUST use semantic versioning (MAJOR.MINOR.PATCH):
+
 - MAJOR: Incompatible API changes, breaking schema modifications
 - MINOR: Backward-compatible functionality additions, new features
 - PATCH: Backward-compatible bug fixes, documentation updates
@@ -330,6 +342,7 @@ caveat where applicable.
 **README.md Requirements**
 
 The repository root MUST contain a README.md that includes:
+
 - Extension name and brief description
 - Installation instructions (prerequisites, build, install)
 - Quick start guide with basic usage examples
@@ -369,8 +382,9 @@ SELECT process_custom(ROW(1, 'test', NOW())::custom_type);
 ## Documentation
 
 See [doc/](doc/) for detailed documentation:
+
 - [User Guide](doc/user-guide.md)
-- [API Reference](doc/api-reference.md)
+- [API Reference](doc/operator-reference.md)
 - [Installation Guide](doc/installation.md)
 
 ## License
@@ -389,7 +403,7 @@ The `doc/` folder SHOULD contain detailed documentation organized by topic. Reco
 structure (create files as needed for the extension):
 - `installation.md` - Detailed setup, configuration, troubleshooting
 - `user-guide.md` - Common tasks, usage patterns, examples
-- `api-reference.md` - Complete reference for SQL functions, operators, types
+- `operator-reference.md` - Complete reference for SQL functions, operators, types
 - `development.md` - Contributor guide, build process, testing
 - Additional topic-specific guides as needed
 
@@ -397,6 +411,8 @@ structure (create files as needed for the extension):
 
 All markdown documentation MUST follow these conventions:
 - Code blocks MUST specify language tags (```sql, ```c, ```cpp, ```bash)
+- SQL code blocks (```sql) in user documentation MUST have corresponding regression tests
+  in `sql/doc_examples.sql` (see Documentation Example Testing below)
 - Use consistent heading hierarchy (# for title, ## for sections, ### for subsections)
 - Tables MUST use GitHub-flavored markdown pipe format
 - External links in reference style at document bottom where practical
@@ -478,15 +494,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 **Documentation Maintenance Requirements**
 
 Documentation updates are MANDATORY for:
+
 - New features MUST update relevant user documentation before PR merge
 - Breaking changes MUST update migration guide and CHANGELOG
-- API changes MUST update api-reference.md
+- API changes MUST update operator-reference.md
 - All code examples in documentation MUST be tested and verified working
 - Version bumps MUST update CHANGELOG.md with changes categorized as Added,
   Changed, Deprecated, Removed, Fixed, Security
 
 Documentation updates SHOULD be part of the same commit/PR as the code changes they
 describe.
+
+**Documentation Example Testing**
+
+All SQL examples in user documentation (README.md, doc/*.md) MUST have corresponding
+regression tests in `sql/doc_examples.sql`. Each test MUST include a comment
+referencing the documentation location it validates.
+
+Example test comment format:
+
+```sql
+-- ============================================================================
+-- README.md example: Hierarchical product lookup (~line 230)
+-- ============================================================================
+```
+
+This ensures documentation examples remain accurate as the codebase evolves. When
+updating documentation examples, the corresponding test MUST be updated in the same
+commit.
 
 ## Development Environment
 
@@ -524,6 +559,7 @@ CXXFLAGS="-std=c++14 -Wall -Wextra -Werror"
 ```
 
 Required environment components:
+
 - PostgreSQL 12+ development headers installed
 - pg_config accessible in PATH
 - C compiler supporting C99 minimum (for backend code)
@@ -542,11 +578,13 @@ C++ code MAY use exceptions or standard error reporting mechanisms.
 ## Code Review & Quality
 
 All code submissions MUST:
+
 - Pass regression tests (`make installcheck`)
 - Compile without warnings (backend C and client C++ separately)
 - Include test coverage for new functionality
 - Update code documentation (doxygen comments) for public APIs
 - Update user documentation (README, doc/, CHANGELOG) for user-facing changes
+- Ensure all SQL examples in documentation have corresponding tests in `sql/doc_examples.sql`
 - Follow memory discipline (palloc/pfree for backend, RAII/smart pointers for client)
 
 **Automated Compliance Checking**
@@ -559,23 +597,27 @@ python scripts/review.py /path/to/extension
 ```
 
 This generates a compliance report (`CONSTITUTION_REVIEW.md`) checking:
+
 - Copyright and doxygen headers in all source files
 - Backend C purity (no C++ in PostgreSQL extension code)
 - C++14 standards in client code
 - SQL keyword capitalization
 - PGXS Makefile structure
 - Documentation requirements (README, CHANGELOG, doc/ folder)
+- SQL code blocks in documentation have corresponding tests in `sql/doc_examples.sql`
 
 While automated checks catch many issues, manual review remains required for code
 style nuances, naming conventions, test coverage adequacy, and documentation quality.
 
 Backend performance considerations:
+
 - Index-compatible operators MUST define appropriate support functions
 - Expensive operations SHOULD check for interrupts (CHECK_FOR_INTERRUPTS())
 - Large palloc allocations MUST be justified and reviewed
 - Query planner integration MUST provide selectivity/cost estimates where applicable
 
 Client C++ code quality:
+
 - Resource management MUST use RAII (no naked new/delete)
 - Prefer smart pointers over raw pointers for ownership
 - Use standard library containers instead of manual memory management
@@ -583,6 +625,7 @@ Client C++ code quality:
 - Avoid template metaprogramming complexity
 
 Security requirements:
+
 - User input MUST be validated before use
 - SQL injection vectors MUST be prevented (use SPI prepared statements)
 - Privilege escalation paths MUST be analyzed and documented
@@ -592,6 +635,7 @@ Security requirements:
 
 This constitution supersedes all other development practices and style guides for this
 project. Amendments require:
+
 1. Documented rationale for change
 2. Review by project maintainers
 3. Version bump according to semantic versioning:
@@ -604,6 +648,7 @@ guidelines MUST be explicitly justified in PR descriptions. Deviations require
 documented approval with clear reasoning.
 
 Reviewers MUST verify:
+
 - Code style adherence (K&R, naming, indentation)
 - Backend code is pure C (no C++ in PostgreSQL extensions)
 - Client C++ code uses C++14 standard with RAII and smart pointers
