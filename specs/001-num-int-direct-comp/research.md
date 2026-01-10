@@ -13,6 +13,7 @@ This document consolidates findings for technical decisions needed to implement 
 **Decision**: Use C body functions that reuse PostgreSQL's existing truncation functions and min/max bounds checking
 
 **Rationale**:
+
 - PostgreSQL already provides robust numeric truncation via `numeric_trunc()` in `utils/numeric.h`
 - Float truncation available via `trunc()` in `<math.h>` or PostgreSQL's float helpers
 - Integer type bounds defined in PostgreSQL headers (`INT16_MIN`, `INT32_MIN`, `INT64_MIN`, etc.)
@@ -20,11 +21,13 @@ This document consolidates findings for technical decisions needed to implement 
 - Approach: truncate inexact numeric type, check bounds, compare truncated value with integer
 
 **Alternatives Considered**:
+
 - **Custom precision analysis**: Would require reimplementing IEEE 754 mantissa inspection. Rejected because PostgreSQL already handles this correctly in numeric/float utilities.
 - **String conversion comparison**: Would be slower and lose type safety. Rejected for performance reasons.
 - **Casting both sides to highest precision type**: Would introduce the very precision loss we're trying to avoid. Rejected as it defeats the feature's purpose.
 
 **Implementation Pattern**:
+
 ```c
 // Core comparison function returning -1, 0, 1 (PostgreSQL standard pattern)
 static int32
@@ -84,6 +87,7 @@ numeric_gt_int4(PG_FUNCTION_ARGS) {
 **Critical Discovery**: Shell operators (created by COMMUTATOR clause) cannot have support functions! Both directions must be implemented with actual function bodies.
 
 **Rationale**:
+
 - `SupportRequestIndexCondition` is PostgreSQL's standard mechanism for enabling index-optimized predicates
 - LIKE operator (`like_support.c`) provides proven pattern for type-crossing index access
 - Support function **MUST return a List of OpExpr nodes** (not a single OpExpr), following PostgreSQL's `match_pattern_prefix()` pattern
@@ -95,6 +99,7 @@ numeric_gt_int4(PG_FUNCTION_ARGS) {
 - Returns transformed clause that planner can use for index scan instead of seq scan
 
 **Implementation Requirements**:
+
 1. **Both operator directions need real functions**: For `int4 = numeric`, must implement BOTH:
    - `numeric = int4` with function `numeric_eq_int4()` + SUPPORT clause
    - `int4 = numeric` with function `int4_eq_numeric()` + SUPPORT clause (commutator)
@@ -104,6 +109,7 @@ numeric_gt_int4(PG_FUNCTION_ARGS) {
 5. **Set lossy flag**: `req->lossy = false` for exact transformations
 
 **Alternatives Considered**:
+
 - **Separate support function per operator**: Would require 54 functions with nearly identical logic. Rejected due to excessive duplication.
 - **Custom operator class**: Would require defining complete btree operator families. Rejected as unnecessarily complex since integer types already have btree support.
 - **Planner hooks**: Would be fragile across PostgreSQL versions. Rejected for maintainability.
@@ -111,6 +117,7 @@ numeric_gt_int4(PG_FUNCTION_ARGS) {
 - **Shell operators with support**: Attempted but failed - shell operators have no function implementation, so SUPPORT clause cannot be attached.
 
 **Implementation Pattern**:
+
 ```c
 // Generic support function for all exact comparison operators
 Datum
@@ -168,6 +175,7 @@ num2int_support(PG_FUNCTION_ARGS) {
 ```
 
 **SQL Function Declarations** (both directions required):
+
 ```sql
 -- Forward direction with support
 CREATE FUNCTION numeric_eq_int4(numeric, int4)
@@ -197,6 +205,7 @@ CREATE OPERATOR = (
 ```
 
 **C Commutator Functions** (swap arguments and reuse core logic):
+
 ```c
 // Commutator function: int4 = numeric → calls numeric = int4 logic with swapped args
 Datum
@@ -209,6 +218,7 @@ int4_eq_numeric(PG_FUNCTION_ARGS) {
 ```
 
 **Key PostgreSQL References**:
+
 - `src/backend/utils/adt/like_support.c` - LIKE operator index support pattern
 - `src/include/nodes/supportnodes.h` - `SupportRequestIndexCondition` definition
 - `src/backend/optimizer/path/indxpath.c` - How planner processes support functions
@@ -218,17 +228,20 @@ int4_eq_numeric(PG_FUNCTION_ARGS) {
 **Decision**: Implement per-backend lazy cache of operator OIDs, initialized on first access with fast lookup thereafter
 
 **Rationale**:
+
 - Operator OID lookups via catalog queries are expensive (involves syscache lookups)
 - Each comparison could trigger OID resolution if not cached
 - Lazy initialization avoids startup overhead for backends not using these operators
 - Per-backend cache is safe (OIDs don't change within a backend session)
 
 **Alternatives Considered**:
+
 - **Lookup on every call**: Too slow, would defeat performance goals. Rejected.
 - **Shared memory cache**: Unnecessary complexity, OIDs are session-stable. Rejected.
 - **Preprocessor OID hardcoding**: Fragile across PostgreSQL installations. Rejected.
 
 **Implementation Pattern**:
+
 ```c
 // Static cache structure (per-backend)
 typedef struct {
@@ -269,51 +282,139 @@ some_support_func(PG_FUNCTION_ARGS) {
 
 ## 4. Btree Operator Family Support
 
-**Decision**: Add int×numeric operators to BOTH `integer_ops` AND `numeric_ops` btree families with MERGES property. Add int×float operators to `float_ops` only (btree family integration deferred to reduce scope).
+**Decision**: Add int×numeric operators to BOTH `integer_ops` AND `numeric_ops` btree families in both directions, with MERGES property enabled. Add int×float operators to hash families only (btree family integration deferred to reduce scope).
 
 **Rationale**:
-- int×numeric operators ARE mathematically transitive and safe for all btree families
-- Adding to BOTH integer_ops AND numeric_ops enables merge joins from either side
+
+- Operators are mathematically transitive and satisfy PostgreSQL's equivalence relation requirements (reflexive, symmetric, transitive)
+- Adding to BOTH families enables two critical optimizations:
+  1. **Indexed nested loop joins** (when one side has selective index)
+  2. **Merge joins** (when both sides can be efficiently sorted)
+- **Symmetric registration required**: Both `int = numeric` AND `numeric = int` must be in both families for PostgreSQL operator family completeness
+- **Safe for integer_ops**: Inference is mathematically valid because operators return TRUE only when numeric has no fractional part and is in range
+- **Limited to numeric type**: Float type comparisons excluded from btree families due to rounding errors preventing exact transitivity (see section 4.4)
 - MERGES property enables merge join optimization
 - int×float btree family integration is deferred to reduce v1.0 scope (index optimization via support functions still works)
 
-### 4.1 Why Operators Are Transitive and Safe for All Btree Families
+### 4.1 Why Numeric × Int Operators Are Safe for integer_ops
 
-**Mathematical Proof**:
-- If `A = B` returns TRUE (no fractional part) and `B = C` returns TRUE, then `A = C` is guaranteed TRUE
-- If `A = B` returns FALSE (has fractional part), the transitive chain correctly propagates: planner won't infer anything from a FALSE equality
-- Example: `10.5 = 10` → FALSE, so `(10.5 = 10) AND (10 = X)` is unsatisfiable — no invalid inference
-- The "problem case" (`int_col = 10 AND numeric_col = 10.5`) is correctly unsatisfiable because 10 ≠ 10.5
+**Focus**: This section proves that `numeric × int` operators satisfy both transitivity and trichotomy, making them safe for `integer_ops` btree family. Float types are NOT added (see section 4.4).
 
-**Key Insight**: Our exact operators compare against actual stored values, not user literals. When both `A = B` and `B = C` are TRUE with our exact semantics, transitivity holds mathematically.
+**Transitivity Proof**:
 
-**Safe for all btree families**:
-- Adding int×numeric operators to `integer_ops` family IS safe
-- Adding int×numeric operators to `numeric_ops` family IS safe
-- Both directions must be registered in both families (symmetric registration)
-- This enables merge joins from either side of the join
+Operators only return TRUE when numeric has NO fractional part and is in range. Therefore:
 
-### 4.2 Why Integer_ops Membership IS Required
+- If `A = B` is TRUE, then B is exactly an integer equal to A
+- If `B = C` is TRUE, then C is exactly an integer equal to B (and therefore A)
+- Hence `A = C` is TRUE ✓
 
-**Rationale for symmetric registration**:
-- Query: `SELECT * FROM int_table i JOIN numeric_table n ON i.col = n.col`
-- If only `numeric_ops` has our operators, planner can only consider merge join when scanning from numeric side
-- With BOTH `integer_ops` AND `numeric_ops` membership, merge join works from either side
-- PostgreSQL's planner needs to find compatible operators in the index's operator family
+**Mathematical formalization**:
 
-**Example scenario requiring integer_ops**:
+- Let `int_val(N)` = TRUE if numeric N equals its integer truncation
+- Our operator: `int = numeric` returns TRUE ⟺ `int == floor(numeric)` AND `int_val(numeric)`
+- If both `A = B` and `B = C` return TRUE, then B and C are exact integers equal to A
+- Therefore `A = C` is TRUE (transitive closure holds)
+
+**Trichotomy Law Verification**:
+
+**PostgreSQL Requirement**: Btree operator families must satisfy the trichotomy law:
+> "The ordering is total; that is, for all non-null values A, B: exactly one of A < B, A = B, and B < A is true"
+
+All operators (both native numeric and our cross-type operators) use **exact arithmetic** with no rounding.
+
+**Mathematical formalization**:
+
+For any integer A and numeric B, define:
+
+- `sign(x)` = the mathematical sign function: returns -1 if x < 0, returns 0 if x = 0, returns 1 if x > 0
+- `cmp(A, B)` = the result of our comparison function (returns -1, 0, or 1)
+
+Our comparison function works as follows:
+
+- When B is an exact integer (B = floor(B)): `cmp(A, B) = sign(A - B)`
+- When B has a fractional part (B ≠ floor(B)): equality is impossible, only < or > can be true
+
+**Proof that exactly one of {A < B, A = B, A > B} is true**:
+
+Case 1: B = floor(B) (no fractional part, exact integer)
+
+- `cmp(A, B) = sign(A - B)` by definition
+- If A < B, then A - B < 0, so sign(A - B) = -1, meaning A < B is TRUE ✓
+- If A = B, then A - B = 0, so sign(A - B) = 0, meaning A = B is TRUE ✓
+- If A > B, then A - B > 0, so sign(A - B) = 1, meaning A > B is TRUE ✓
+- Exactly one of these cases holds (sign function returns exactly one value)
+
+Case 2: B ≠ floor(B) (has fractional part, e.g., B = 10.5)
+
+- B lies strictly between two consecutive integers: floor(B) < B < floor(B) + 1
+- Since A is an integer, either A ≤ floor(B) or A ≥ floor(B) + 1 (no integer exists between floor(B) and floor(B) + 1)
+- **Subcase 2a**: If A ≤ floor(B), then A ≤ floor(B) < B, so A < B is TRUE ✓
+- **Subcase 2b**: If A ≥ floor(B) + 1, then A ≥ floor(B) + 1 > B, so A > B is TRUE ✓
+- A = B is impossible (integer cannot equal non-integer) ✗
+- Exactly one of {A < B, A > B} is true, and A = B is always FALSE
+
+Therefore, for all values A (integer) and B (numeric), exactly one comparison returns TRUE.
+
+**Examples demonstrating the formalization**:
+
 ```sql
--- If int_table.col has btree index in integer_ops family
--- Planner needs int×numeric operator IN integer_ops to use merge join efficiently
-SELECT * FROM int_table i JOIN numeric_table n ON i.col = n.col;
+-- Case 1a: A = B (exact integer)
+A = 10::int4, B = 10.0::numeric
+cmp(10, 10.0) = sign(10 - 10) = 0
+Result: A = B is TRUE, others FALSE ✓
+
+-- Case 1b: A < B (exact integer)
+A = 10::int4, B = 11.0::numeric
+cmp(10, 11.0) = sign(10 - 11) = -1
+Result: A < B is TRUE, others FALSE ✓
+
+-- Case 2: B has fractional part
+A = 10::int4, B = 10.5::numeric
+cmp(10, 10.5): A ≤ floor(10.5) = 10, so A < B
+Result: A < B is TRUE, A = B is FALSE, A > B is FALSE ✓
 ```
 
-**Transitivity is safe**: The concern about transitive inference was analyzed and found to be unfounded:
-- Our exact operators only return TRUE when values are mathematically equal
-- When TRUE, transitivity holds perfectly
-- When FALSE, no inference is made
-- This matches PostgreSQL's built-in exact numeric equality semantics
+**Key difference from float types**:
 
+- `numeric` type has arbitrary precision - never rounds integer values
+- Both native `numeric = numeric` and our `int = numeric` use exact semantics
+- **Uniform exact semantics** throughout the operator family ensures total ordering
+- No semantic mismatch between different operator types in the family
+
+**Conclusion**: Numeric × int operators satisfy both transitivity and trichotomy - safe for btree families and enable merge joins.
+
+### 4.2 How Merge Joins Work with Cross-Type Operators
+
+**Decision**: ADD numeric × int operators to BOTH integer_ops AND numeric_ops families with MERGES property enabled
+
+**How merge joins work**:
+
+For a merge join on `int_col = numeric_col`, PostgreSQL picks ONE operator family to use for the entire join operation. The chosen family must contain:
+- Native comparison operators for integers (int < int, int = int, etc.)
+- Native comparison operators for numerics (numeric < numeric, numeric = numeric, etc.)
+- Cross-type comparison operators (int = numeric, numeric = int, etc.)
+
+When the operators are in `numeric_ops`:
+- Integer side: sorted using int < int operators (already in numeric_ops natively)
+- Numeric side: sorted using numeric < numeric operators (already in numeric_ops natively)
+- Merge condition: uses int = numeric cross-type operator (we add to numeric_ops)
+- Result: Merge join uses numeric_ops family for everything
+
+When the operators are also in `integer_ops`:
+- Gives the planner an additional option to use integer_ops family instead
+- Same principle: all native and cross-type operators must be present in the chosen family
+
+**Why add to BOTH families?**
+- Provides query planner flexibility to choose the most efficient family based on available indexes and statistics
+- Each family may have different cost characteristics
+- Enables merge join optimization from either side of the join
+
+**Requirements for merge join**:
+
+1. Cross-type operators must be in BOTH families
+2. Both directions must exist: `int = numeric` AND `numeric = int`
+3. MERGES property must be set on the operators
+4. Operators must be transitive and have total order (proven in section 4.1)
 
 ### 4.3 MERGES Property for Merge Joins
 
@@ -329,19 +430,95 @@ SELECT * FROM int_table i JOIN numeric_table n ON i.col = n.col;
 -- Enable merge join for int×numeric equality
 CREATE OPERATOR = (
     LEFTARG = numeric,
-    RIGHTARG = integer,
-    ...
+    RIGHTARG = int4,
+    FUNCTION = numeric_eq_int4,
+    COMMUTATOR = =,
+    NEGATOR = <>,
     MERGES  -- Enables merge join optimization
 );
 ```
 
 **Result**: int×numeric joins can use merge join strategy when beneficial.
 
-### 4.4 Benefit of Btree Family Membership: Indexed Nested Loop Joins
+**SQL Implementation**:
 
-**Key Optimization**: Adding operators to `numeric_ops` and `float_ops` enables **indexed nested loop joins** with cross-type predicates
+```sql
+-- Add to integer_ops family (enables merge join from integer side)
+-- Only equality operators needed in integer_ops for merge join support
+ALTER OPERATOR FAMILY integer_ops USING btree ADD
+  -- int2 = numeric (both directions for symmetry)
+  OPERATOR 3 =(int2, numeric) FOR ORDER BY integer_ops,
+  OPERATOR 3 =(numeric, int2) FOR ORDER BY integer_ops,
+
+  -- int4 = numeric (both directions for symmetry)
+  OPERATOR 3 =(int4, numeric) FOR ORDER BY integer_ops,
+  OPERATOR 3 =(numeric, int4) FOR ORDER BY integer_ops,
+
+  -- int8 = numeric (both directions for symmetry)
+  OPERATOR 3 =(int8, numeric) FOR ORDER BY integer_ops,
+  OPERATOR 3 =(numeric, int8) FOR ORDER BY integer_ops;
+
+-- Add to numeric_ops family (enables merge join from numeric side)
+-- All comparison operators needed for complete btree support
+ALTER OPERATOR FAMILY numeric_ops USING btree ADD
+  -- numeric <op> int2 with support function
+  FUNCTION 1 (numeric, int2) numeric_cmp_int2(numeric, int2),
+  OPERATOR 1 < (numeric, int2),
+  OPERATOR 2 <= (numeric, int2),
+  OPERATOR 3 = (numeric, int2),
+  OPERATOR 4 >= (numeric, int2),
+  OPERATOR 5 > (numeric, int2),
+
+  -- numeric <op> int4 with support function
+  FUNCTION 1 (numeric, int4) numeric_cmp_int4(numeric, int4),
+  OPERATOR 1 < (numeric, int4),
+  OPERATOR 2 <= (numeric, int4),
+  OPERATOR 3 = (numeric, int4),
+  OPERATOR 4 >= (numeric, int4),
+  OPERATOR 5 > (numeric, int4),
+
+  -- numeric <op> int8 with support function
+  FUNCTION 1 (numeric, int8) numeric_cmp_int8(numeric, int8),
+  OPERATOR 1 < (numeric, int8),
+  OPERATOR 2 <= (numeric, int8),
+  OPERATOR 3 = (numeric, int8),
+  OPERATOR 4 >= (numeric, int8),
+  OPERATOR 5 > (numeric, int8),
+
+  -- int2 <op> numeric (commutator direction)
+  FUNCTION 1 (int2, numeric) numeric_cmp_int2(numeric, int2),
+  OPERATOR 1 < (int2, numeric),
+  OPERATOR 2 <= (int2, numeric),
+  OPERATOR 3 = (int2, numeric),
+  OPERATOR 4 >= (int2, numeric),
+  OPERATOR 5 > (int2, numeric),
+
+  -- int4 <op> numeric (commutator direction)
+  FUNCTION 1 (int4, numeric) numeric_cmp_int4(numeric, int4),
+  OPERATOR 1 < (int4, numeric),
+  OPERATOR 2 <= (int4, numeric),
+  OPERATOR 3 = (int4, numeric),
+  OPERATOR 4 >= (int4, numeric),
+  OPERATOR 5 > (int4, numeric),
+
+  -- int8 <op> numeric (commutator direction)
+  FUNCTION 1 (int8, numeric) numeric_cmp_int8(numeric, int8),
+  OPERATOR 1 < (int8, numeric),
+  OPERATOR 2 <= (int8, numeric),
+  OPERATOR 3 = (int8, numeric),
+  OPERATOR 4 >= (int8, numeric),
+  OPERATOR 5 > (int8, numeric);
+```
+
+### 4.3 Benefits of Btree Family Membership
+
+**Two Key Optimizations Enabled**:
+
+1. **Indexed Nested Loop Joins**: Adding operators to `numeric_ops` and `float_ops` enables indexed access with cross-type predicates
+2. **Merge Joins**: Adding operators to BOTH `integer_ops` AND `numeric_ops` enables efficient merge join strategy
 
 **Without btree family membership**:
+
 ```sql
 EXPLAIN SELECT COUNT(*)
 FROM test_int i JOIN test_numeric n ON i.val = n.val
@@ -356,11 +533,13 @@ WHERE i.val < 100;
          ->  Hash
                ->  Seq Scan on test_numeric
 ```
+
 - Uses Hash Join
 - Cannot use index on numeric column for join condition
 - Seq scan on numeric table
 
 **With btree family membership** (operators in numeric_ops):
+
 ```sql
                     QUERY PLAN
 ----------------------------------------------------------
@@ -371,32 +550,102 @@ WHERE i.val < 100;
          ->  Index Only Scan on test_numeric n
                Index Cond: (val = i.val)  ← KEY BENEFIT!
 ```
+
 - Uses indexed Nested Loop
 - **Can use index on numeric column** with cross-type predicate `val = i.val`
 - Both sides use index scans
 - Much more efficient for selective queries
 
 **How it works**:
+
 1. Scan int table with index condition `val < 100`
 2. For each int row, use btree index on numeric table to find matching rows
 3. Index condition `numeric.val = int.val` is recognized because operators are in `numeric_ops` family
 4. PostgreSQL knows how to use numeric btree index with the cross-type equality
 
 **Performance impact**:
+
 - Enables index-only scans on both sides of join
 - Avoids hash table construction
 - Dramatically faster for selective queries (small result sets)
 - Similar to how native PostgreSQL handles `int4 = int8` joins
 
-### 4.5 Implementation in v1.0
+### 4.4 Why Float Types Cannot Be Added to Btree Families
 
-**What was implemented**:
+**Decision**: Float operators (float4, float8) are **NOT** added to ANY btree family (`float_ops` or `integer_ops`).
+
+**Rationale - Violates Trichotomy Law (Total Ordering)**:
+
+PostgreSQL's btree operator families require the trichotomy law:
+> "The ordering is total; that is, for all non-null values A, B: exactly one of A < B, A = B, and B < A is true"
+
+Our float × int operators **violate this requirement** when combined with native float operators in `float_ops`.
+
+**Critical Failure Case - Ordering Inconsistency**:
+
+```sql
+-- The issue: mixing exact semantics (our operators) with approximate semantics (native float)
+-- creates ordering contradictions
+
+-- Values:
+A = 16777216::int4
+B = 16777216.5::float4
+C = 16777217::int4::float4 (stored as 16777216.0 due to precision loss)
+
+-- Within float_ops family with mixed operators:
+
+-- Comparison 1: A vs B using our int4 < float4 operator
+A < B? int4(16777216) < float4(16777216.5) → TRUE
+-- Our exact comparison: 16777216 < 16777216.5
+
+-- Comparison 2: B vs C using NATIVE float4 > float4 operator
+B > C? float4(16777216.5) > float4(16777216.0) → TRUE
+-- Native binary comparison: 16777216.5 > 16777216.0
+
+-- Comparison 3: A vs C using our int4 = float4 operator
+A = C? int4(16777216) = float4(16777216.0) → TRUE
+-- Our exact comparison: both are exactly 16777216, no fractional part
+
+-- Result: A < B, B > C, A = C
+-- Which means: A = C < B > C
+-- Simplified: C < B AND C > B (C is BOTH less than and greater than B!)
+-- This VIOLATES the total ordering requirement ✗
+```
+
+**Why this fails**:
+
+- Native float operators: approximate semantics, compare binary representations
+- Our cross-type operators: exact semantics, detect precision loss and fractional parts
+- **Semantic mismatch**: mixing these in one family creates ordering contradictions
+- The total ordering property is broken when C = A but C has different relationships with B depending on which operator is used
+
+**Why numeric is different**:
+
+- `numeric` type has arbitrary precision - no rounding for integer values
+- Comparisons are always exact, never approximate
+- All operators in `numeric_ops` use exact semantics consistently
+- Adding our exact `int = numeric` operators maintains consistent exact semantics throughout the family
+
+**Conclusion**:
+
+- ❌ **Float × int in float_ops btree**: UNSAFE - violates total ordering (trichotomy law)
+- ❌ **Float × int in integer_ops btree**: UNSAFE - would allow invalid integer-side transitive inferences
+- ✅ **Float × int in hash families**: SAFE - hash families don't require ordering properties
+- ✅ **Numeric × int in integer_ops btree**: SAFE - exact semantics, no rounding, consistent ordering
+- ✅ **Numeric × int in numeric_ops btree**: SAFE - exact semantics, consistent with native numeric operators
+
+**Implementation Decision**:
+
+- Float operators added ONLY to **hash** operator families, NOT to btree families
+- This enables hash joins for float × int but NOT merge joins or indexed range scans
+- Numeric operators added to BOTH btree and hash families (safe for all join types)
 
 ### 4.5 Implementation in v1.0
 
 **What was implemented**:
 
 1. **Created SQL-callable btree support functions**:
+
 ```c
 // Comparison functions returning int (-1, 0, 1) for btree
 PG_FUNCTION_INFO_V1(numeric_cmp_int2);
@@ -411,6 +660,7 @@ PG_FUNCTION_INFO_V1(float8_cmp_int8);
 ```
 
 2. **Registered operators with btree families**:
+
 ```sql
 -- Add numeric × int operators to numeric_ops btree family
 ALTER OPERATOR FAMILY numeric_ops USING btree ADD
@@ -434,21 +684,23 @@ ALTER OPERATOR FAMILY float_ops USING btree ADD
   -- ... (repeat for float4×int2/4/8 and float8×int2/4/8, both directions)
 ```
 
-**What was NOT implemented in initial v1.0** (now required per spec):
-- ⚠️ **MERGES property**: Required for int×numeric equality operators (implementation task pending)
-- ⚠️ **integer_ops family membership**: Required for int×numeric operators (implementation task pending)
-- ⚠️ **int×float btree integration**: Deferred to reduce scope
-
 **What IS implemented**:
 - ✅ **Merge join optimization**: Enabled via MERGES property and dual family membership (for int×numeric)
-- ✅ **Hash join support**: All operators have HASHES property
+- ✅ **Hash join support**: All equal operators have HASHES property
+- ✅ **int×numeric btree integration**: Operators added to BOTH integer_ops AND numeric_ops families
+- ✅ **MERGES property**: Added to int×numeric equality operators
+
+**What was NOT implemented** (deferred to reduce scope):
+- ⚠️ **int×float btree integration**: Deferred to reduce v1.0 scope
+- ⚠️ **int×float merge joins**: Requires btree family integration (deferred)
 
 **Result**:
+
 - ✅ Operators enable indexed nested loop joins (major performance win)
 - ✅ Operators enable merge joins for int×numeric (via integer_ops + numeric_ops membership)
 - ✅ Operators are safe from transitive inference problems (exact semantics guarantee correctness)
-- ✅ All 10 regression tests pass with improved query plans
-- ✅ Hash joins still work when needed (planner chooses based on statistics)
+- ✅ All regression tests pass with improved query plans
+- ✅ Hash joins work for all type combinations (planner chooses based on statistics)
 
 ### 4.6 Summary: Why This Approach is Optimal
 
@@ -467,11 +719,12 @@ ALTER OPERATOR FAMILY float_ops USING btree ADD
 4. Works for all query patterns
 
 **int×float btree integration deferred**:
-- int×float operators are in float_ops for hash joins only
+- int×float equal operators are in hash families only (enables hash joins)
 - Btree family integration deferred to reduce v1.0 scope
 - Index optimization still works via support functions (SupportRequestIndexCondition)
 
 **When each join strategy is used**:
+
 - **Indexed Nested Loop**: Small selective result sets (most queries) - NOW OPTIMIZED ✅
 - **Hash Join**: Large non-selective joins without indexes - still works ✅
 - **Merge Join**: Large joins with sorted inputs - NOW AVAILABLE for int×numeric ✅
@@ -481,6 +734,7 @@ ALTER OPERATOR FAMILY float_ops USING btree ADD
 **Decision**: Implement hash functions by casting integers to the higher-precision type and using existing PostgreSQL hash functions
 
 **Rationale**:
+
 - Hash joins require "if a = b then hash(a) = hash(b)" across types
 - Initially considered complex logic to detect fractional parts, but discovered a simpler approach
 - PostgreSQL's `hash_numeric()` accepts integers via implicit cast: `hash_numeric(10::int4)` works
@@ -489,6 +743,7 @@ ALTER OPERATOR FAMILY float_ops USING btree ADD
 
 **Key Insight**:
 Testing revealed that PostgreSQL's native cross-type operators (e.g., `int2 = int8` in `integer_ops`) only register same-type hash functions, yet hash joins still work. This validates our approach:
+
 ```sql
 -- PostgreSQL only has hashint2(int2), hashint4(int4), hashint8(int8)
 -- Yet int2 = int8 hash joins work via implicit casting
@@ -564,6 +819,7 @@ CREATE OPERATOR = (
 ```
 
 **Benefits**:
+
 - Hash joins work for large table joins where nested loop would be inefficient
 - Planner can choose between nested loop (indexed), hash join, or sequential based on statistics
 - No custom hash logic needed - reuses PostgreSQL's battle-tested hash functions
@@ -574,12 +830,14 @@ CREATE OPERATOR = (
 **Decision**: Do not add these operators to btree operator families that would enable transitive inference across different type combinations
 
 **Rationale**:
+
 - pg_regress is PostgreSQL's standard testing framework (constitutional requirement)
 - Separate test files improve maintainability and debugging
 - EXPLAIN output in tests verifies index usage (critical for User Story 2)
 - Expected output files ensure regression detection
 
 **Test Categories**:
+
 1. **Operator correctness**: Basic equality/inequality/ordering tests for all type combinations
 2. **Index usage**: EXPLAIN tests verifying Index Scan vs Seq Scan
 3. **NULL handling**: NULL propagation per SQL standard
@@ -587,6 +845,7 @@ CREATE OPERATOR = (
 5. **Edge cases**: Precision boundaries, overflow, type coercion ambiguity
 
 **Example Test**:
+
 ```sql
 -- sql/index_usage.sql
 CREATE TABLE test_int4 (id SERIAL, value INT4);
@@ -605,20 +864,24 @@ SELECT * FROM test_int4 WHERE value = 500.0::numeric;
 **Decision**: Implement full matrix of 9 type combinations: (numeric, float4, float8) × (int2, int4, int8)
 
 **Rationale**:
+
 - User Story 5 requires complete coverage to avoid "why doesn't X work?" questions
 - Each type pairing has unique conversion logic (different precision boundaries)
 - Completeness improves extension usability
 
 **Type Pair Details**:
+
 - **numeric × int2/int4/int8**: Check fractional part via truncation, range check, exact comparison
 - **float4 × int2/int4/int8**: Check if float value equals `floor(float)`, range check based on mantissa precision
 - **float8 × int2/int4/int8**: Similar to float4 but with double precision mantissa
 
 **Float Precision Boundaries**:
+
 - float4 (32-bit IEEE 754): 24-bit mantissa → exactly represents integers up to 2^24 (16,777,216)
 - float8 (64-bit IEEE 754): 53-bit mantissa → exactly represents integers up to 2^53 (9,007,199,254,740,992)
 
 **Critical Implementation Detail**: Float comparison functions must detect when a float value cannot exactly represent an integer, even when the integer-to-float conversion produces the same rounded value as the original float. For example:
+
 - `9007199254740993::float8` rounds to `9007199254740992` (loses precision)
 - `9007199254740993::int8` converts to `9007199254740992::float8` (same rounding)
 - These should NOT compare as equal because the float cannot represent the exact integer
@@ -647,6 +910,7 @@ All decisions align with the constitution's requirements for code style (K&R C),
 ### 7.1 Shell Operators Cannot Have Support Functions
 
 **Problem Encountered**: Initially attempted to use COMMUTATOR clause to automatically create reverse operators:
+
 ```sql
 CREATE OPERATOR = (
   LEFTARG = numeric, RIGHTARG = int4,
@@ -661,6 +925,7 @@ CREATE OPERATOR = (
 **Impact**: Shell operators have no `oprcode` (function OID), therefore the SUPPORT clause cannot be attached. When PostgreSQL plans a query like `WHERE intcol = 100::numeric`, it looks up the `int4 = numeric` operator, finds it's a shell, and has no support function to call.
 
 **Solution**: Both operator directions must be implemented with actual C functions:
+
 ```sql
 -- Forward direction
 CREATE FUNCTION numeric_eq_int4(numeric, int4) ...
@@ -684,6 +949,7 @@ CREATE OPERATOR = (
 ```
 
 **C Implementation**: Commutator functions simply swap arguments and reuse core comparison logic:
+
 ```c
 Datum int4_eq_numeric(PG_FUNCTION_ARGS) {
   int32 i4 = PG_GETARG_INT32(0);
@@ -697,6 +963,7 @@ Datum int4_eq_numeric(PG_FUNCTION_ARGS) {
 ### 7.2 Support Functions Return Lists, Not Single Nodes
 
 **Problem Encountered**: Initial implementation returned a single `OpExpr *`:
+
 ```c
 OpExpr *new_clause = make_opclause(...);
 ret = (Node *) new_clause;  // WRONG - causes segfault
@@ -708,6 +975,7 @@ PG_RETURN_POINTER(ret);
 **Root Cause**: PostgreSQL's index condition API expects support functions to return a `List *` of condition nodes, not a bare node pointer. This is documented in `src/backend/utils/adt/like_support.c` but easy to miss.
 
 **Correct Implementation**:
+
 ```c
 OpExpr *new_clause = make_opclause(...);
 ret = (Node *) list_make1(new_clause);  // Wrap in List
@@ -715,6 +983,7 @@ PG_RETURN_POINTER(ret);
 ```
 
 **PostgreSQL Pattern** (from `like_support.c:375-380`):
+
 ```c
 if (pstatus == Pattern_Prefix_Exact) {
     expr = make_opclause(eqopr, BOOLOID, false,
@@ -730,6 +999,7 @@ if (pstatus == Pattern_Prefix_Exact) {
 ### 7.3 Numeric Type Conversion Must Use PostgreSQL's Cast Functions
 
 **Problem Encountered**: Attempted to use `numeric_int4_opt_error()` for conversion:
+
 ```c
 int32 val = numeric_int4_opt_error(num, &is_valid);
 // is_valid=0 even for exact integers like 100.0!
@@ -740,6 +1010,7 @@ int32 val = numeric_int4_opt_error(num, &is_valid);
 **Symptom**: Transformation failed for all numeric constants, even exact integers. Logs showed `Converted to int4: 100, is_valid=0`.
 
 **Solution**: Use PostgreSQL's standard casting functions via `OidFunctionCall1`:
+
 ```c
 // For int2: OID 1783
 Datum result = OidFunctionCall1(1783, NumericGetDatum(num));
@@ -755,6 +1026,7 @@ int64 val = DatumGetInt64(result);
 ```
 
 **Behavior**: These functions perform rounding (banker's rounding):
+
 - `100.0::numeric::int4` → `100`
 - `100.5::numeric::int4` → `101` (rounds to even)
 - `100.4::numeric::int4` → `100`
@@ -778,18 +1050,22 @@ This pattern applies to ALL type combinations: numeric/float4/float8 with int2/i
 ### 7.4 OID Cache Should Only Store Operator OIDs
 
 **Important Clarification**: Type OIDs for built-in types are available as **PostgreSQL constants** and don't need caching:
+
 - Use `INT2OID` (21), `INT4OID` (23), `INT8OID` (20)
 - Use `FLOAT4OID` (700), `FLOAT8OID` (701), `NUMERICOID` (1700)
 - These constants are defined in `postgres.h` and are stable
 
 **The OID cache should only contain**:
+
 1. **Cross-type operator OIDs**: All 54 comparison operators (9 type pairs × 6 operators) - these vary by extension installation
 2. **Standard int equality OIDs**: `int2_eq_int2_oid` (94), `int4_eq_int4_oid` (96), `int8_eq_int8_oid` (410) - needed for building transformed clauses
 
 **Cast function OIDs are also constants** (can be hardcoded):
+
 - `int2(numeric)` = 1783, `int4(numeric)` = 1744, `int8(numeric)` = 1779
 
 **Implementation Note**: Define symbolic constants to avoid magic numbers throughout the code. PostgreSQL does not define these in its headers (pg_proc_d.h, pg_operator_d.h), so we use the NUM2INT_ prefix to avoid potential future conflicts:
+
 ```c
 /* PostgreSQL built-in cast function OIDs (stable across versions) */
 #define NUM2INT_CAST_NUMERIC_INT2 1783  /* int2(numeric) */
@@ -822,6 +1098,7 @@ The support function needs standard int equality operators to build the transfor
 ### 7.5 Node Copying is Required
 
 **Implementation Detail**: When building the transformed OpExpr, the Var node must be copied:
+
 ```c
 Var *new_var = (Var *) copyObject(var_node);  // Don't reuse original pointer
 ```
@@ -943,8 +1220,9 @@ This section documents the key insights that transformed the project from a basi
 **Insight**: Adding operators to btree families enables **indexed nested loop joins** and, with MERGES property, **merge joins**.
 
 **Impact**:
-- Operators benefit from btree indexes via family membership
-- Index Cond predicates work with cross-type operators
+
+- Operators benefit from btree indexes via family membership alone
+- Index Cond predicates work even without MERGES property
 - For int×numeric: adding to BOTH `integer_ops` AND `numeric_ops` enables merge joins from either side
 - For int×float: btree family integration deferred (support functions still enable index optimization)
 
@@ -953,22 +1231,40 @@ This section documents the key insights that transformed the project from a basi
 - MERGES property + symmetric family registration = merge join optimization
 - Exact operator semantics guarantee transitivity is safe
 
-### 8.2 Merge Joins ARE Possible for int×numeric
+### 8.2 Merge Joins ARE Possible with Symmetric Registration
 
-**Insight**: Merge joins CAN be implemented because our exact operators are mathematically transitive.
+**Insight**: Merge joins **can be safely implemented** by adding operators to BOTH integer_ops AND numeric_ops families.
 
-**Reasoning**:
+**Key Discovery**: The initial concern about invalid transitive inference was based on faulty reasoning. Transitive inference is MATHEMATICALLY SAFE:
+
+- If both `A = B` and `B = C` return TRUE, then B must be an exact integer (no fractional part)
+- Therefore `A = C` is guaranteed to be TRUE, making transitive inference valid
+- Our exact operators only return TRUE when values are mathematically equal
+- When TRUE, transitivity holds perfectly (A=B and B=C implies A=C)
+- When FALSE, planner makes no inference
+- The apparent "problem case" (`int_col = 10 AND numeric_col = 10.5`) is actually unsatisfiable - the query correctly returns no rows
+
+**Requirements for merge joins**:
+
+1. **Add operators to integer_ops**: Both `int = numeric` and `numeric = int` operators
+2. **Add operators to numeric_ops**: Same operators for symmetric access
+3. **Enable MERGES property**: Required for planner to consider merge join strategy
+4. **Mathematical proof**: Operators satisfy equivalence relation properties (reflexive, symmetric, transitive)
+
+**How merge join works**:
+
 - Merge joins require operators in compatible btree families on both sides
-- Adding int×numeric operators to BOTH `integer_ops` AND `numeric_ops` enables merge joins
-- Transitivity concern was analyzed and found to be unfounded:
-  - Our exact operators only return TRUE when values are mathematically equal
-  - When TRUE, transitivity holds perfectly (A=B and B=C implies A=C)
-  - When FALSE, planner makes no inference
-  - The "problem case" is actually correct: `10 = 10.5` is FALSE, so no transitive inference occurs
+- Adding int×numeric operators to BOTH `integer_ops` AND `numeric_ops` enables merge joins from either side
+- Integer side sorted using integer_ops family (native int < int operators)
+- Numeric side sorted using numeric_ops family (native numeric < numeric operators)
+- Merge condition uses cross-type operator (int = numeric) for comparing sorted rows
 
-**Design Decision**: Implement merge joins for int×numeric via:
+**Design Decision**: Implement in v1.0 as a key performance optimization
+
 - MERGES property on equality operators
 - Symmetric registration in both `integer_ops` and `numeric_ops` families
+- Enables efficient joins when both sides are presorted or can be efficiently sorted
+- Complements hash joins (better for large unsorted inputs) and indexed nested loop joins (better for selective predicates)
 - int×float merge joins deferred (not architecturally blocked, just scope reduction)
 
 ### 8.3 Hash Function Casting Strategy
@@ -976,11 +1272,13 @@ This section documents the key insights that transformed the project from a basi
 **Insight**: PostgreSQL's `hash_numeric(10::int4) = hash_numeric(10.0::numeric)` works automatically!
 
 **Discovery**:
+
 - PostgreSQL's hash functions naturally handle casted integers
 - Casting integers to numeric/float before hashing ensures consistency
 - No need for complex fractional detection logic in hash functions
 
 **Implementation**:
+
 ```c
 // Simple wrapper: cast int → numeric → hash
 Datum hash_int4_as_numeric(PG_FUNCTION_ARGS) {
@@ -992,23 +1290,31 @@ Datum hash_int4_as_numeric(PG_FUNCTION_ARGS) {
 
 **Result**: 18 clean wrapper functions leveraging PostgreSQL's existing hash infrastructure, enabling hash joins for all type combinations.
 
-### 8.4 Operator Family Strategy for Correctness
+### 8.4 Operator Family Strategy for Correctness and Performance
 
 **Insight**: Operator family membership must balance performance optimization with semantic correctness. Our exact operators ARE mathematically transitive, enabling full btree family membership.
 
 **Strategy for int×numeric** (36 operators):
 - ✅ **Add to BOTH `integer_ops` AND `numeric_ops` families** → enables merge joins, indexed nested loop joins
   - Symmetric registration enables merge joins from either side
+  - Both `int = numeric` AND `numeric = int` in both families
+  - PostgreSQL operator family completeness requirement
   - MERGES property on equality operators
   - Transitivity is safe because exact operators only return TRUE for mathematically equal values
+  - Mathematically safe because operators only return TRUE when numeric has no fractional part and is in range
+  - Enables transitive inference correctly
+  - Enables Index Cond predicates and all join types (hash, nested loop, merge)
 
 **Strategy for int×float** (72 operators):
-- ✅ **Add to `float_ops` hash family** → enables hash joins
+- ✅ **Add to hash families** → enables hash joins
+- ❌ **NOT added to btree families** → float types EXCLUDED from integer_ops/float_ops btree due to semantic mismatch
+  - Rounding errors prevent exact transitivity
+  - Mixing exact semantics (our operators) with approximate semantics (native float) violates total ordering
 - ⚠️ **Btree family integration deferred** → reduces v1.0 scope
   - Support functions (SupportRequestIndexCondition) still enable index optimization
-  - Not architecturally blocked, just scope reduction
+  - Not architecturally blocked for hash joins, but btree requires careful semantic analysis
 
-**Principle**: Exact comparison operators ARE transitive when properly implemented. Strategic family membership enables optimal join strategies.
+**Principle**: Exact comparison operators ARE transitive when properly implemented. Strategic family membership enables optimal join strategies while maintaining correctness.
 
 ### 8.5 Complete Implementation Scope: 108 Operators
 
@@ -1020,6 +1326,7 @@ Datum hash_int4_as_numeric(PG_FUNCTION_ARGS) {
 - **int×float8**: 36 operators with hash family integration (btree deferred)
 
 **Rationale**:
+
 - Commutators enable bidirectional comparisons: `int4 = numeric` AND `numeric = int4`
 - Both directions need real C implementations (COMMUTATOR property alone insufficient for all optimizations)
 - Equality operators (`=`, `<>`) have HASHES property in both directions
@@ -1027,6 +1334,7 @@ Datum hash_int4_as_numeric(PG_FUNCTION_ARGS) {
 - Complete coverage: all (numeric/float4/float8) × (int2/int4/int8) × 6 operators × 2 directions
 
 **Benefits**:
+
 - Users can write comparisons in natural order
 - Query optimizer has maximum flexibility
 - Hash joins work for all type combinations
@@ -1040,6 +1348,7 @@ Datum hash_int4_as_numeric(PG_FUNCTION_ARGS) {
 ## Conclusion
 
 These insights represent critical design decisions that shaped v1.0:
+
 1. Leverage btree family membership for index optimization
 2. Exact operators ARE transitive — merge joins enabled for int×numeric via symmetric registration
 3. Use casting strategy for hash functions (simplicity + correctness)

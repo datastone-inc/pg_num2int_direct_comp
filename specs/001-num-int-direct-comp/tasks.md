@@ -413,6 +413,13 @@ Instead of detecting fractional parts, cast integers to the higher-precision typ
 **Background**: Research shows int×numeric operators ARE mathematically transitive and safe to add to both btree families:
 - If A = B (no fractional part) and B = C, then A = C
 - If A = B returns false (has fractional part), transitive chain correctly propagates inequality
+- Example: 10.5 = 10 → false, so (10.5 = 10) AND (10 = X) → false regardless of X
+
+**Transitive inference IS safe in integer_ops**: The concern was based on faulty reasoning. If both `A = B` and `B = C` return TRUE, then B MUST be an exact integer (no fractional part), making `A = C` valid. The "problem case" (`int_col = 10 AND numeric_col = 10.5`) is actually unsatisfiable - the query correctly returns no rows because 10 ≠ 10.5.
+
+**Merge joins ARE possible**: By adding operators to BOTH integer_ops AND numeric_ops families with symmetric registration (both directions in each family), we enable merge joins safely. Each side uses its native family for sorting, cross-type operators for merging.
+
+**Benefit achieved**: All three join strategies - hash joins, indexed nested loop joins, AND merge joins.
 
 ### Implementation Tasks (Completed)
 

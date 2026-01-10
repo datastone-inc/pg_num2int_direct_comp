@@ -203,10 +203,15 @@ The extension provides exact comparison operators for all meaningful combination
 
 ## Implemented in v1.0
 
-- **Merge join support for int × numeric**: Operators added to BOTH `integer_ops` and `numeric_ops` btree families
-  - Enables PostgreSQL to use merge joins for int × numeric comparisons
+- **Btree operator family membership**: Cross-type operators (int × numeric) added to BOTH `integer_ops` AND `numeric_ops` families, enabling indexed nested loop joins AND merge joins
+  - Both directions (`int = numeric` and `numeric = int`) registered in both families
+  - Required for PostgreSQL operator family completeness (symmetric property)
+  - Enables merge joins: each side uses its native family for sorting, cross-type operators for merging
   - Both sides can use btree indexes for pre-sorted input
+  - Safe because operators satisfy PostgreSQL's transitivity requirement: if A=B and B=C (both TRUE), then A=C
+  - Mathematical proof: if both equalities return TRUE, the numeric value must be exact integer, making transitive inference valid
   - Transitivity is preserved: operators correctly handle fractional values, preventing invalid inferences
+  - Float type comparisons NOT added (rounding errors prevent exact transitivity)
   - Operators have MERGES property for merge join optimization
 
 - **Index optimization for int × float**: Via `SupportRequestIndexCondition` support functions
@@ -228,11 +233,12 @@ The extension provides exact comparison operators for all meaningful combination
   - Applies to constant predicates in WHERE clauses; join conditions use btree family membership
   - Rationale: When operators are in btree families, index condition transformation is bypassed; simplification at an earlier planning stage ensures optimal selectivity estimates while preserving join optimization
 
-# Future Enhancements
+# Future Enhancements (Not Required)
 
-- **Cost estimation functions**: Custom cost functions to help query planner choose optimal join strategies based on data distribution
-- **Merge join support for int × float**: Currently not supported; would require operators in both integer_ops and float_ops simultaneously, creating precision boundary complexity
-- **numeric × float comparisons**: May be added in future version if there's sufficient demand; would provide exact comparisons between numeric and float types similar to int × float approach
+- **FE-001**: Cost estimation functions to help the query planner choose optimal join strategies based on data distribution
+- **FE-002**: Merge join support for int × float - currently not supported; would require operators in both integer_ops and float_ops simultaneously, creating precision boundary complexity
+- **FE-003**: Add float types to integer_ops if safe exact transitivity can be proven (currently excluded due to rounding concerns)
+- **FE-004**: numeric × float comparisons - may be added in future version if there's sufficient demand; would provide exact comparisons between numeric and float types similar to int × float approach
 
 ##
 ## Success Criteria *(mandatory)*
@@ -244,9 +250,10 @@ The extension provides exact comparison operators for all meaningful combination
 - **SC-003**: Query plans for predicates like `WHERE intcol = 10.0::numeric` utilize available indexes rather than requiring full table scans
 - **SC-004**: Feature works correctly on PostgreSQL 12, 13, 14, 15, and 16
 - **SC-005**: All defined behaviors pass automated verification (100% test pass rate)
-- **SC-006**: Cross-type join queries for int × numeric (e.g., `int_table.col = numeric_table.col`) use merge joins when appropriate, with both sides using index scans
-- **SC-006b**: Cross-type join queries for int × float use indexed nested loop joins or hash joins (merge joins not supported)
-- **SC-006c**: Queries with chained comparisons produce correct results following exact comparison semantics, with no invalid transitive inferences
+- **SC-006**: Cross-type join queries for int × numeric (e.g., `int_table.col = numeric_table.col`) can use EITHER indexed nested loop joins OR merge joins, with both sides using index scans when appropriate
+- **SC-006b**: Merge join plans show both sides sorted using their native family operators with cross-type merge condition
+- **SC-006c**: Cross-type join queries for int × float use indexed nested loop joins or hash joins (merge joins not supported)
+- **SC-006d**: Queries with chained comparisons produce correct results following exact comparison semantics and transitivity, with no invalid transitive inferences
 - **SC-007**: User documentation includes at least 5 practical examples demonstrating exact comparison behavior and query optimization
 - **SC-008**: Performance overhead of exact comparison operators is within 10% of standard comparison operators for equivalent queries
 - **SC-009**: Query plans for impossible predicates (e.g., `WHERE int_col = 10.5::numeric`) show rows=0 estimate, indicating the planner recognizes the predicate as always-false

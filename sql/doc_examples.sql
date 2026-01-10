@@ -16,7 +16,7 @@ SET client_min_messages = notice;
 
 -- PostgreSQL's DEFAULT behavior (Mathematically WRONG):
 -- With extension: exact comparison detects the mismatch
-SELECT 16777217::int4 = 16777217::float4 AS should_be_false;
+SELECT 16777217::int4 = 16777216::float4 AS should_be_false;
 
 -- ============================================================================
 -- README.md: User lookup example (~line 85)
