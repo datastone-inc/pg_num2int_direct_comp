@@ -71,6 +71,8 @@ Users evaluating this extension need clear, concise documentation that addresses
 - **+/-Infinity handling**: -Infinity < all integers < +Infinity ordering must be maintained
 - **Subnormal floats**: Very small float values near zero should compare correctly with integer 0
 - **User literal confusion**: Users may expect `WHERE int_col = 16777217.0::float4` to match 16777217, but the literal rounds to 16777216.0 before comparison; documentation must clarify this is float representation, not extension behavior
+- **Float precision loss is permanent**: Once a value is stored or passed as float, precision loss is irreversible. Float parameters lose precision at bind time. Use integer or numeric parameter types to preserve precision.
+- **Equivalence expressions**: Users migrating to/from the extension need equivalent expressions: with extension use `int_col::float4 = float4_col` for stock behavior; without extension use `int_col::numeric = float_col::numeric` for exact behavior (no index support).
 
 ## Requirements *(mandatory)*
 
@@ -88,6 +90,7 @@ Users evaluating this extension need clear, concise documentation that addresses
 - **FR-011**: Documentation MUST directly address the "non-standard operators" concern with explanation of correctness guarantees
 - **FR-012**: All SQL examples in user documentation MUST have corresponding tests in sql/doc_examples.sql per constitution.md
 - **FR-013**: Documentation SQL examples MUST follow constitution.md formatting (UPPERCASE keywords, lowercase identifiers)
+- **FR-014**: Documentation MUST include equivalence expressions: (a) with extension, emulate stock via `int_col::float = float_col`; (b) without extension, emulate exact via `int_col::numeric = float_col::numeric`
 
 ### Assumptions
 
