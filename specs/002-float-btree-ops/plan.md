@@ -17,7 +17,7 @@ Add int x float4/float8 comparison operators to btree operator families (`intege
 **Project Type**: PostgreSQL extension (single module)
 **Performance Goals**: Merge join performance comparable to native same-type joins
 **Constraints**: No new C code required (reuse existing comparison functions); SQL-only changes
-**Scale/Scope**: 72 new btree family entries (6 operators x 6 type pairs x 2 families)
+**Scale/Scope**: 130 new btree family entries (70 in integer_ops + 30 in float4_ops + 30 in float8_ops)
 
 ## Constitution Check
 

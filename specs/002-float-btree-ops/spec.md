@@ -72,7 +72,7 @@ Users evaluating this extension need clear, concise documentation that addresses
 - **Subnormal floats**: Very small float values near zero should compare correctly with integer 0
 - **User literal confusion**: Users may expect `WHERE int_col = 16777217.0::float4` to match 16777217, but the literal rounds to 16777216.0 before comparison; documentation must clarify this is float representation, not extension behavior
 - **Float precision loss is permanent**: Once a value is stored or passed as float, precision loss is irreversible. Float parameters lose precision at bind time. Use integer or numeric parameter types to preserve precision.
-- **Equivalence expressions**: Users migrating to/from the extension need equivalent expressions: with extension use `int_col::float4 = float4_col` for stock behavior; without extension use `int_col::numeric = float_col::numeric` for exact behavior (no index support).
+- **Equivalence expressions**: Users migrating to/from the extension need equivalent expressions: with extension use `int8_col::float8 = float4_col::float8` for stock behavior (both sides cast to float8); without extension use `int_col::numeric = float_col::numeric` for exact behavior (no index support).
 
 ## Requirements *(mandatory)*
 
@@ -87,10 +87,10 @@ Users evaluating this extension need clear, concise documentation that addresses
 - **FR-007**: Builtin same-type float operators MUST be added to `integer_ops` to enable sorting within family context
 - **FR-008**: Equality operators MUST have MERGES property to enable merge join optimization
 - **FR-009**: Documentation MUST be shortened by at least 20% word count while maintaining accuracy
-- **FR-011**: Documentation MUST directly address the "non-standard operators" concern with explanation of correctness guarantees
-- **FR-012**: All SQL examples in user documentation MUST have corresponding tests in sql/doc_examples.sql per constitution.md
-- **FR-013**: Documentation SQL examples MUST follow constitution.md formatting (UPPERCASE keywords, lowercase identifiers)
-- **FR-014**: Documentation MUST include equivalence expressions: (a) with extension, emulate stock via `int_col::float = float_col`; (b) without extension, emulate exact via `int_col::numeric = float_col::numeric`
+- **FR-010**: Documentation MUST directly address the "non-standard operators" concern with explanation of correctness guarantees
+- **FR-011**: All SQL examples in user documentation MUST have corresponding tests in sql/doc_examples.sql per constitution.md
+- **FR-012**: Documentation SQL examples MUST follow constitution.md formatting (UPPERCASE keywords, lowercase identifiers)
+- **FR-013**: Documentation MUST include equivalence expressions: (a) with extension, emulate stock via `int8_col::float8 = float4_col::float8`; (b) without extension, emulate exact via `int_col::numeric = float_col::numeric`
 
 ### Assumptions
 
@@ -106,8 +106,8 @@ Users evaluating this extension need clear, concise documentation that addresses
 
 - **SC-001**: Merge join queries between integer and float columns complete successfully with correct results
 - **SC-002**: EXPLAIN output for cross-type joins shows "Merge Join" when hash join and nested loop are disabled
-- **SC-003**: Query planner can perform transitive inference for chained int-float-int conditions (verified via EXPLAIN)
-- **SC-004**: All 72 int x float operators appear in both appropriate btree families (verified via pg_amop query)
+- **SC-003**: Query planner can perform transitive inference for chained int-float-int conditions (verified via EXPLAIN output showing predicate simplification or index usage)
+- **SC-004**: All 130 btree family entries added (70 in integer_ops + 30 in float4_ops + 30 in float8_ops) verified via pg_amop query
 - **SC-005**: Documentation word count reduced by at least 20% from v1.0.0
 - **SC-006**: doc-example-reviewer reports 100% compliance (all examples have tests)
 - **SC-007**: DROP EXTENSION cleanly removes all added pg_amop entries
