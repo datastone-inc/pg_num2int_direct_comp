@@ -1,9 +1,9 @@
 -- Test: Merge Join Support for Direct Numeric-Integer Comparison
 -- Purpose: Verify that operators enable merge joins with symmetric registration in both families
 -- Rationale: Operators ARE mathematically transitive and safe to add to BOTH integer_ops AND
---            numeric_ops btree families. Research confirms: if A = B (no fractional part) and 
---            B = C, then A = C. If A = B returns false (has fractional part), transitive chain 
---            correctly propagates inequality. Example: 10.5 = 10 → false, so (10.5 = 10) AND 
+--            numeric_ops btree families. Research confirms: if A = B (no fractional part) and
+--            B = C, then A = C. If A = B returns false (has fractional part), transitive chain
+--            correctly propagates inequality. Example: 10.5 = 10 → false, so (10.5 = 10) AND
 --            (10 = X) → false regardless of X.
 --
 -- Implementation: Equality operators added to:
@@ -41,8 +41,8 @@ SET enable_hashjoin = off;
 -- Test 1: Verify merge join works for int4 = numeric
 \echo '=== Test 1: Merge Join for int4 = numeric ==='
 EXPLAIN (COSTS OFF)
-SELECT COUNT(*) 
-FROM merge_int4 i 
+SELECT COUNT(*)
+FROM merge_int4 i
 JOIN merge_numeric n ON i.val = n.val;
 
 -- Expected: Merge Join
@@ -52,7 +52,7 @@ JOIN merge_numeric n ON i.val = n.val;
 
 -- Test 2: Verify operators ARE in both integer_ops AND numeric_ops families
 \echo '=== Test 2: Operator Family Membership Check ==='
-SELECT 
+SELECT
     op.oprname,
     op.oprleft::regtype,
     op.oprright::regtype,
@@ -71,7 +71,7 @@ ORDER BY op.oprname, op.oprleft, op.oprright;
 
 -- Test 3: Verify symmetric registration in integer_ops
 \echo '=== Test 3: Integer Ops Family Membership ==='
-SELECT 
+SELECT
     op.oprname,
     op.oprleft::regtype,
     op.oprright::regtype,
@@ -143,7 +143,7 @@ SELECT i.val_int4, f.val_float4
 FROM merge_int_float i
 JOIN merge_float_test f ON i.val_int4 = f.val_float4;
 
--- Test int4 x float8 merge join  
+-- Test int4 x float8 merge join
 EXPLAIN (COSTS OFF, BUFFERS OFF)
 SELECT i.val_int4, f.val_float8
 FROM merge_int_float i
@@ -152,18 +152,18 @@ JOIN merge_float_test f ON i.val_int4 = f.val_float8;
 -- Verify btree operator family registrations
 \echo '=== Test 6: Btree Family Registration Verification ==='
 SELECT COUNT(*) as float_ops_operators
-FROM pg_amop 
+FROM pg_amop
 WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'float_ops' AND opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree'));
 
-SELECT COUNT(*) as integer_ops_operators  
-FROM pg_amop 
+SELECT COUNT(*) as integer_ops_operators
+FROM pg_amop
 WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'integer_ops' AND opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree'));
 
 -- Test MERGES property on equality operators (required for merge joins)
 \echo '=== Test 7: MERGES Property Verification ==='
 SELECT COUNT(*) as merges_equality_operators
-FROM pg_operator 
-WHERE oprname = '=' 
+FROM pg_operator
+WHERE oprname = '='
   AND oprcanmerge = true
   AND ((oprleft = 'int4'::regtype AND oprright = 'float4'::regtype) OR
        (oprleft = 'float4'::regtype AND oprright = 'int4'::regtype) OR
@@ -176,14 +176,99 @@ WHERE oprname = '='
 
 -- Reset join settings
 RESET enable_hashjoin;
-RESET enable_nestloop; 
+RESET enable_nestloop;
 RESET enable_mergejoin;
 
 DROP TABLE merge_int_float;
 DROP TABLE merge_float_test;
 
+-- Feature 002: Float-Integer Merge Join Tests
+\echo '=== Feature 002: Float-Integer Merge Join Tests ==='
+
+-- Create test tables for float x integer merge joins
+CREATE TEMPORARY TABLE merge_int4_float (id SERIAL PRIMARY KEY, val INT4);
+CREATE TEMPORARY TABLE merge_float4 (id SERIAL PRIMARY KEY, val FLOAT4);
+CREATE TEMPORARY TABLE merge_float8_ext (id SERIAL PRIMARY KEY, val FLOAT8);
+CREATE TEMPORARY TABLE merge_int8_float (id SERIAL PRIMARY KEY, val INT8);
+
+-- Populate with matching values (ensuring exact float representation)
+INSERT INTO merge_int4_float (val) SELECT generate_series(1, 1000);
+INSERT INTO merge_float4 (val) SELECT generate_series(1, 1000)::float4;
+INSERT INTO merge_float8_ext (val) SELECT generate_series(1, 1000)::float8;
+INSERT INTO merge_int8_float (val) SELECT generate_series(1, 1000)::int8;
+
+-- Create indexes on all tables
+CREATE INDEX idx_merge_int4_float_val ON merge_int4_float(val);
+CREATE INDEX idx_merge_float4_val ON merge_float4(val);
+CREATE INDEX idx_merge_float8_ext_val ON merge_float8_ext(val);
+CREATE INDEX idx_merge_int8_float_val ON merge_int8_float(val);
+
+-- Analyze tables
+ANALYZE merge_int4_float;
+ANALYZE merge_float4;
+ANALYZE merge_float8_ext;
+ANALYZE merge_int8_float;
+
+-- Force merge join by disabling other strategies
+SET enable_hashjoin = off;
+SET enable_nestloop = off;
+
+-- T008 [US1] Add merge join test for int4 x float4 (verify EXPLAIN shows Merge Join)
+\echo '=== Test: Merge Join for int4 = float4 ==='
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*)
+FROM merge_int4_float i
+JOIN merge_float4 f ON i.val = f.val;
+
+SELECT COUNT(*) AS "int4_float4_matches"
+FROM merge_int4_float i
+JOIN merge_float4 f ON i.val = f.val;
+
+-- T009 [US1] Add merge join test for int4 x float8
+\echo '=== Test: Merge Join for int4 = float8 ==='
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*)
+FROM merge_int4_float i
+JOIN merge_float8_ext f ON i.val = f.val;
+
+SELECT COUNT(*) AS "int4_float8_matches"
+FROM merge_int4_float i
+JOIN merge_float8_ext f ON i.val = f.val;
+
+-- T010 [US1] Add merge join test for int8 x float4
+\echo '=== Test: Merge Join for int8 = float4 ==='
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*)
+FROM merge_int8_float i
+JOIN merge_float4 f ON i.val = f.val;
+
+SELECT COUNT(*) AS "int8_float4_matches"
+FROM merge_int8_float i
+JOIN merge_float4 f ON i.val = f.val;
+
+-- T011 [US1] Add merge join test for int8 x float8
+\echo '=== Test: Merge Join for int8 = float8 ==='
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*)
+FROM merge_int8_float i
+JOIN merge_float8_ext f ON i.val = f.val;
+
+SELECT COUNT(*) AS "int8_float8_matches"
+FROM merge_int8_float i
+JOIN merge_float8_ext f ON i.val = f.val;
+
+-- Reset join settings
+RESET enable_hashjoin;
+RESET enable_nestloop;
+
+-- Cleanup float merge join test tables
+DROP TABLE merge_int4_float;
+DROP TABLE merge_float4;
+DROP TABLE merge_float8_ext;
+DROP TABLE merge_int8_float;
+
 -- Test 6: Explain why merge joins are now safe
-\echo '=== Test 5: Why Merge Joins Are Safe ==='
+\echo '=== Test 6: Why Merge Joins Are Safe ==='
 \echo 'Operators are mathematically transitive for exact comparison semantics:'
 \echo '  - If both (A = B) and (B = C) return TRUE, then B must be an exact integer'
 \echo '  - This makes (A = C) guaranteed to be TRUE - transitive inference is valid'

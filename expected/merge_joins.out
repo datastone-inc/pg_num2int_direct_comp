@@ -12,7 +12,6 @@
 --                 This symmetric registration allows PostgreSQL to use merge join strategy.
 -- Load extension
 CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
-NOTICE:  extension "pg_num2int_direct_comp" already exists, skipping
 -- Create test tables
 CREATE TEMPORARY TABLE merge_int4 (id SERIAL PRIMARY KEY, val INT4);
 CREATE TEMPORARY TABLE merge_numeric (id SERIAL PRIMARY KEY, val NUMERIC);
@@ -262,7 +261,7 @@ WHERE oprname = '='
        (oprleft = 'float8'::regtype AND oprright = 'int8'::regtype));
  merges_equality_operators 
 ---------------------------
-                         5
+                         7
 (1 row)
 
 -- Reset join settings
@@ -271,9 +270,145 @@ RESET enable_nestloop;
 RESET enable_mergejoin;
 DROP TABLE merge_int_float;
 DROP TABLE merge_float_test;
+-- Feature 002: Float-Integer Merge Join Tests
+\echo '=== Feature 002: Float-Integer Merge Join Tests ==='
+=== Feature 002: Float-Integer Merge Join Tests ===
+-- Create test tables for float x integer merge joins
+CREATE TEMPORARY TABLE merge_int4_float (id SERIAL PRIMARY KEY, val INT4);
+CREATE TEMPORARY TABLE merge_float4 (id SERIAL PRIMARY KEY, val FLOAT4);
+CREATE TEMPORARY TABLE merge_float8_ext (id SERIAL PRIMARY KEY, val FLOAT8);
+CREATE TEMPORARY TABLE merge_int8_float (id SERIAL PRIMARY KEY, val INT8);
+-- Populate with matching values (ensuring exact float representation)
+INSERT INTO merge_int4_float (val) SELECT generate_series(1, 1000);
+INSERT INTO merge_float4 (val) SELECT generate_series(1, 1000)::float4;
+INSERT INTO merge_float8_ext (val) SELECT generate_series(1, 1000)::float8;
+INSERT INTO merge_int8_float (val) SELECT generate_series(1, 1000)::int8;
+-- Create indexes on all tables
+CREATE INDEX idx_merge_int4_float_val ON merge_int4_float(val);
+CREATE INDEX idx_merge_float4_val ON merge_float4(val);
+CREATE INDEX idx_merge_float8_ext_val ON merge_float8_ext(val);
+CREATE INDEX idx_merge_int8_float_val ON merge_int8_float(val);
+-- Analyze tables
+ANALYZE merge_int4_float;
+ANALYZE merge_float4;
+ANALYZE merge_float8_ext;
+ANALYZE merge_int8_float;
+-- Force merge join by disabling other strategies
+SET enable_hashjoin = off;
+SET enable_nestloop = off;
+-- T008 [US1] Add merge join test for int4 x float4 (verify EXPLAIN shows Merge Join)
+\echo '=== Test: Merge Join for int4 = float4 ==='
+=== Test: Merge Join for int4 = float4 ===
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*) 
+FROM merge_int4_float i 
+JOIN merge_float4 f ON i.val = f.val;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Aggregate
+   ->  Merge Join
+         Merge Cond: (f.val = i.val)
+         ->  Index Only Scan using idx_merge_float4_val on merge_float4 f
+         ->  Sort
+               Sort Key: i.val
+               ->  Seq Scan on merge_int4_float i
+(7 rows)
+
+SELECT COUNT(*) AS "int4_float4_matches"
+FROM merge_int4_float i 
+JOIN merge_float4 f ON i.val = f.val;
+ int4_float4_matches 
+---------------------
+                1000
+(1 row)
+
+-- T009 [US1] Add merge join test for int4 x float8
+\echo '=== Test: Merge Join for int4 = float8 ==='
+=== Test: Merge Join for int4 = float8 ===
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*) 
+FROM merge_int4_float i 
+JOIN merge_float8_ext f ON i.val = f.val;
+                                    QUERY PLAN                                    
+----------------------------------------------------------------------------------
+ Aggregate
+   ->  Nested Loop
+         ->  Seq Scan on merge_float8_ext f
+         ->  Index Only Scan using idx_merge_int4_float_val on merge_int4_float i
+               Index Cond: (val = f.val)
+(5 rows)
+
+SELECT COUNT(*) AS "int4_float8_matches"
+FROM merge_int4_float i 
+JOIN merge_float8_ext f ON i.val = f.val;
+ int4_float8_matches 
+---------------------
+                1000
+(1 row)
+
+-- T010 [US1] Add merge join test for int8 x float4  
+\echo '=== Test: Merge Join for int8 = float4 ==='
+=== Test: Merge Join for int8 = float4 ===
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*) 
+FROM merge_int8_float i 
+JOIN merge_float4 f ON i.val = f.val;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Aggregate
+   ->  Merge Join
+         Merge Cond: (f.val = i.val)
+         ->  Index Only Scan using idx_merge_float4_val on merge_float4 f
+         ->  Sort
+               Sort Key: i.val
+               ->  Seq Scan on merge_int8_float i
+(7 rows)
+
+SELECT COUNT(*) AS "int8_float4_matches"
+FROM merge_int8_float i 
+JOIN merge_float4 f ON i.val = f.val;
+ int8_float4_matches 
+---------------------
+                1000
+(1 row)
+
+-- T011 [US1] Add merge join test for int8 x float8
+\echo '=== Test: Merge Join for int8 = float8 ==='
+=== Test: Merge Join for int8 = float8 ===
+EXPLAIN (COSTS OFF)
+SELECT COUNT(*) 
+FROM merge_int8_float i 
+JOIN merge_float8_ext f ON i.val = f.val;
+                                    QUERY PLAN                                    
+----------------------------------------------------------------------------------
+ Aggregate
+   ->  Merge Join
+         Merge Cond: (f.val = i.val)
+         ->  Index Only Scan using idx_merge_float8_ext_val on merge_float8_ext f
+         ->  Sort
+               Sort Key: i.val
+               ->  Seq Scan on merge_int8_float i
+(7 rows)
+
+SELECT COUNT(*) AS "int8_float8_matches"
+FROM merge_int8_float i 
+JOIN merge_float8_ext f ON i.val = f.val;
+ int8_float8_matches 
+---------------------
+                1000
+(1 row)
+
+-- Reset join settings
+RESET enable_hashjoin;
+RESET enable_nestloop;
+-- Cleanup float merge join test tables
+DROP TABLE merge_int4_float;
+DROP TABLE merge_float4;
+DROP TABLE merge_float8_ext;
+DROP TABLE merge_int8_float;
 -- Test 6: Explain why merge joins are now safe
-\echo '=== Test 5: Why Merge Joins Are Safe ==='
-=== Test 5: Why Merge Joins Are Safe ===
+\echo '=== Test 6: Why Merge Joins Are Safe ==='
+=== Test 6: Why Merge Joins Are Safe ===
 \echo 'Operators are mathematically transitive for exact comparison semantics:'
 Operators are mathematically transitive for exact comparison semantics:
 \echo '  - If both (A = B) and (B = C) return TRUE, then B must be an exact integer'

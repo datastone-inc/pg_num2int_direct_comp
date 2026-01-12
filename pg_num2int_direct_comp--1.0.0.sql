@@ -559,7 +559,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -570,7 +571,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 -- Commutator Inequality Operators

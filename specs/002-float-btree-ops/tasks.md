@@ -48,15 +48,15 @@
 
 ### Tests for User Story 1
 
-- [ ] T008 [US1] Add merge join test for int4 x float4 in sql/float_int_ops.sql (verify EXPLAIN shows Merge Join)
-- [ ] T009 [P] [US1] Add merge join test for int4 x float8 in sql/float_int_ops.sql
-- [ ] T010 [P] [US1] Add merge join test for int8 x float4 in sql/float_int_ops.sql
-- [ ] T011 [P] [US1] Add merge join test for int8 x float8 in sql/float_int_ops.sql
-- [ ] T012 [US1] Add pg_amop catalog verification query for float4_ops btree in sql/float_int_ops.sql (expect 30 entries)
-- [ ] T013 [P] [US1] Add pg_amop catalog verification query for float8_ops btree in sql/float_int_ops.sql (expect 30 entries)
-- [ ] T014 [P] [US1] Add pg_amop catalog verification query for integer_ops btree float entries in sql/float_int_ops.sql (expect 70 entries)
-- [ ] T014a [P] [US1] Add pg_operator verification query to confirm MERGES property on equality operators (FR-008)
-- [ ] T015 [US1] Run regression test and capture expected/float_int_ops.out
+- [X] T008 [US1] Add merge join test for int4 x float4 in sql/float_int_ops.sql (verify EXPLAIN shows Merge Join)
+- [X] T009 [P] [US1] Add merge join test for int4 x float8 in sql/float_int_ops.sql
+- [X] T010 [P] [US1] Add merge join test for int8 x float4 in sql/float_int_ops.sql
+- [X] T011 [P] [US1] Add merge join test for int8 x float8 in sql/float_int_ops.sql
+- [X] T012 [US1] Add pg_amop catalog verification query for float4_ops btree in sql/float_int_ops.sql (expect 30 entries)
+- [X] T013 [P] [US1] Add pg_amop catalog verification query for float8_ops btree in sql/float_int_ops.sql (expect 30 entries)
+- [X] T014 [P] [US1] Add pg_amop catalog verification query for integer_ops btree float entries in sql/float_int_ops.sql (expect 70 entries)
+- [X] T014a [P] [US1] Add pg_operator verification query to confirm MERGES property on equality operators (FR-008)
+- [X] T015 [US1] Run regression test and capture expected/float_int_ops.out
 
 **Checkpoint**: Merge join functionality verified - US1 complete
 
@@ -70,13 +70,13 @@
 
 ### Tests for User Story 2
 
-- [ ] T016 [US2] Add transitivity test for int4 = float4 = int4 chain in sql/float_int_ops.sql
-- [ ] T017 [P] [US2] Add transitivity test for int8 = float8 = int8 chain in sql/float_int_ops.sql
-- [ ] T018 [P] [US2] Add NaN transitivity test (NaN = NaN, NaN > all non-NaN) in sql/float_int_ops.sql
-- [ ] T019 [P] [US2] Add +/-Infinity ordering test (-Inf < all ints < +Inf) in sql/float_int_ops.sql
-- [ ] T020 [US2] Add precision boundary transitivity test (16777216 boundary for float4) in sql/float_int_ops.sql
-- [ ] T020a [US2] Add EXPLAIN test for transitive inference (verify planner simplifies chained conditions) in sql/float_int_ops.sql
-- [ ] T021 [US2] Update expected/float_int_ops.out with transitivity test results
+- [X] T016 [US2] Add transitivity test for int4 = float4 = int4 chain in sql/float_int_ops.sql
+- [X] T017 [P] [US2] Add transitivity test for int8 = float8 = int8 chain in sql/float_int_ops.sql
+- [X] T018 [P] [US2] Add NaN transitivity test (NaN = NaN, NaN > all non-NaN) in sql/float_int_ops.sql
+- [X] T019 [P] [US2] Add +/-Infinity ordering test (-Inf < all ints < +Inf) in sql/float_int_ops.sql
+- [X] T020 [US2] Add precision boundary transitivity test (16777216 boundary for float4) in sql/float_int_ops.sql
+- [X] T020a [US2] Add EXPLAIN test for transitive inference (verify planner simplifies chained conditions) in sql/float_int_ops.sql
+- [X] T021 [US2] Update expected/float_int_ops.out with transitivity test results
 
 **Checkpoint**: Transitivity proven - US2 complete
 
