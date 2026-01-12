@@ -16,8 +16,7 @@
  * Implements exact comparison operators (=, <>, <, >, <=, >=) between
  * inexact numeric types (numeric, float4, float8) and integer types
  * (int2, int4, int8). Comparisons detect precision mismatches and
- * support btree index optimization via SupportRequestSimplify and
- * SupportRequestIndexCondition.
+ * support btree index optimization via SupportRequestSimplify.
  */
 
 #include "pg_num2int_direct_comp.h"
@@ -409,9 +408,9 @@ _PG_init(void)
 
     /* Define GUC for enabling/disabling support functions */
     DefineCustomBoolVariable("pg_num2int_direct_comp.enableSupportFunctions",
-                           "Enable SupportRequestSimplify and SupportRequestIndexCondition optimizations",
+                           "Enable SupportRequestSimplify optimization",
                            "When enabled, allows the extension to optimize queries by transforming "
-                           "cross-type comparisons into same-type comparisons. "
+                           "cross-type comparisons into same-type comparisons at plan time. "
                            "Disable for testing or if optimization causes issues.",
                            &enableSupportFunctions,
                            true,                /* boot_val */
@@ -610,8 +609,7 @@ initOidCache(OperatorOidCache *cache) {
  * ============================================================================
  * Support Function Helper Types and Functions
  * ============================================================================
- * These helpers are shared between SupportRequestIndexCondition and
- * SupportRequestSimplify handlers to avoid code duplication.
+ * These helpers are used by the SupportRequestSimplify handler.
  */
 
 /**
@@ -624,30 +622,6 @@ typedef struct {
   bool outOfRangeLow;    /**< True if floor is below integer type min */
   int64 intVal;          /**< Converted integer value (floor) */
 } ConstConversion;
-
-/**
- * @brief Classify an operator OID into OpType
- * @param opno Operator OID
- * @return OpType classification
- *
- * Uses the precomputed lookup array in the OID cache for O(n) lookup.
- * The array is populated once per backend during initOidCache().
- */
-static OpType
-classifyOperator(Oid opno) {
-
-  /* Initialize cache if needed */
-  initOidCache(&oidCache);
-
-  /* Linear scan through the lookup array */
-  for (int i = 0; i < oidCache.count; i++) {
-    if (oidCache.ops[i].oid == opno) {
-      return oidCache.ops[i].type;
-    }
-  }
-
-  return OP_TYPE_UNKNOWN;
-}
 
 /**
  * @brief Find operator OID from function OID by searching cached operators
@@ -981,16 +955,18 @@ computeRangeTransform(OpType opType, Oid intType, int64 intVal,
  */
 
 /**
- * @brief Generic support function for query optimization
+ * @brief Support function for query optimization via SupportRequestSimplify
  * @param fcinfo Function call context
- * @return Node pointer or NULL
+ * @return Node pointer for simplified expression or NULL
  *
- * Handles two request types:
- * - SupportRequestIndexCondition: Transforms predicates for btree index scans
- * - SupportRequestSimplify: Simplifies constant predicates (FR-015, FR-016, FR-017)
- *   - FR-015: Equality with fractional value → FALSE
- *   - FR-016: Equality with exact integer → native operator
- *   - FR-017: Range with fraction → adjusted boundary
+ * Simplifies constant predicates during query planning:
+ * - Equality with fractional value → FALSE (no integer can equal a fraction)
+ * - Equality with exact integer → native integer operator (enables index use)
+ * - Range with fraction → adjusted boundary (e.g., > 10.5 becomes >= 11)
+ * - Out-of-range constants → TRUE/FALSE based on operator semantics
+ *
+ * Index optimization works because transformed expressions use native integer
+ * operators which the planner automatically recognizes for btree index scans.
  */
 PG_FUNCTION_INFO_V1(num2int_support);
 Datum
@@ -1001,111 +977,7 @@ num2int_support(PG_FUNCTION_ARGS) {
   /* Initialize OID cache on first use */
   initOidCache(&oidCache);
 
-  if (IsA(rawreq, SupportRequestIndexCondition)) {
-    /*
-     * SupportRequestIndexCondition: Transform predicates for btree index scans
-     */
-    SupportRequestIndexCondition *req = (SupportRequestIndexCondition *) rawreq;
-    OpExpr *clause;
-    Oid opno;
-    Node *leftop;
-    Node *rightop;
-    Var *varNode = NULL;
-    Const *constNode = NULL;
-    OpType opType;
-    Oid intType;
-    ConstConversion conv;
-    int64 adjustedVal;
-    Oid nativeOpOid;
-    OpExpr *newClause;
-
-    /* Check if support functions are disabled via GUC */
-    if (!enableSupportFunctions) {
-      PG_RETURN_POINTER(NULL);
-    }
-
-    req->lossy = false;
-
-    if (!is_opclause(req->node)) {
-      PG_RETURN_POINTER(NULL);
-    }
-
-    clause = (OpExpr *) req->node;
-    opno = clause->opno;
-
-    if (list_length(clause->args) != 2) {
-      PG_RETURN_POINTER(NULL);
-    }
-
-    leftop = (Node *) linitial(clause->args);
-    rightop = (Node *) lsecond(clause->args);
-
-    /* Identify Var and Const positions */
-    if (IsA(leftop, Const) && IsA(rightop, Var)) {
-      constNode = (Const *) leftop;
-      varNode = (Var *) rightop;
-    } else if (IsA(leftop, Var) && IsA(rightop, Const)) {
-      varNode = (Var *) leftop;
-      constNode = (Const *) rightop;
-    } else {
-      PG_RETURN_POINTER(NULL);
-    }
-
-    /* Classify the operator */
-    opType = classifyOperator(opno);
-    if (opType == OP_TYPE_UNKNOWN) {
-      PG_RETURN_POINTER(NULL);
-    }
-
-    /* Convert constant to integer */
-    intType = varNode->vartype;
-    conv = convertConstToInt(constNode, intType);
-    if (!conv.valid) {
-      PG_RETURN_POINTER(NULL);
-    }
-
-    /* For equality with fractional value, index scan won't help - return NULL */
-    if (opType == OP_TYPE_EQ && conv.hasFraction) {
-      elog(DEBUG1, "SupportRequestSimplify: returning NULL for fractional equality");
-      PG_RETURN_POINTER(NULL);
-    }
-
-    /* Compute the native operator and adjusted value */
-    adjustedVal = conv.intVal;
-
-    if (opType == OP_TYPE_EQ || opType == OP_TYPE_NE) {
-      nativeOpOid = getNativeOpOid(opType, intType);
-    } else {
-      bool isAlwaysTrue, isAlwaysFalse;
-      nativeOpOid = computeRangeTransform(opType, intType, conv.intVal,
-                                          conv.hasFraction, &adjustedVal,
-                                          &isAlwaysTrue, &isAlwaysFalse);
-      /*
-       * For trivially true/false predicates, still provide an index condition.
-       * - alwaysTrue: use <= typeMax (full scan via index, but preserves index usage)
-       * - alwaysFalse: use > typeMax (empty result, index can short-circuit)
-       */
-      if (isAlwaysTrue) {
-        int64 typeMax = (intType == INT2OID) ? PG_INT16_MAX :
-                        (intType == INT4OID) ? PG_INT32_MAX : PG_INT64_MAX;
-        nativeOpOid = getNativeOpOid(OP_TYPE_LE, intType);
-        adjustedVal = typeMax;
-      } else if (isAlwaysFalse) {
-        int64 typeMax = (intType == INT2OID) ? PG_INT16_MAX :
-                        (intType == INT4OID) ? PG_INT32_MAX : PG_INT64_MAX;
-        nativeOpOid = getNativeOpOid(OP_TYPE_GT, intType);
-        adjustedVal = typeMax;
-      }
-    }
-
-    /* Build transformed expression */
-    newClause = buildNativeOpExpr(nativeOpOid, varNode, adjustedVal,
-                                  intType, clause->location,
-                                  clause->inputcollid);
-
-    ret = (Node *) list_make1(newClause);
-  }
-  else if (IsA(rawreq, SupportRequestSimplify)) {
+  if (IsA(rawreq, SupportRequestSimplify)) {
     /*
      * SupportRequestSimplify: Transform constant predicates at simplification time
      *
