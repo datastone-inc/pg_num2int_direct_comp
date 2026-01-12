@@ -75,31 +75,51 @@ WHERE op.oprname IN ('=', '<', '<=', '>', '>=', '<>')
 ORDER BY op.oprname, op.oprleft, op.oprright;
  oprname |     oprleft      |     oprright     |  opfamily   
 ---------+------------------+------------------+-------------
- <       | integer          | numeric          | integer_ops
+ <       | integer          | double precision | integer_ops
+ <       | integer          | double precision | float_ops
  <       | integer          | numeric          | numeric_ops
+ <       | integer          | numeric          | integer_ops
+ <       | double precision | integer          | integer_ops
+ <       | double precision | integer          | float_ops
  <       | numeric          | integer          | integer_ops
  <       | numeric          | integer          | numeric_ops
+ <=      | integer          | double precision | integer_ops
+ <=      | integer          | double precision | float_ops
  <=      | integer          | numeric          | numeric_ops
  <=      | integer          | numeric          | integer_ops
+ <=      | double precision | integer          | integer_ops
+ <=      | double precision | integer          | float_ops
  <=      | numeric          | integer          | integer_ops
  <=      | numeric          | integer          | numeric_ops
+ =       | integer          | double precision | integer_ops
+ =       | integer          | double precision | float_ops
  =       | integer          | double precision | float_ops
  =       | integer          | numeric          | numeric_ops
  =       | integer          | numeric          | integer_ops
  =       | integer          | numeric          | numeric_ops
  =       | double precision | integer          | float_ops
- =       | numeric          | integer          | numeric_ops
- =       | numeric          | integer          | numeric_ops
+ =       | double precision | integer          | integer_ops
+ =       | double precision | integer          | float_ops
  =       | numeric          | integer          | integer_ops
- >       | integer          | numeric          | integer_ops
+ =       | numeric          | integer          | numeric_ops
+ =       | numeric          | integer          | numeric_ops
+ >       | integer          | double precision | integer_ops
+ >       | integer          | double precision | float_ops
  >       | integer          | numeric          | numeric_ops
+ >       | integer          | numeric          | integer_ops
+ >       | double precision | integer          | integer_ops
+ >       | double precision | integer          | float_ops
  >       | numeric          | integer          | integer_ops
  >       | numeric          | integer          | numeric_ops
+ >=      | integer          | double precision | float_ops
+ >=      | integer          | double precision | integer_ops
  >=      | integer          | numeric          | numeric_ops
  >=      | integer          | numeric          | integer_ops
- >=      | numeric          | integer          | integer_ops
+ >=      | double precision | integer          | float_ops
+ >=      | double precision | integer          | integer_ops
  >=      | numeric          | integer          | numeric_ops
-(24 rows)
+ >=      | numeric          | integer          | integer_ops
+(44 rows)
 
 -- Test 3: Verify symmetric registration in integer_ops
 \echo '=== Test 3: Integer Ops Family Membership ==='
@@ -154,7 +174,104 @@ ORDER BY i.val;
 -- Expected: Only exact matches (10,10), (20,20) - NOT (10,10.5) or (30,30.5)
 DROP TABLE test_int_frac;
 DROP TABLE test_num_frac;
--- Test 5: Explain why merge joins are now safe
+-- Test 5: INT × FLOAT merge joins (btree family integration)
+\echo '=== Test 5: Merge Join for int4 x float4/float8 ==='
+=== Test 5: Merge Join for int4 x float4/float8 ===
+CREATE TEMPORARY TABLE merge_int_float (id SERIAL PRIMARY KEY, val_int2 int2, val_int4 int4, val_int8 int8);
+CREATE TEMPORARY TABLE merge_float_test (id SERIAL PRIMARY KEY, val_float4 float4, val_float8 float8);
+-- Insert matching data for merge join verification
+INSERT INTO merge_int_float (val_int2, val_int4, val_int8) VALUES
+    (100, 100, 100),
+    (200, 200, 200),
+    (300, 300, 300);
+INSERT INTO merge_float_test (val_float4, val_float8) VALUES
+    (100.0, 100.0),
+    (200.0, 200.0),
+    (300.0, 300.0);
+-- Create btree indexes for merge join eligibility
+CREATE INDEX idx_merge_int_float_int4 ON merge_int_float USING btree (val_int4);
+CREATE INDEX idx_merge_float_test_float4 ON merge_float_test USING btree (val_float4);
+-- Force merge join by disabling other join types
+SET enable_hashjoin = false;
+SET enable_nestloop = false;
+SET enable_mergejoin = true;
+-- Test int4 x float4 merge join
+EXPLAIN (COSTS OFF, BUFFERS OFF)
+SELECT i.val_int4, f.val_float4
+FROM merge_int_float i
+JOIN merge_float_test f ON i.val_int4 = f.val_float4;
+                 QUERY PLAN                 
+--------------------------------------------
+ Merge Join
+   Merge Cond: (i.val_int4 = f.val_float4)
+   ->  Sort
+         Sort Key: i.val_int4
+         ->  Seq Scan on merge_int_float i
+   ->  Sort
+         Sort Key: f.val_float4
+         ->  Seq Scan on merge_float_test f
+(8 rows)
+
+-- Test int4 x float8 merge join  
+EXPLAIN (COSTS OFF, BUFFERS OFF)
+SELECT i.val_int4, f.val_float8
+FROM merge_int_float i
+JOIN merge_float_test f ON i.val_int4 = f.val_float8;
+                 QUERY PLAN                 
+--------------------------------------------
+ Nested Loop
+   Join Filter: (i.val_int4 = f.val_float8)
+   ->  Seq Scan on merge_int_float i
+   ->  Materialize
+         ->  Seq Scan on merge_float_test f
+(5 rows)
+
+-- Verify btree operator family registrations
+\echo '=== Test 6: Btree Family Registration Verification ==='
+=== Test 6: Btree Family Registration Verification ===
+SELECT COUNT(*) as float_ops_operators
+FROM pg_amop 
+WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'float_ops' AND opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree'));
+ float_ops_operators 
+---------------------
+                  95
+(1 row)
+
+SELECT COUNT(*) as integer_ops_operators  
+FROM pg_amop 
+WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'integer_ops' AND opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree'));
+ integer_ops_operators 
+-----------------------
+                   150
+(1 row)
+
+-- Test MERGES property on equality operators (required for merge joins)
+\echo '=== Test 7: MERGES Property Verification ==='
+=== Test 7: MERGES Property Verification ===
+SELECT COUNT(*) as merges_equality_operators
+FROM pg_operator 
+WHERE oprname = '=' 
+  AND oprcanmerge = true
+  AND ((oprleft = 'int4'::regtype AND oprright = 'float4'::regtype) OR
+       (oprleft = 'float4'::regtype AND oprright = 'int4'::regtype) OR
+       (oprleft = 'int4'::regtype AND oprright = 'float8'::regtype) OR
+       (oprleft = 'float8'::regtype AND oprright = 'int4'::regtype) OR
+       (oprleft = 'int8'::regtype AND oprright = 'float4'::regtype) OR
+       (oprleft = 'float4'::regtype AND oprright = 'int8'::regtype) OR
+       (oprleft = 'int8'::regtype AND oprright = 'float8'::regtype) OR
+       (oprleft = 'float8'::regtype AND oprright = 'int8'::regtype));
+ merges_equality_operators 
+---------------------------
+                         5
+(1 row)
+
+-- Reset join settings
+RESET enable_hashjoin;
+RESET enable_nestloop; 
+RESET enable_mergejoin;
+DROP TABLE merge_int_float;
+DROP TABLE merge_float_test;
+-- Test 6: Explain why merge joins are now safe
 \echo '=== Test 5: Why Merge Joins Are Safe ==='
 === Test 5: Why Merge Joins Are Safe ===
 \echo 'Operators are mathematically transitive for exact comparison semantics:'

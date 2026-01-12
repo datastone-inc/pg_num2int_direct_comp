@@ -62,7 +62,7 @@ SELECT i.val, n.val, COUNT(*) FROM hash_numeric n JOIN hash_int4 i ON n.val = i.
                   QUERY PLAN                  
 ----------------------------------------------
  HashAggregate
-   Group Key: i.val
+   Group Key: i.val, n.val
    ->  Hash Join
          Hash Cond: (i.val = n.val)
          ->  Seq Scan on hash_int4 i
@@ -120,7 +120,7 @@ SELECT DISTINCT i.val, n.val FROM hash_numeric n JOIN hash_int4 i ON n.val = i.v
                   QUERY PLAN                  
 ----------------------------------------------
  HashAggregate
-   Group Key: i.val
+   Group Key: i.val, n.val
    ->  Hash Join
          Hash Cond: (i.val = n.val)
          ->  Seq Scan on hash_int4 i

@@ -318,13 +318,13 @@ typedef struct OperatorOidCache {
  * boundaries avoids per-call int64_to_numeric() conversions during range checks.
  */
 typedef struct NumericBoundaryCache {
-  bool initialized;       /**< True after init_numeric_boundaries() completes */
-  Numeric int2_min;       /**< Numeric representation of PG_INT16_MIN */
-  Numeric int2_max;       /**< Numeric representation of PG_INT16_MAX */
-  Numeric int4_min;       /**< Numeric representation of PG_INT32_MIN */
-  Numeric int4_max;       /**< Numeric representation of PG_INT32_MAX */
-  Numeric int8_min;       /**< Numeric representation of PG_INT64_MIN */
-  Numeric int8_max;       /**< Numeric representation of PG_INT64_MAX */
+  bool initialized;       /**< True after initNumericBoundaries() completes */
+  Numeric int2Min;       /**< Numeric representation of PG_INT16_MIN */
+  Numeric int2Max;       /**< Numeric representation of PG_INT16_MAX */
+  Numeric int4Min;       /**< Numeric representation of PG_INT32_MIN */
+  Numeric int4Max;       /**< Numeric representation of PG_INT32_MAX */
+  Numeric int8Min;       /**< Numeric representation of PG_INT64_MIN */
+  Numeric int8Max;       /**< Numeric representation of PG_INT64_MAX */
 } NumericBoundaryCache;
 
 /**
@@ -335,7 +335,7 @@ typedef struct NumericBoundaryCache {
  *
  * @param cache Pointer to the cache structure to initialize
  */
-extern void init_numeric_boundaries(NumericBoundaryCache *cache);
+extern void initNumericBoundaries(NumericBoundaryCache *cache);
 
 /*
  * ============================================================================
@@ -369,7 +369,7 @@ extern bool num2int_numeric_is_integral(Numeric num);
  * @return true if conversion succeeded, false if out of range or has fraction
  * @note Returns false for NaN/Inf values
  */
-extern bool numeric_to_int64(Numeric num, int64 *result);
+extern bool numericToint64(Numeric num, int64 *result);
 
 /* Function declarations */
 
@@ -382,7 +382,7 @@ extern bool numeric_to_int64(Numeric num, int64 *result);
  *
  * @param cache Pointer to the cache structure to initialize
  */
-extern void init_oid_cache(OperatorOidCache *cache);
+extern void initOidCache(OperatorOidCache *cache);
 
 /**
  * @brief Generic support function for all comparison operators

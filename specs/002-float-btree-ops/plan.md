@@ -189,12 +189,19 @@ See [quickstart.md](quickstart.md) for developer quick reference.
    - Add float operators to integer_ops btree (for sort consistency)
    - Extend event trigger cleanup array
 
-2. **Regression Tests** (sql/, expected/)
+2. **C Implementation** (pg_num2int_direct_comp.c)
+   - Add GUC parameter `pg_num2int_direct_comp.enable_support_functions`
+   - Modify SupportRequestSimplify to check GUC and return early if disabled
+   - Modify SupportRequestIndexCondition to check GUC and return early if disabled
+
+3. **Regression Tests** (sql/, expected/)
    - float_int_ops.sql: btree family verification
    - merge_joins.sql: extend for float x int merge join tests
+   - extension_lifecycle.sql: test GUC configuration
+   - doc_examples.sql: add GUC examples from documentation
    - Verify DROP/CREATE extension cycle
 
-3. **Documentation Updates**
+4. **Documentation Updates**
    - README.md: reduce word count, add persuasive framing
    - doc/api-reference.md: add float btree info
    - doc/operator-reference.md: update tables

@@ -36,16 +36,31 @@
 #include "utils/numeric.h"
 #include "utils/syscache.h"
 #include "utils/inval.h"
+#include "utils/guc.h"
 #include "fmgr.h"
 #include <math.h>
 
 PG_MODULE_MAGIC;
 
+/* GUC variables */
+static bool enableSupportFunctions = true;
+
 /* Static per-backend OID cache */
-static OperatorOidCache oid_cache = {0};
+static OperatorOidCache oidCache = {
+  .count = 0,
+  .ops = {{.funcid = 0, .oid = 0, .type = OP_TYPE_UNKNOWN}}
+};
 
 /* Static per-backend Numeric boundary cache */
-static NumericBoundaryCache numeric_bounds = {false, NULL, NULL, NULL, NULL, NULL, NULL};
+static NumericBoundaryCache numericBounds = {
+  .initialized = false,
+  .int2Min = NULL,
+  .int2Max = NULL,
+  .int4Min = NULL,
+  .int4Max = NULL,
+  .int8Min = NULL,
+  .int8Max = NULL
+};
 
 /*
  * Pre-computed float boundaries for integer range checks.
@@ -73,7 +88,7 @@ static const float8 FLOAT8_INT64_MAX = (float8) PG_INT64_MAX;
  * These cached values avoid repeated int64_to_numeric() calls during range checks.
  */
 void
-init_numeric_boundaries(NumericBoundaryCache *cache)
+initNumericBoundaries(NumericBoundaryCache *cache)
 {
     MemoryContext oldcontext;
 
@@ -86,12 +101,12 @@ init_numeric_boundaries(NumericBoundaryCache *cache)
      */
     oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 
-    cache->int2_min = int64_to_numeric((int64) PG_INT16_MIN);
-    cache->int2_max = int64_to_numeric((int64) PG_INT16_MAX);
-    cache->int4_min = int64_to_numeric((int64) PG_INT32_MIN);
-    cache->int4_max = int64_to_numeric((int64) PG_INT32_MAX);
-    cache->int8_min = int64_to_numeric(PG_INT64_MIN);
-    cache->int8_max = int64_to_numeric(PG_INT64_MAX);
+    cache->int2Min = int64_to_numeric((int64) PG_INT16_MIN);
+    cache->int2Max = int64_to_numeric((int64) PG_INT16_MAX);
+    cache->int4Min = int64_to_numeric((int64) PG_INT32_MIN);
+    cache->int4Max = int64_to_numeric((int64) PG_INT32_MAX);
+    cache->int8Min = int64_to_numeric(PG_INT64_MIN);
+    cache->int8Max = int64_to_numeric(PG_INT64_MAX);
 
     MemoryContextSwitchTo(oldcontext);
 
@@ -197,7 +212,7 @@ num2int_numeric_is_integral(Numeric num)
  * conversion, avoiding the overhead of the standard numeric_int8() path.
  */
 bool
-numeric_to_int64(Numeric num, int64 *result)
+numericToint64(Numeric num, int64 *result)
 {
   int weight;
   int ndigits;
@@ -328,7 +343,7 @@ numeric_floor_to_int64(Numeric num, int64 *result)
   /* Check if value is integral (no fractional part) */
   if (ndigits <= integral_ndigits) {
     /* Integral - use existing extraction */
-    return numeric_to_int64(num, result);
+    return numericToint64(num, result);
   }
 
   /*
@@ -376,7 +391,7 @@ numeric_floor_to_int64(Numeric num, int64 *result)
 static void
 operator_cache_invalidation_callback(Datum arg, int cacheid, uint32 hashvalue)
 {
-    oid_cache.count = 0;
+    oidCache.count = 0;
 }
 
 /**
@@ -392,12 +407,26 @@ _PG_init(void)
     ereport(DEBUG1,
             (errmsg("pg_num2int_direct_comp: _PG_init() - registering OPEROID syscache callback")));
 
+    /* Define GUC for enabling/disabling support functions */
+    DefineCustomBoolVariable("pg_num2int_direct_comp.enableSupportFunctions",
+                           "Enable SupportRequestSimplify and SupportRequestIndexCondition optimizations",
+                           "When enabled, allows the extension to optimize queries by transforming "
+                           "cross-type comparisons into same-type comparisons. "
+                           "Disable for testing or if optimization causes issues.",
+                           &enableSupportFunctions,
+                           true,                /* boot_val */
+                           PGC_USERSET,        /* context */
+                           0,                  /* flags */
+                           NULL,               /* check_hook */
+                           NULL,               /* assign_hook */
+                           NULL);              /* show_hook */
+
     CacheRegisterSyscacheCallback(OPEROID,
                                   operator_cache_invalidation_callback,
                                   (Datum) 0);
 
     /* Initialize Numeric boundary cache for range checking */
-    init_numeric_boundaries(&numeric_bounds);
+    initNumericBoundaries(&numericBounds);
 }
 
 /**
@@ -409,7 +438,7 @@ _PG_init(void)
  * on first invocation of the support function and after cache invalidation.
  */
 void
-init_oid_cache(OperatorOidCache *cache) {
+initOidCache(OperatorOidCache *cache) {
   MemoryContext oldcontext;
   MemoryContext tmpcontext;
 
@@ -432,14 +461,14 @@ init_oid_cache(OperatorOidCache *cache) {
    * Looks up the operator by name and type pair, stores OID, funcid, and type.
    * Only adds to cache if operator is found (OidIsValid).
    */
-  #define ADD_OP(op_str, left_type, right_type, op_type) \
+  #define ADD_OP(op_str, left_type, right_type, opType) \
     do { \
       Oid _oid = OpernameGetOprid(list_make1(makeString(op_str)), \
                                   left_type, right_type); \
       if (OidIsValid(_oid)) { \
         cache->ops[cache->count].oid = _oid; \
         cache->ops[cache->count].funcid = get_opcode(_oid); \
-        cache->ops[cache->count].type = op_type; \
+        cache->ops[cache->count].type = opType; \
         cache->count++; \
       } \
     } while(0)
@@ -602,18 +631,18 @@ typedef struct {
  * @return OpType classification
  *
  * Uses the precomputed lookup array in the OID cache for O(n) lookup.
- * The array is populated once per backend during init_oid_cache().
+ * The array is populated once per backend during initOidCache().
  */
 static OpType
-classify_operator(Oid opno) {
+classifyOperator(Oid opno) {
 
   /* Initialize cache if needed */
-  init_oid_cache(&oid_cache);
+  initOidCache(&oidCache);
 
   /* Linear scan through the lookup array */
-  for (int i = 0; i < oid_cache.count; i++) {
-    if (oid_cache.ops[i].oid == opno) {
-      return oid_cache.ops[i].type;
+  for (int i = 0; i < oidCache.count; i++) {
+    if (oidCache.ops[i].oid == opno) {
+      return oidCache.ops[i].type;
     }
   }
 
@@ -623,7 +652,7 @@ classify_operator(Oid opno) {
 /**
  * @brief Find operator OID from function OID by searching cached operators
  * @param funcid Function OID to match
- * @param op_type Output: operator type classification
+ * @param opType Output: operator type classification
  * @return Matching operator OID or InvalidOid
  *
  * Searches the cached operator OIDs to find one whose implementing function
@@ -631,20 +660,20 @@ classify_operator(Oid opno) {
  * is being called when the support function receives a function call.
  */
 static Oid
-find_operator_by_funcid(Oid funcid, OpType *op_type) {
+findOperatorByFuncid(Oid funcid, OpType *opType) {
 
   /* Initialize cache if needed */
-  init_oid_cache(&oid_cache);
+  initOidCache(&oidCache);
 
   /* Linear scan through the lookup array */
-  for (int i = 0; i < oid_cache.count; i++) {
-    if (oid_cache.ops[i].funcid == funcid) {
-      *op_type = oid_cache.ops[i].type;
-      return oid_cache.ops[i].oid;
+  for (int i = 0; i < oidCache.count; i++) {
+    if (oidCache.ops[i].funcid == funcid) {
+      *opType = oidCache.ops[i].type;
+      return oidCache.ops[i].oid;
     }
   }
 
-  *op_type = OP_TYPE_UNKNOWN;
+  *opType = OP_TYPE_UNKNOWN;
   return InvalidOid;
 }
 
@@ -802,19 +831,18 @@ convert_const_to_int(Const *const_node, Oid int_type) {
  * @return Index 0, 1, or 2 for int2, int4, int8 respectively
  */
 static inline int
-int_type_index(Oid int_type) {
-  if (int_type == INT2OID) return 0;
-  if (int_type == INT4OID) return 1;
-  return 2;  /* INT8OID */
+int_type_index(Oid intType) {
+  return (intType == INT2OID) ? 0 :
+         (intType == INT4OID) ? 1 : /* INT8OID */ 2;
 }
 
 /**
- * @brief Native operator OID lookup table [op_type - 1][int_type_index]
+ * @brief Native operator OID lookup table [opType - 1][int_type_index]
  *
  * Indexed by (OpType - 1) for rows and int_type_index() for columns.
  * OP_TYPE_UNKNOWN (0) is handled separately before table lookup.
  */
-static const Oid native_op_oids[6][3] = {
+static const Oid NativeOpOids[6][3] = {
   /* OP_TYPE_EQ (1) */ { NUM2INT_INT2EQ_OID, NUM2INT_INT4EQ_OID, NUM2INT_INT8EQ_OID },
   /* OP_TYPE_NE (2) */ { NUM2INT_INT2NE_OID, NUM2INT_INT4NE_OID, NUM2INT_INT8NE_OID },
   /* OP_TYPE_LT (3) */ { NUM2INT_INT2LT_OID, NUM2INT_INT4LT_OID, NUM2INT_INT8LT_OID },
@@ -825,15 +853,15 @@ static const Oid native_op_oids[6][3] = {
 
 /**
  * @brief Get native integer operator OID for given operator type and integer type
- * @param op_type Operator type classification
+ * @param opType Operator type classification
  * @param int_type Integer type OID
  * @return Native operator OID for same-type comparison
  */
 static Oid
-get_native_op_oid(OpType op_type, Oid int_type) {
-  if (op_type == OP_TYPE_UNKNOWN)
+getNativeOpOid(OpType opType, Oid intType) {
+  if (opType == OP_TYPE_UNKNOWN)
     return InvalidOid;
-  return native_op_oids[op_type - 1][int_type_index(int_type)];
+  return NativeOpOids[opType - 1][int_type_index(intType)];
 }
 
 /**
@@ -889,7 +917,7 @@ build_native_opexpr(Oid native_op_oid, Var *var_node, int64 int_val,
 
 /**
  * @brief Compute adjusted value and operator for range predicates with fractions
- * @param op_type Original operator type
+ * @param opType Original operator type
  * @param int_type Integer type OID
  * @param int_val Floor of original constant value
  * @param has_fraction Whether constant has fractional part
@@ -897,7 +925,7 @@ build_native_opexpr(Oid native_op_oid, Var *var_node, int64 int_val,
  * @return Native operator OID to use
  */
 static Oid
-compute_range_transform(OpType op_type, Oid int_type, int64 int_val,
+compute_range_transform(OpType opType, Oid int_type, int64 int_val,
                         bool has_fraction, int64 *adjusted_val,
                         bool *is_always_true, bool *is_always_false) {
   int64 type_max;
@@ -916,7 +944,7 @@ compute_range_transform(OpType op_type, Oid int_type, int64 int_val,
   }
 
   if (has_fraction) {
-    if (op_type == OP_TYPE_GT || op_type == OP_TYPE_GE) {
+    if (opType == OP_TYPE_GT || opType == OP_TYPE_GE) {
       /*
        * > 10.5 or >= 10.5 becomes >= 11
        * But if int_val == type_max, int_val + 1 overflows, and no value can satisfy >= (max+1)
@@ -927,7 +955,7 @@ compute_range_transform(OpType op_type, Oid int_type, int64 int_val,
         return InvalidOid;
       }
       *adjusted_val = int_val + 1;
-      return get_native_op_oid(OP_TYPE_GE, int_type);
+      return getNativeOpOid(OP_TYPE_GE, int_type);
     } else {
       /*
        * < 10.5 or <= 10.5 becomes <= 10
@@ -938,12 +966,12 @@ compute_range_transform(OpType op_type, Oid int_type, int64 int_val,
         *is_always_true = true;
         return InvalidOid;
       }
-      return get_native_op_oid(OP_TYPE_LE, int_type);
+      return getNativeOpOid(OP_TYPE_LE, int_type);
     }
   }
 
   /* No fraction - preserve original operator */
-  return get_native_op_oid(op_type, int_type);
+  return getNativeOpOid(opType, int_type);
 }
 
 /*
@@ -971,7 +999,7 @@ num2int_support(PG_FUNCTION_ARGS) {
   Node *ret = NULL;
 
   /* Initialize OID cache on first use */
-  init_oid_cache(&oid_cache);
+  initOidCache(&oidCache);
 
   if (IsA(rawreq, SupportRequestIndexCondition)) {
     /*
@@ -984,12 +1012,17 @@ num2int_support(PG_FUNCTION_ARGS) {
     Node *rightop;
     Var *var_node = NULL;
     Const *const_node = NULL;
-    OpType op_type;
+    OpType opType;
     Oid int_type;
     ConstConversion conv;
     int64 adjusted_val;
     Oid native_op_oid;
     OpExpr *new_clause;
+
+    /* Check if support functions are disabled via GUC */
+    if (!enableSupportFunctions) {
+      PG_RETURN_POINTER(NULL);
+    }
 
     req->lossy = false;
 
@@ -1019,8 +1052,8 @@ num2int_support(PG_FUNCTION_ARGS) {
     }
 
     /* Classify the operator */
-    op_type = classify_operator(opno);
-    if (op_type == OP_TYPE_UNKNOWN) {
+    opType = classifyOperator(opno);
+    if (opType == OP_TYPE_UNKNOWN) {
       PG_RETURN_POINTER(NULL);
     }
 
@@ -1032,18 +1065,19 @@ num2int_support(PG_FUNCTION_ARGS) {
     }
 
     /* For equality with fractional value, index scan won't help - return NULL */
-    if (op_type == OP_TYPE_EQ && conv.has_fraction) {
+    if (opType == OP_TYPE_EQ && conv.has_fraction) {
+      elog(DEBUG1, "SupportRequestSimplify: returning NULL for fractional equality");
       PG_RETURN_POINTER(NULL);
     }
 
     /* Compute the native operator and adjusted value */
     adjusted_val = conv.int_val;
 
-    if (op_type == OP_TYPE_EQ || op_type == OP_TYPE_NE) {
-      native_op_oid = get_native_op_oid(op_type, int_type);
+    if (opType == OP_TYPE_EQ || opType == OP_TYPE_NE) {
+      native_op_oid = getNativeOpOid(opType, int_type);
     } else {
       bool is_always_true, is_always_false;
-      native_op_oid = compute_range_transform(op_type, int_type, conv.int_val,
+      native_op_oid = compute_range_transform(opType, int_type, conv.int_val,
                                                conv.has_fraction, &adjusted_val,
                                                &is_always_true, &is_always_false);
       /*
@@ -1054,12 +1088,12 @@ num2int_support(PG_FUNCTION_ARGS) {
       if (is_always_true) {
         int64 type_max = (int_type == INT2OID) ? PG_INT16_MAX :
                          (int_type == INT4OID) ? PG_INT32_MAX : PG_INT64_MAX;
-        native_op_oid = get_native_op_oid(OP_TYPE_LE, int_type);
+        native_op_oid = getNativeOpOid(OP_TYPE_LE, int_type);
         adjusted_val = type_max;
       } else if (is_always_false) {
         int64 type_max = (int_type == INT2OID) ? PG_INT16_MAX :
                          (int_type == INT4OID) ? PG_INT32_MAX : PG_INT64_MAX;
-        native_op_oid = get_native_op_oid(OP_TYPE_GT, int_type);
+        native_op_oid = getNativeOpOid(OP_TYPE_GT, int_type);
         adjusted_val = type_max;
       }
     }
@@ -1085,10 +1119,18 @@ num2int_support(PG_FUNCTION_ARGS) {
     Node *rightop;
     Var *var_node = NULL;
     Const *const_node = NULL;
-    OpType op_type;
+    OpType opType;
     Oid opno;
     Oid int_type;
     ConstConversion conv;
+
+    /* Check if support functions are disabled via GUC */
+    if (!enableSupportFunctions) {
+      elog(DEBUG1, "SupportRequestSimplify disabled by pg_num2int_direct_comp.enableSupportFunctions");
+      PG_RETURN_POINTER(NULL);
+    }
+
+    elog(DEBUG1, "SupportRequestSimplify called for function %u", func->funcid);
 
     if (list_length(func->args) != 2) {
       PG_RETURN_POINTER(NULL);
@@ -1097,7 +1139,7 @@ num2int_support(PG_FUNCTION_ARGS) {
     leftop = (Node *) linitial(func->args);
     rightop = (Node *) lsecond(func->args);
 
-    /* Identify Var and Const positions */
+    /* Identify Var and Const positions and determine their types */
     if (IsA(leftop, Const) && IsA(rightop, Var)) {
       const_node = (Const *) leftop;
       var_node = (Var *) rightop;
@@ -1113,7 +1155,7 @@ num2int_support(PG_FUNCTION_ARGS) {
     }
 
     /* Find the operator that uses this function */
-    opno = find_operator_by_funcid(func->funcid, &op_type);
+    opno = findOperatorByFuncid(func->funcid, &opType);
     if (opno == InvalidOid) {
       PG_RETURN_POINTER(NULL);
     }
@@ -1121,6 +1163,14 @@ num2int_support(PG_FUNCTION_ARGS) {
     /* Convert constant to integer */
     int_type = var_node->vartype;
     conv = convert_const_to_int(const_node, int_type);
+
+    elog(DEBUG1,
+       "SupportRequestSimplify: const_type=%u, var_type=%u, valid=%d, "
+       "has_fraction=%d, out_of_range_low=%d, out_of_range_high=%d, "
+       "int_val=%ld",
+       const_node->consttype, var_node->vartype, conv.valid,
+       conv.has_fraction, conv.out_of_range_low, conv.out_of_range_high,
+       conv.int_val);
 
     /* Handle out-of-range constants */
     if (conv.out_of_range_high || conv.out_of_range_low) {
@@ -1132,7 +1182,7 @@ num2int_support(PG_FUNCTION_ARGS) {
        * - LT/LE: TRUE if const is high, FALSE if const is low
        * - GT/GE: FALSE if const is high, TRUE if const is low
        */
-      switch (op_type) {
+      switch (opType) {
         case OP_TYPE_EQ:
           ret = (Node *) makeBoolConst(false, false);
           break;
@@ -1160,23 +1210,23 @@ num2int_support(PG_FUNCTION_ARGS) {
     }
 
     /* Apply transformation based on operator type and fractional status */
-    if (op_type == OP_TYPE_EQ) {
+    if (opType == OP_TYPE_EQ) {
       if (conv.has_fraction) {
         /* FR-015: Equality with fractional value is always FALSE */
         ret = (Node *) makeBoolConst(false, false);
       } else {
         /* FR-016: Equality with exact integer - transform to native operator */
-        Oid native_op_oid = get_native_op_oid(OP_TYPE_EQ, int_type);
+        Oid native_op_oid = getNativeOpOid(OP_TYPE_EQ, int_type);
         ret = (Node *) build_native_opexpr(native_op_oid, var_node, conv.int_val,
                                             int_type, func->location, InvalidOid);
       }
-    } else if (op_type == OP_TYPE_NE) {
+    } else if (opType == OP_TYPE_NE) {
       if (conv.has_fraction) {
         /* Inequality with fractional value is always TRUE */
         ret = (Node *) makeBoolConst(true, false);
       } else {
         /* Transform to native inequality operator */
-        Oid native_op_oid = get_native_op_oid(OP_TYPE_NE, int_type);
+        Oid native_op_oid = getNativeOpOid(OP_TYPE_NE, int_type);
         ret = (Node *) build_native_opexpr(native_op_oid, var_node, conv.int_val,
                                             int_type, func->location, InvalidOid);
       }
@@ -1184,7 +1234,7 @@ num2int_support(PG_FUNCTION_ARGS) {
       /* FR-017: Range boundary transformation */
       int64 adjusted_val;
       bool is_always_true, is_always_false;
-      Oid native_op_oid = compute_range_transform(op_type, int_type, conv.int_val,
+      Oid native_op_oid = compute_range_transform(opType, int_type, conv.int_val,
                                                    conv.has_fraction, &adjusted_val,
                                                    &is_always_true, &is_always_false);
       if (is_always_true) {
@@ -1256,7 +1306,7 @@ numeric_cmp_int64_direct(Numeric num, int64 val)
     return 0;
 
   /* Try direct int64 extraction */
-  if (numeric_to_int64(num, &num_as_int64)) {
+  if (numericToint64(num, &num_as_int64)) {
     /* Successfully converted - simple integer comparison */
     if (num_as_int64 < val)
       return -1;
@@ -1377,7 +1427,7 @@ numeric_eq_int64_direct(Numeric num, int64 val) {
     return true;
 
   // Try extraction - fails for fractions and out-of-range → not equal
-  if (!numeric_to_int64(num, &num_as_int64))
+  if (!numericToint64(num, &num_as_int64))
     return false;
 
   return num_as_int64 == val;
@@ -1680,6 +1730,67 @@ float8_cmp_int8(PG_FUNCTION_ARGS) {
   float8 fval = PG_GETARG_FLOAT8(0);
   int64 ival = PG_GETARG_INT64(1);
   PG_RETURN_INT32(float8_cmp_int8_internal(fval, ival));
+}
+
+/*
+ * Reverse comparison functions for btree operator families
+ *
+ * These functions provide int x float comparisons by calling the existing
+ * float x int comparison functions with swapped arguments and negated result.
+ */
+
+PG_FUNCTION_INFO_V1(int2_cmp_float4);
+Datum
+int2_cmp_float4(PG_FUNCTION_ARGS) {
+  int16 ival = PG_GETARG_INT16(0);
+  float4 fval = PG_GETARG_FLOAT4(1);
+  /* Reverse the comparison: int2_cmp_float4(i, f) = -float4_cmp_int2(f, i) */
+  PG_RETURN_INT32(-float4_cmp_int2_internal(fval, ival));
+}
+
+PG_FUNCTION_INFO_V1(int4_cmp_float4);
+Datum
+int4_cmp_float4(PG_FUNCTION_ARGS) {
+  int32 ival = PG_GETARG_INT32(0);
+  float4 fval = PG_GETARG_FLOAT4(1);
+  /* Reverse the comparison: int4_cmp_float4(i, f) = -float4_cmp_int4(f, i) */
+  PG_RETURN_INT32(-float4_cmp_int4_internal(fval, ival));
+}
+
+PG_FUNCTION_INFO_V1(int8_cmp_float4);
+Datum
+int8_cmp_float4(PG_FUNCTION_ARGS) {
+  int64 ival = PG_GETARG_INT64(0);
+  float4 fval = PG_GETARG_FLOAT4(1);
+  /* Reverse the comparison: int8_cmp_float4(i, f) = -float4_cmp_int8(f, i) */
+  PG_RETURN_INT32(-float4_cmp_int8_internal(fval, ival));
+}
+
+PG_FUNCTION_INFO_V1(int2_cmp_float8);
+Datum
+int2_cmp_float8(PG_FUNCTION_ARGS) {
+  int16 ival = PG_GETARG_INT16(0);
+  float8 fval = PG_GETARG_FLOAT8(1);
+  /* Reverse the comparison: int2_cmp_float8(i, f) = -float8_cmp_int2(f, i) */
+  PG_RETURN_INT32(-float8_cmp_int2_internal(fval, ival));
+}
+
+PG_FUNCTION_INFO_V1(int4_cmp_float8);
+Datum
+int4_cmp_float8(PG_FUNCTION_ARGS) {
+  int32 ival = PG_GETARG_INT32(0);
+  float8 fval = PG_GETARG_FLOAT8(1);
+  /* Reverse the comparison: int4_cmp_float8(i, f) = -float8_cmp_int4(f, i) */
+  PG_RETURN_INT32(-float8_cmp_int4_internal(fval, ival));
+}
+
+PG_FUNCTION_INFO_V1(int8_cmp_float8);
+Datum
+int8_cmp_float8(PG_FUNCTION_ARGS) {
+  int64 ival = PG_GETARG_INT64(0);
+  float8 fval = PG_GETARG_FLOAT8(1);
+  /* Reverse the comparison: int8_cmp_float8(i, f) = -float8_cmp_int8(f, i) */
+  PG_RETURN_INT32(-float8_cmp_int8_internal(fval, ival));
 }
 
 /*

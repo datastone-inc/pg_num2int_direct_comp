@@ -28,10 +28,13 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Add int x float4 operators to float4_ops btree family in pg_num2int_direct_comp--1.0.0.sql
-- [ ] T005 Add int x float8 operators to float8_ops btree family in pg_num2int_direct_comp--1.0.0.sql
-- [ ] T006 Add float4/float8 same-type and cross-type operators to integer_ops btree family in pg_num2int_direct_comp--1.0.0.sql
-- [ ] T007 Extend event trigger cleanup array with new btree family DROP statements in pg_num2int_direct_comp--1.0.0.sql
+- [X] T004 Add int x float4 operators to float4_ops btree family in pg_num2int_direct_comp--1.0.0.sql
+- [X] T005 Add int x float8 operators to float8_ops btree family in pg_num2int_direct_comp--1.0.0.sql
+- [X] T006 Add float4/float8 same-type and cross-type operators to integer_ops btree family in pg_num2int_direct_comp--1.0.0.sql
+- [X] T007 Extend event trigger cleanup array with new btree family DROP statements in pg_num2int_direct_comp--1.0.0.sql
+- [X] T008 Add GUC parameter `pg_num2int_direct_comp.enable_support_functions` with DefineCustomBoolVariable in _PG_init()
+- [X] T009 [P] Add GUC checks to SupportRequestSimplify and SupportRequestIndexCondition functions
+- [X] T010 Add MERGES property to all equality operators to enable merge join optimization
 
 **Checkpoint**: Btree family registration complete - user story testing can now begin
 
@@ -92,9 +95,11 @@
 - [ ] T024 [US3] Update README.md: remove duplicate precision loss explanations
 - [ ] T025 [US3] Update README.md: add equivalence expressions section (with/without extension)
 - [ ] T026 [US3] Update README.md: update Limitations section to reflect merge join support for int x float
+- [ ] T026a [US3] Update README.md: add GUC configuration section documenting pg_num2int_direct_comp.enable_support_functions
 - [ ] T027 [P] [US3] Update doc/api-reference.md: add float btree family information concisely
 - [ ] T028 [P] [US3] Update doc/operator-reference.md: add float operators to tables
 - [ ] T029 [US3] Add all README SQL examples to sql/doc_examples.sql per constitution.md
+- [ ] T029a [US3] Add GUC usage examples to sql/doc_examples.sql (enable/disable, SHOW command)
 - [ ] T030 [US3] Run doc-example-reviewer skill to verify 100% compliance
 - [ ] T031 [US3] Measure final word count and verify ≥20% reduction
 
@@ -107,6 +112,7 @@
 **Purpose**: Validation and cleanup across all user stories
 
 - [ ] T032 [P] Add extension lifecycle test (DROP/CREATE cycle) for float btree families in sql/extension_lifecycle.sql
+- [ ] T032a [P] Add GUC configuration testing to sql/extension_lifecycle.sql (SHOW, SET, enable/disable verification)
 - [ ] T033 [P] Update expected/extension_lifecycle.out with new cleanup verification
 - [ ] T034 Run full regression suite: make installcheck
 - [ ] T035 Verify all pg_amop entries removed after DROP EXTENSION via catalog query

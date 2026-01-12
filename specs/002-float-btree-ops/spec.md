@@ -91,6 +91,7 @@ Users evaluating this extension need clear, concise documentation that addresses
 - **FR-011**: All SQL examples in user documentation MUST have corresponding tests in sql/doc_examples.sql per constitution.md
 - **FR-012**: Documentation SQL examples MUST follow constitution.md formatting (UPPERCASE keywords, lowercase identifiers)
 - **FR-013**: Documentation MUST include equivalence expressions: (a) with extension, emulate stock via `int8_col::float8 = float4_col::float8`; (b) without extension, emulate exact via `int_col::numeric = float_col::numeric`
+- **FR-014**: Extension MUST provide GUC parameter `pg_num2int_direct_comp.enable_support_functions` (default: true) to disable SupportRequestSimplify and SupportRequestIndexCondition optimizations for testing/troubleshooting
 
 ### Assumptions
 
@@ -111,3 +112,4 @@ Users evaluating this extension need clear, concise documentation that addresses
 - **SC-005**: Documentation word count reduced by at least 20% from v1.0.0
 - **SC-006**: doc-example-reviewer reports 100% compliance (all examples have tests)
 - **SC-007**: DROP EXTENSION cleanly removes all added pg_amop entries
+- **SC-008**: GUC `pg_num2int_direct_comp.enable_support_functions` can be set to off/on to disable/enable query optimizations

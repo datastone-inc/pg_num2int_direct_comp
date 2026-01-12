@@ -226,10 +226,10 @@ EXPLAIN (COSTS OFF) EXECUTE find_orders(42);
                             QUERY PLAN                             
 -------------------------------------------------------------------
  Nested Loop
-   ->  Index Scan using ex2_orders_customer_id_idx on ex2_orders o
-         Index Cond: (customer_id = 42)
    ->  Index Only Scan using ex2_customers_pkey on ex2_customers c
          Index Cond: (id = 42)
+   ->  Index Scan using ex2_orders_customer_id_idx on ex2_orders o
+         Index Cond: (customer_id = c.id)
 (5 rows)
 
 RESET enable_seqscan;
@@ -599,3 +599,36 @@ SELECT 16777217::int4 = 16777217::float4;  -- false (extension detects mismatch!
  f
 (1 row)
 
+-- ============================================================================
+-- README.md: Configuration Examples (~line 540)
+-- ============================================================================
+-- Check current setting
+SHOW pg_num2int_direct_comp.enable_support_functions;
+ pg_num2int_direct_comp.enable_support_functions 
+-------------------------------------------------
+ on
+(1 row)
+
+-- Create test table for optimization verification
+CREATE TEMPORARY TABLE config_test (integer_column int4);
+INSERT INTO config_test VALUES (10);
+-- Test with optimization disabled
+SET pg_num2int_direct_comp.enable_support_functions = off;
+EXPLAIN (COSTS off) SELECT * FROM config_test WHERE 10.0::float8 = integer_column;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Seq Scan on config_test
+   Filter: ('10'::double precision = integer_column)
+(2 rows)
+
+-- Test with optimization enabled
+SET pg_num2int_direct_comp.enable_support_functions = on;
+EXPLAIN (COSTS off) SELECT * FROM config_test WHERE 10.0::float8 = integer_column;
+           QUERY PLAN            
+---------------------------------
+ Seq Scan on config_test
+   Filter: (integer_column = 10)
+(2 rows)
+
+-- Cleanup
+DROP TABLE config_test;

@@ -112,7 +112,77 @@ ORDER BY i.val;
 DROP TABLE test_int_frac;
 DROP TABLE test_num_frac;
 
--- Test 5: Explain why merge joins are now safe
+-- Test 5: INT × FLOAT merge joins (btree family integration)
+\echo '=== Test 5: Merge Join for int4 x float4/float8 ==='
+CREATE TEMPORARY TABLE merge_int_float (id SERIAL PRIMARY KEY, val_int2 int2, val_int4 int4, val_int8 int8);
+CREATE TEMPORARY TABLE merge_float_test (id SERIAL PRIMARY KEY, val_float4 float4, val_float8 float8);
+
+-- Insert matching data for merge join verification
+INSERT INTO merge_int_float (val_int2, val_int4, val_int8) VALUES
+    (100, 100, 100),
+    (200, 200, 200),
+    (300, 300, 300);
+
+INSERT INTO merge_float_test (val_float4, val_float8) VALUES
+    (100.0, 100.0),
+    (200.0, 200.0),
+    (300.0, 300.0);
+
+-- Create btree indexes for merge join eligibility
+CREATE INDEX idx_merge_int_float_int4 ON merge_int_float USING btree (val_int4);
+CREATE INDEX idx_merge_float_test_float4 ON merge_float_test USING btree (val_float4);
+
+-- Force merge join by disabling other join types
+SET enable_hashjoin = false;
+SET enable_nestloop = false;
+SET enable_mergejoin = true;
+
+-- Test int4 x float4 merge join
+EXPLAIN (COSTS OFF, BUFFERS OFF)
+SELECT i.val_int4, f.val_float4
+FROM merge_int_float i
+JOIN merge_float_test f ON i.val_int4 = f.val_float4;
+
+-- Test int4 x float8 merge join  
+EXPLAIN (COSTS OFF, BUFFERS OFF)
+SELECT i.val_int4, f.val_float8
+FROM merge_int_float i
+JOIN merge_float_test f ON i.val_int4 = f.val_float8;
+
+-- Verify btree operator family registrations
+\echo '=== Test 6: Btree Family Registration Verification ==='
+SELECT COUNT(*) as float_ops_operators
+FROM pg_amop 
+WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'float_ops' AND opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree'));
+
+SELECT COUNT(*) as integer_ops_operators  
+FROM pg_amop 
+WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'integer_ops' AND opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree'));
+
+-- Test MERGES property on equality operators (required for merge joins)
+\echo '=== Test 7: MERGES Property Verification ==='
+SELECT COUNT(*) as merges_equality_operators
+FROM pg_operator 
+WHERE oprname = '=' 
+  AND oprcanmerge = true
+  AND ((oprleft = 'int4'::regtype AND oprright = 'float4'::regtype) OR
+       (oprleft = 'float4'::regtype AND oprright = 'int4'::regtype) OR
+       (oprleft = 'int4'::regtype AND oprright = 'float8'::regtype) OR
+       (oprleft = 'float8'::regtype AND oprright = 'int4'::regtype) OR
+       (oprleft = 'int8'::regtype AND oprright = 'float4'::regtype) OR
+       (oprleft = 'float4'::regtype AND oprright = 'int8'::regtype) OR
+       (oprleft = 'int8'::regtype AND oprright = 'float8'::regtype) OR
+       (oprleft = 'float8'::regtype AND oprright = 'int8'::regtype));
+
+-- Reset join settings
+RESET enable_hashjoin;
+RESET enable_nestloop; 
+RESET enable_mergejoin;
+
+DROP TABLE merge_int_float;
+DROP TABLE merge_float_test;
+
+-- Test 6: Explain why merge joins are now safe
 \echo '=== Test 5: Why Merge Joins Are Safe ==='
 \echo 'Operators are mathematically transitive for exact comparison semantics:'
 \echo '  - If both (A = B) and (B = C) return TRUE, then B must be an exact integer'

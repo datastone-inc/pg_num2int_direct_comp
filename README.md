@@ -507,26 +507,69 @@ These optimizations ensure:
 - Exact integer matches use native operators for perfect selectivity
 - Range boundaries are correctly adjusted for integer semantics
 
+---
+
+## Configuration
+
+The extension provides a configuration parameter to control query optimization behavior:
+
+### pg_num2int_direct_comp.enable_support_functions
+
+Controls whether the extension's query optimizations are active.
+
+**Default**: `on`
+**Context**: Can be changed by any user (PGC_USERSET)
+**Values**: `on`, `off`
+
+**Purpose**: 
+- **`on`**: Enable SupportRequestSimplify and SupportRequestIndexCondition optimizations
+- **`off`**: Disable optimizations for testing, troubleshooting, or compatibility
+
+**Usage**:
+
+```sql
+-- Check current setting
+SHOW pg_num2int_direct_comp.enable_support_functions;
+
+-- Disable optimizations for current session
+SET pg_num2int_direct_comp.enable_support_functions = off;
+
+-- Re-enable optimizations
+SET pg_num2int_direct_comp.enable_support_functions = on;
+
+-- Verify optimization is disabled (should show cross-type comparison)
+SET pg_num2int_direct_comp.enable_support_functions = off;
+EXPLAIN SELECT * FROM table WHERE 10.0::float8 = integer_column;
+-- Filter: ('10'::double precision = table.integer_column)
+
+-- Verify optimization is enabled (should show same-type comparison)
+SET pg_num2int_direct_comp.enable_support_functions = on;
+EXPLAIN SELECT * FROM table WHERE 10.0::float8 = integer_column;
+-- Filter: (table.integer_column = 10)
+```
+
+**When to disable**: Testing original PostgreSQL behavior, troubleshooting query plans, or if optimizations cause unexpected behavior.
+
+---
+
 ## Limitations
 
-### Int × Float Merge Joins Not Supported
+## Limitations
 
-**What**: Merge joins between integer and float types (float4, float8) are not supported due to floating-point precision constraints.
+### Performance Considerations
 
-**Why**: Adding int × float operators to btree families would require them in both `integer_ops` and `float_ops` families. Due to float precision limits, this could enable invalid transitive inferences by the query planner.
+✅ **All Join Types Supported**: The extension now supports indexed nested loop joins, hash joins, **and merge joins** for all type combinations.
 
-**Impact**: Int × float joins use hash joins or indexed nested loop joins, which provide excellent performance for most workloads.
+**Merge Join Support**:
+- ✅ **Int × Numeric**: Fully supported via btree family registration
+- ✅ **Int × Float**: Fully supported via extended btree family registration  
 
-### Int × Numeric Merge Joins
+**Join Strategy Selection**:
+- ✅ **Indexed Nested Loop Joins**: Optimal for small result sets
+- ✅ **Hash Joins**: Optimal for large unsorted datasets
+- ✅ **Merge Joins**: Optimal when both inputs are pre-sorted (e.g., index scans)
 
-✅ **Fully Supported**: Int × numeric operators are in both `integer_ops` and `numeric_ops` btree families, enabling merge joins.
-
-### Join Strategy Selection
-
-- ✅ **Indexed Nested Loop Joins**: Fully supported for all type combinations
-- ✅ **Hash Joins**: Fully supported for all type combinations
-- ✅ **Merge Joins**: Supported for int × numeric
-- ❌ **Merge Joins**: Not supported for int × float (use hash join or nested loop)
+PostgreSQL's query planner automatically selects the optimal join strategy based on data size, available indexes, and sort requirements.
 
 ## Documentation
 

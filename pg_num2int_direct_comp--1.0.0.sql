@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026 dataStone Inc.
- * 
+ *
  * SPDX-License-Identifier: MIT
  * See LICENSE file for full license text.
  */
@@ -193,7 +193,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -204,7 +205,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -215,7 +217,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 -- Float8 × Integer Equality Operators
@@ -227,7 +230,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -238,7 +242,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -249,7 +254,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 -- ============================================================================
@@ -518,7 +524,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -1904,6 +1911,38 @@ RETURNS int4
 AS 'MODULE_PATHNAME', 'float8_cmp_int8'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
+-- Reverse comparison functions for float btree families
+-- These are called with (int, float) argument order for btree family consistency
+CREATE FUNCTION int2_cmp_float4(int2, float4)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'int2_cmp_float4'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE FUNCTION int4_cmp_float4(int4, float4)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'int4_cmp_float4'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE FUNCTION int8_cmp_float4(int8, float4)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'int8_cmp_float4'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE FUNCTION int2_cmp_float8(int2, float8)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'int2_cmp_float8'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE FUNCTION int4_cmp_float8(int4, float8)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'int4_cmp_float8'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
+CREATE FUNCTION int8_cmp_float8(int8, float8)
+RETURNS int4
+AS 'MODULE_PATHNAME', 'int8_cmp_float8'
+LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+
 -- ============================================================================
 -- Hash Support Functions (For Hash Joins)
 -- ============================================================================
@@ -2025,7 +2064,7 @@ ALTER OPERATOR FAMILY numeric_ops USING btree ADD
   OPERATOR 3 = (int2, int2),
   OPERATOR 4 >= (int2, int2),
   OPERATOR 5 > (int2, int2),
-  
+
   -- int4 comparisons
   FUNCTION 1 (int4, int4) btint4cmp(int4, int4),
   OPERATOR 1 < (int4, int4),
@@ -2033,7 +2072,7 @@ ALTER OPERATOR FAMILY numeric_ops USING btree ADD
   OPERATOR 3 = (int4, int4),
   OPERATOR 4 >= (int4, int4),
   OPERATOR 5 > (int4, int4),
-  
+
   -- int8 comparisons
   FUNCTION 1 (int8, int8) btint8cmp(int8, int8),
   OPERATOR 1 < (int8, int8),
@@ -2041,7 +2080,7 @@ ALTER OPERATOR FAMILY numeric_ops USING btree ADD
   OPERATOR 3 = (int8, int8),
   OPERATOR 4 >= (int8, int8),
   OPERATOR 5 > (int8, int8),
-  
+
   -- Cross-integer comparisons (int2 vs int4, int2 vs int8, int4 vs int8)
   FUNCTION 1 (int2, int4) btint24cmp(int2, int4),
   OPERATOR 1 < (int2, int4),
@@ -2049,42 +2088,42 @@ ALTER OPERATOR FAMILY numeric_ops USING btree ADD
   OPERATOR 3 = (int2, int4),
   OPERATOR 4 >= (int2, int4),
   OPERATOR 5 > (int2, int4),
-  
+
   FUNCTION 1 (int4, int2) btint42cmp(int4, int2),
   OPERATOR 1 < (int4, int2),
   OPERATOR 2 <= (int4, int2),
   OPERATOR 3 = (int4, int2),
   OPERATOR 4 >= (int4, int2),
   OPERATOR 5 > (int4, int2),
-  
+
   FUNCTION 1 (int2, int8) btint28cmp(int2, int8),
   OPERATOR 1 < (int2, int8),
   OPERATOR 2 <= (int2, int8),
   OPERATOR 3 = (int2, int8),
   OPERATOR 4 >= (int2, int8),
   OPERATOR 5 > (int2, int8),
-  
+
   FUNCTION 1 (int8, int2) btint82cmp(int8, int2),
   OPERATOR 1 < (int8, int2),
   OPERATOR 2 <= (int8, int2),
   OPERATOR 3 = (int8, int2),
   OPERATOR 4 >= (int8, int2),
   OPERATOR 5 > (int8, int2),
-  
+
   FUNCTION 1 (int4, int8) btint48cmp(int4, int8),
   OPERATOR 1 < (int4, int8),
   OPERATOR 2 <= (int4, int8),
   OPERATOR 3 = (int4, int8),
   OPERATOR 4 >= (int4, int8),
   OPERATOR 5 > (int4, int8),
-  
+
   FUNCTION 1 (int8, int4) btint84cmp(int8, int4),
   OPERATOR 1 < (int8, int4),
   OPERATOR 2 <= (int8, int4),
   OPERATOR 3 = (int8, int4),
   OPERATOR 4 >= (int8, int4),
   OPERATOR 5 > (int8, int4),
-  
+
   -- numeric <op> int2 with support function
   FUNCTION 1 (numeric, int2) numeric_cmp_int2(numeric, int2),
   OPERATOR 1 < (numeric, int2),
@@ -2092,7 +2131,7 @@ ALTER OPERATOR FAMILY numeric_ops USING btree ADD
   OPERATOR 3 = (numeric, int2),
   OPERATOR 4 >= (numeric, int2),
   OPERATOR 5 > (numeric, int2),
-  
+
   -- numeric <op> int4 with support function
   FUNCTION 1 (numeric, int4) numeric_cmp_int4(numeric, int4),
   OPERATOR 1 < (numeric, int4),
@@ -2100,7 +2139,7 @@ ALTER OPERATOR FAMILY numeric_ops USING btree ADD
   OPERATOR 3 = (numeric, int4),
   OPERATOR 4 >= (numeric, int4),
   OPERATOR 5 > (numeric, int4),
-  
+
   -- numeric <op> int8 with support function
   FUNCTION 1 (numeric, int8) numeric_cmp_int8(numeric, int8),
   OPERATOR 1 < (numeric, int8),
@@ -2108,7 +2147,7 @@ ALTER OPERATOR FAMILY numeric_ops USING btree ADD
   OPERATOR 3 = (numeric, int8),
   OPERATOR 4 >= (numeric, int8),
   OPERATOR 5 > (numeric, int8),
-  
+
   -- int2 <op> numeric (commutator direction) - uses reverse comparison function
   FUNCTION 1 (int2, numeric) int2_cmp_numeric(int2, numeric),
   OPERATOR 1 < (int2, numeric),
@@ -2116,7 +2155,7 @@ ALTER OPERATOR FAMILY numeric_ops USING btree ADD
   OPERATOR 3 = (int2, numeric),
   OPERATOR 4 >= (int2, numeric),
   OPERATOR 5 > (int2, numeric),
-  
+
   -- int4 <op> numeric (commutator direction) - uses reverse comparison function
   FUNCTION 1 (int4, numeric) int4_cmp_numeric(int4, numeric),
   OPERATOR 1 < (int4, numeric),
@@ -2124,7 +2163,7 @@ ALTER OPERATOR FAMILY numeric_ops USING btree ADD
   OPERATOR 3 = (int4, numeric),
   OPERATOR 4 >= (int4, numeric),
   OPERATOR 5 > (int4, numeric),
-  
+
   -- int8 <op> numeric (commutator direction) - uses reverse comparison function
   FUNCTION 1 (int8, numeric) int8_cmp_numeric(int8, numeric),
   OPERATOR 1 < (int8, numeric),
@@ -2153,7 +2192,7 @@ ALTER OPERATOR FAMILY integer_ops USING btree ADD
   OPERATOR 3 = (numeric, numeric),
   OPERATOR 4 >= (numeric, numeric),
   OPERATOR 5 > (numeric, numeric),
-  
+
   -- numeric <op> int2 with support function
   FUNCTION 1 (numeric, int2) numeric_cmp_int2(numeric, int2),
   OPERATOR 1 < (numeric, int2),
@@ -2161,7 +2200,7 @@ ALTER OPERATOR FAMILY integer_ops USING btree ADD
   OPERATOR 3 = (numeric, int2),
   OPERATOR 4 >= (numeric, int2),
   OPERATOR 5 > (numeric, int2),
-  
+
   -- numeric <op> int4 with support function
   FUNCTION 1 (numeric, int4) numeric_cmp_int4(numeric, int4),
   OPERATOR 1 < (numeric, int4),
@@ -2169,7 +2208,7 @@ ALTER OPERATOR FAMILY integer_ops USING btree ADD
   OPERATOR 3 = (numeric, int4),
   OPERATOR 4 >= (numeric, int4),
   OPERATOR 5 > (numeric, int4),
-  
+
   -- numeric <op> int8 with support function
   FUNCTION 1 (numeric, int8) numeric_cmp_int8(numeric, int8),
   OPERATOR 1 < (numeric, int8),
@@ -2177,7 +2216,7 @@ ALTER OPERATOR FAMILY integer_ops USING btree ADD
   OPERATOR 3 = (numeric, int8),
   OPERATOR 4 >= (numeric, int8),
   OPERATOR 5 > (numeric, int8),
-  
+
   -- int2 <op> numeric - uses reverse comparison function for correct argument order
   FUNCTION 1 (int2, numeric) int2_cmp_numeric(int2, numeric),
   OPERATOR 1 < (int2, numeric),
@@ -2185,7 +2224,7 @@ ALTER OPERATOR FAMILY integer_ops USING btree ADD
   OPERATOR 3 = (int2, numeric),
   OPERATOR 4 >= (int2, numeric),
   OPERATOR 5 > (int2, numeric),
-  
+
   -- int4 <op> numeric - uses reverse comparison function
   FUNCTION 1 (int4, numeric) int4_cmp_numeric(int4, numeric),
   OPERATOR 1 < (int4, numeric),
@@ -2193,7 +2232,7 @@ ALTER OPERATOR FAMILY integer_ops USING btree ADD
   OPERATOR 3 = (int4, numeric),
   OPERATOR 4 >= (int4, numeric),
   OPERATOR 5 > (int4, numeric),
-  
+
   -- int8 <op> numeric - uses reverse comparison function
   FUNCTION 1 (int8, numeric) int8_cmp_numeric(int8, numeric),
   OPERATOR 1 < (int8, numeric),
@@ -2203,10 +2242,228 @@ ALTER OPERATOR FAMILY integer_ops USING btree ADD
   OPERATOR 5 > (int8, numeric);
 
 -- ============================================================================
--- NOTE: int×float operators are NOT added to float_ops btree family in v1.0
--- (deferred to reduce scope). Index optimization is provided via support
--- functions. Future versions may add btree family integration.
+-- Float Btree Operator Family Registration for Merge Join Support
 -- ============================================================================
+
+-- Add int x float operators to float_ops btree family
+-- This enables merge joins between integer and float columns
+ALTER OPERATOR FAMILY float_ops USING btree ADD
+  -- Add missing native integer operators so integers can be sorted in float_ops family
+  FUNCTION 1 (int2, int2) btint2cmp(int2, int2),
+  OPERATOR 1 < (int2, int2),
+  OPERATOR 2 <= (int2, int2),
+  OPERATOR 3 = (int2, int2),
+  OPERATOR 4 >= (int2, int2),
+  OPERATOR 5 > (int2, int2),
+
+  FUNCTION 1 (int4, int4) btint4cmp(int4, int4),
+  OPERATOR 1 < (int4, int4),
+  OPERATOR 2 <= (int4, int4),
+  OPERATOR 3 = (int4, int4),
+  OPERATOR 4 >= (int4, int4),
+  OPERATOR 5 > (int4, int4),
+
+  FUNCTION 1 (int8, int8) btint8cmp(int8, int8),
+  OPERATOR 1 < (int8, int8),
+  OPERATOR 2 <= (int8, int8),
+  OPERATOR 3 = (int8, int8),
+  OPERATOR 4 >= (int8, int8),
+  OPERATOR 5 > (int8, int8),
+
+  -- Cross-type float4 <op> int comparisons with support functions
+  FUNCTION 1 (float4, int2) float4_cmp_int2(float4, int2),
+  OPERATOR 1 < (float4, int2),
+  OPERATOR 2 <= (float4, int2),
+  OPERATOR 3 = (float4, int2),
+  OPERATOR 4 >= (float4, int2),
+  OPERATOR 5 > (float4, int2),
+
+  FUNCTION 1 (float4, int4) float4_cmp_int4(float4, int4),
+  OPERATOR 1 < (float4, int4),
+  OPERATOR 2 <= (float4, int4),
+  OPERATOR 3 = (float4, int4),
+  OPERATOR 4 >= (float4, int4),
+  OPERATOR 5 > (float4, int4),
+
+  FUNCTION 1 (float4, int8) float4_cmp_int8(float4, int8),
+  OPERATOR 1 < (float4, int8),
+  OPERATOR 2 <= (float4, int8),
+  OPERATOR 3 = (float4, int8),
+  OPERATOR 4 >= (float4, int8),
+  OPERATOR 5 > (float4, int8),
+
+  -- Cross-type int <op> float4 comparisons (reverse direction) with support functions
+  FUNCTION 1 (int2, float4) int2_cmp_float4(int2, float4),
+  OPERATOR 1 < (int2, float4),
+  OPERATOR 2 <= (int2, float4),
+  OPERATOR 3 = (int2, float4),
+  OPERATOR 4 >= (int2, float4),
+  OPERATOR 5 > (int2, float4),
+
+  FUNCTION 1 (int4, float4) int4_cmp_float4(int4, float4),
+  OPERATOR 1 < (int4, float4),
+  OPERATOR 2 <= (int4, float4),
+  OPERATOR 3 = (int4, float4),
+  OPERATOR 4 >= (int4, float4),
+  OPERATOR 5 > (int4, float4),
+
+  FUNCTION 1 (int8, float4) int8_cmp_float4(int8, float4),
+  OPERATOR 1 < (int8, float4),
+  OPERATOR 2 <= (int8, float4),
+  OPERATOR 3 = (int8, float4),
+  OPERATOR 4 >= (int8, float4),
+  OPERATOR 5 > (int8, float4),
+
+  -- Cross-type float8 <op> int comparisons with support functions
+  FUNCTION 1 (float8, int2) float8_cmp_int2(float8, int2),
+  OPERATOR 1 < (float8, int2),
+  OPERATOR 2 <= (float8, int2),
+  OPERATOR 3 = (float8, int2),
+  OPERATOR 4 >= (float8, int2),
+  OPERATOR 5 > (float8, int2),
+
+  FUNCTION 1 (float8, int4) float8_cmp_int4(float8, int4),
+  OPERATOR 1 < (float8, int4),
+  OPERATOR 2 <= (float8, int4),
+  OPERATOR 3 = (float8, int4),
+  OPERATOR 4 >= (float8, int4),
+  OPERATOR 5 > (float8, int4),
+
+  FUNCTION 1 (float8, int8) float8_cmp_int8(float8, int8),
+  OPERATOR 1 < (float8, int8),
+  OPERATOR 2 <= (float8, int8),
+  OPERATOR 3 = (float8, int8),
+  OPERATOR 4 >= (float8, int8),
+  OPERATOR 5 > (float8, int8),
+
+  -- Cross-type int <op> float8 comparisons (reverse direction) with support functions
+  FUNCTION 1 (int2, float8) int2_cmp_float8(int2, float8),
+  OPERATOR 1 < (int2, float8),
+  OPERATOR 2 <= (int2, float8),
+  OPERATOR 3 = (int2, float8),
+  OPERATOR 4 >= (int2, float8),
+  OPERATOR 5 > (int2, float8),
+
+  FUNCTION 1 (int4, float8) int4_cmp_float8(int4, float8),
+  OPERATOR 1 < (int4, float8),
+  OPERATOR 2 <= (int4, float8),
+  OPERATOR 3 = (int4, float8),
+  OPERATOR 4 >= (int4, float8),
+  OPERATOR 5 > (int4, float8),
+
+  FUNCTION 1 (int8, float8) int8_cmp_float8(int8, float8),
+  OPERATOR 1 < (int8, float8),
+  OPERATOR 2 <= (int8, float8),
+  OPERATOR 3 = (int8, float8),
+  OPERATOR 4 >= (int8, float8),
+  OPERATOR 5 > (int8, float8);
+
+-- Add float4/float8 same-type and cross-type operators to integer_ops btree family
+-- This enables merge joins and integer index access for float comparisons
+ALTER OPERATOR FAMILY integer_ops USING btree ADD
+  -- Same-type float4 comparisons (required for merge join sorting)
+  FUNCTION 1 (float4, float4) btfloat4cmp(float4, float4),
+  OPERATOR 1 < (float4, float4),
+  OPERATOR 2 <= (float4, float4),
+  OPERATOR 3 = (float4, float4),
+  OPERATOR 4 >= (float4, float4),
+  OPERATOR 5 > (float4, float4),
+
+  -- Same-type float8 comparisons (required for merge join sorting)
+  FUNCTION 1 (float8, float8) btfloat8cmp(float8, float8),
+  OPERATOR 1 < (float8, float8),
+  OPERATOR 2 <= (float8, float8),
+  OPERATOR 3 = (float8, float8),
+  OPERATOR 4 >= (float8, float8),
+  OPERATOR 5 > (float8, float8),
+
+  -- Cross-type float4 <op> int comparisons with support functions
+  FUNCTION 1 (float4, int2) float4_cmp_int2(float4, int2),
+  OPERATOR 1 < (float4, int2),
+  OPERATOR 2 <= (float4, int2),
+  OPERATOR 3 = (float4, int2),
+  OPERATOR 4 >= (float4, int2),
+  OPERATOR 5 > (float4, int2),
+
+  FUNCTION 1 (float4, int4) float4_cmp_int4(float4, int4),
+  OPERATOR 1 < (float4, int4),
+  OPERATOR 2 <= (float4, int4),
+  OPERATOR 3 = (float4, int4),
+  OPERATOR 4 >= (float4, int4),
+  OPERATOR 5 > (float4, int4),
+
+  FUNCTION 1 (float4, int8) float4_cmp_int8(float4, int8),
+  OPERATOR 1 < (float4, int8),
+  OPERATOR 2 <= (float4, int8),
+  OPERATOR 3 = (float4, int8),
+  OPERATOR 4 >= (float4, int8),
+  OPERATOR 5 > (float4, int8),
+
+  -- Cross-type int <op> float4 comparisons (reverse direction) with support functions
+  FUNCTION 1 (int2, float4) int2_cmp_float4(int2, float4),
+  OPERATOR 1 < (int2, float4),
+  OPERATOR 2 <= (int2, float4),
+  OPERATOR 3 = (int2, float4),
+  OPERATOR 4 >= (int2, float4),
+  OPERATOR 5 > (int2, float4),
+
+  FUNCTION 1 (int4, float4) int4_cmp_float4(int4, float4),
+  OPERATOR 1 < (int4, float4),
+  OPERATOR 2 <= (int4, float4),
+  OPERATOR 3 = (int4, float4),
+  OPERATOR 4 >= (int4, float4),
+  OPERATOR 5 > (int4, float4),
+
+  FUNCTION 1 (int8, float4) int8_cmp_float4(int8, float4),
+  OPERATOR 1 < (int8, float4),
+  OPERATOR 2 <= (int8, float4),
+  OPERATOR 3 = (int8, float4),
+  OPERATOR 4 >= (int8, float4),
+  OPERATOR 5 > (int8, float4),
+
+  -- Cross-type float8 <op> int comparisons with support functions
+  FUNCTION 1 (float8, int2) float8_cmp_int2(float8, int2),
+  OPERATOR 1 < (float8, int2),
+  OPERATOR 2 <= (float8, int2),
+  OPERATOR 3 = (float8, int2),
+  OPERATOR 4 >= (float8, int2),
+  OPERATOR 5 > (float8, int2),
+
+  FUNCTION 1 (float8, int4) float8_cmp_int4(float8, int4),
+  OPERATOR 1 < (float8, int4),
+  OPERATOR 2 <= (float8, int4),
+  OPERATOR 3 = (float8, int4),
+  OPERATOR 4 >= (float8, int4),
+  OPERATOR 5 > (float8, int4),
+
+  FUNCTION 1 (float8, int8) float8_cmp_int8(float8, int8),
+  OPERATOR 1 < (float8, int8),
+  OPERATOR 2 <= (float8, int8),
+  OPERATOR 3 = (float8, int8),
+  OPERATOR 4 >= (float8, int8),
+  OPERATOR 5 > (float8, int8),
+
+  -- Cross-type int <op> float8 comparisons (reverse direction) with support functions
+  FUNCTION 1 (int2, float8) int2_cmp_float8(int2, float8),
+  OPERATOR 1 < (int2, float8),
+  OPERATOR 2 <= (int2, float8),
+  OPERATOR 3 = (int2, float8),
+  OPERATOR 4 >= (int2, float8),
+  OPERATOR 5 > (int2, float8),
+
+  FUNCTION 1 (int4, float8) int4_cmp_float8(int4, float8),
+  OPERATOR 1 < (int4, float8),
+  OPERATOR 2 <= (int4, float8),
+  OPERATOR 3 = (int4, float8),
+  OPERATOR 4 >= (int4, float8),
+  OPERATOR 5 > (int4, float8),
+
+  FUNCTION 1 (int8, float8) int8_cmp_float8(int8, float8),
+  OPERATOR 1 < (int8, float8),
+  OPERATOR 2 <= (int8, float8),
+  OPERATOR 3 = (int8, float8),
+  OPERATOR 4 >= (int8, float8),
+  OPERATOR 5 > (int8, float8);
 
 -- ============================================================================
 -- Hash Operator Family Support (Enables Hash Joins)
@@ -2222,7 +2479,7 @@ ALTER OPERATOR FAMILY integer_ops USING btree ADD
 --   hash_numeric(10::int4) = hash_numeric(10.0::numeric)
 --
 -- This approach adds operators to higher-precision families (numeric_ops,
--- float_ops) for the same reason as btree: to avoid enabling invalid 
+-- float_ops) for the same reason as btree: to avoid enabling invalid
 -- transitive inferences in integer_ops.
 --
 -- NOTE: Adding built-in integer operators here is safe because the custom
@@ -2242,15 +2499,15 @@ ALTER OPERATOR FAMILY numeric_ops USING hash ADD
   FUNCTION 2 (int4, int4) hash_int4_as_numeric_extended(int4, int8),
   FUNCTION 1 (int8, int8) hash_int8_as_numeric(int8),
   FUNCTION 2 (int8, int8) hash_int8_as_numeric_extended(int8, int8),
-  
+
   -- numeric = int2 (both directions)
   OPERATOR 1 = (numeric, int2),
   OPERATOR 1 = (int2, numeric),
-  
+
   -- numeric = int4 (both directions)
   OPERATOR 1 = (numeric, int4),
   OPERATOR 1 = (int4, numeric),
-  
+
   -- numeric = int8 (both directions)
   OPERATOR 1 = (numeric, int8),
   OPERATOR 1 = (int8, numeric);
@@ -2266,27 +2523,27 @@ ALTER OPERATOR FAMILY float_ops USING hash ADD
   FUNCTION 2 (int4, int4) hash_int4_as_float8_extended(int4, int8),
   FUNCTION 1 (int8, int8) hash_int8_as_float8(int8),
   FUNCTION 2 (int8, int8) hash_int8_as_float8_extended(int8, int8),
-  
+
   -- float4 = int2 (both directions)
   OPERATOR 1 = (float4, int2),
   OPERATOR 1 = (int2, float4),
-  
+
   -- float4 = int4 (both directions)
   OPERATOR 1 = (float4, int4),
   OPERATOR 1 = (int4, float4),
-  
+
   -- float4 = int8 (both directions)
   OPERATOR 1 = (float4, int8),
   OPERATOR 1 = (int8, float4),
-  
+
   -- float8 = int2 (both directions)
   OPERATOR 1 = (float8, int2),
   OPERATOR 1 = (int2, float8),
-  
+
   -- float8 = int4 (both directions)
   OPERATOR 1 = (float8, int4),
   OPERATOR 1 = (int4, float8),
-  
+
   -- float8 = int8 (both directions)
   OPERATOR 1 = (float8, int8),
   OPERATOR 1 = (int8, float8);
@@ -2401,7 +2658,190 @@ DECLARE
         'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (numeric, numeric)',
         'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (numeric, numeric)',
         'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (numeric, numeric)',
-        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (numeric, numeric)'
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (numeric, numeric)',
+
+        -- Btree float_ops: native integer operators (added to complete the family)
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (int2, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (int2, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (int2, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (int2, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (int2, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (int2, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (int4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (int4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (int4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (int4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (int4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (int4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (int8, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (int8, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (int8, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (int8, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (int8, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (int8, int8)',
+        -- Btree float_ops: int×float cross-type operators (NEW in v2.0)
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (float4, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (float4, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (float4, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (float4, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (float4, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (float4, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (float4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (float4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (float4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (float4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (float4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (float4, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (float4, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (float4, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (float4, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (float4, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (float4, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (float4, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (int2, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (int2, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (int2, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (int2, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (int2, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (int2, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (int4, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (int4, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (int4, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (int4, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (int4, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (int4, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (int8, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (int8, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (int8, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (int8, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (int8, float4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (int8, float4)',
+
+        -- (continued from float_ops above - both float4 and float8 operators)
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (float8, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (float8, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (float8, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (float8, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (float8, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (float8, int2)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (float8, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (float8, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (float8, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (float8, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (float8, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (float8, int4)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (float8, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (float8, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (float8, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (float8, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (float8, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (float8, int8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (int2, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (int2, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (int2, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (int2, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (int2, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (int2, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (int4, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (int4, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (int4, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (int4, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (int4, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (int4, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 1 (int8, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 2 (int8, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 3 (int8, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 4 (int8, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP OPERATOR 5 (int8, float8)',
+        'ALTER OPERATOR FAMILY float_ops USING btree DROP FUNCTION 1 (int8, float8)',
+
+        -- Btree integer_ops: float×float same-type operators (NEW in v2.0)
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (float4, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (float4, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (float4, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (float4, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (float4, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (float4, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (float8, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (float8, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (float8, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (float8, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (float8, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (float8, float8)',
+
+        -- Btree integer_ops: int×float cross-type operators (NEW in v2.0)
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (float4, int2)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (float4, int2)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (float4, int2)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (float4, int2)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (float4, int2)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (float4, int2)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (float4, int4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (float4, int4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (float4, int4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (float4, int4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (float4, int4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (float4, int4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (float4, int8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (float4, int8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (float4, int8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (float4, int8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (float4, int8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (float4, int8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (int2, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (int2, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (int2, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (int2, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (int2, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (int2, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (int4, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (int4, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (int4, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (int4, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (int4, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (int4, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (int8, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (int8, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (int8, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (int8, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (int8, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (int8, float4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (float8, int2)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (float8, int2)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (float8, int2)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (float8, int2)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (float8, int2)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (float8, int2)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (float8, int4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (float8, int4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (float8, int4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (float8, int4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (float8, int4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (float8, int4)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (float8, int8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (float8, int8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (float8, int8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (float8, int8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (float8, int8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (float8, int8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (int2, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (int2, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (int2, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (int2, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (int2, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (int2, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (int4, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (int4, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (int4, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (int4, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (int4, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (int4, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (int8, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 2 (int8, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 3 (int8, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 4 (int8, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 5 (int8, float8)',
+        'ALTER OPERATOR FAMILY integer_ops USING btree DROP FUNCTION 1 (int8, float8)'
     ];
     stmt text;
 BEGIN
@@ -2409,7 +2849,7 @@ BEGIN
     IF NOT (current_query() ~* 'DROP\s+EXTENSION.*pg_num2int_direct_comp') THEN
         RETURN;
     END IF;
-    
+
     -- Execute each cleanup statement, ignoring errors (operator may not exist)
     FOREACH stmt IN ARRAY ops LOOP
         BEGIN
@@ -2419,7 +2859,7 @@ BEGIN
             NULL;
         END;
     END LOOP;
-    
+
     RAISE NOTICE 'pg_num2int_direct_comp: cleaned up operator family entries';
 END;
 $func$;
@@ -2427,7 +2867,7 @@ $func$;
 COMMENT ON FUNCTION pg_num2int_direct_comp_cleanup() IS
 'Event trigger function to clean up operator family entries on DROP EXTENSION';
 
-CREATE EVENT TRIGGER pg_num2int_direct_comp_drop_trigger 
+CREATE EVENT TRIGGER pg_num2int_direct_comp_drop_trigger
 ON ddl_command_start
 WHEN TAG IN ('DROP EXTENSION')
 EXECUTE FUNCTION pg_num2int_direct_comp_cleanup();

@@ -385,3 +385,25 @@ SELECT 9007199254740993::int8 = 9007199254740993::float8 AS beyond_range;
 -- Test precision loss detection (stock PostgreSQL returns true for both)
 SELECT 16777216::int4 = 16777217::float4;  -- true (float4 rounds to 16777216)
 SELECT 16777217::int4 = 16777217::float4;  -- false (extension detects mismatch!)
+
+-- ============================================================================
+-- README.md: Configuration Examples (~line 540)
+-- ============================================================================
+
+-- Check current setting
+SHOW pg_num2int_direct_comp.enable_support_functions;
+
+-- Create test table for optimization verification
+CREATE TEMPORARY TABLE config_test (integer_column int4);
+INSERT INTO config_test VALUES (10);
+
+-- Test with optimization disabled
+SET pg_num2int_direct_comp.enable_support_functions = off;
+EXPLAIN (COSTS off) SELECT * FROM config_test WHERE 10.0::float8 = integer_column;
+
+-- Test with optimization enabled
+SET pg_num2int_direct_comp.enable_support_functions = on;
+EXPLAIN (COSTS off) SELECT * FROM config_test WHERE 10.0::float8 = integer_column;
+
+-- Cleanup
+DROP TABLE config_test;
