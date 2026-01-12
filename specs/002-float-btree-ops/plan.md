@@ -5,7 +5,7 @@
 
 ## Summary
 
-Add int x float4/float8 comparison operators to btree operator families (`integer_ops`, `float4_ops`, `float8_ops`) to enable merge joins for cross-type joins. Extend existing event trigger cleanup to cover new btree family entries. Reduce documentation word count by 20%+ while addressing "non-standard operators" concern directly.
+Add int x float4/float8 comparison operators to btree operator families (`integer_ops`, `float_ops`) to enable merge joins for cross-type joins. Extend existing event trigger cleanup to cover new btree family entries. Reduce documentation word count by 20%+ while addressing "non-standard operators" concern directly.
 
 ## Technical Context
 
@@ -17,7 +17,7 @@ Add int x float4/float8 comparison operators to btree operator families (`intege
 **Project Type**: PostgreSQL extension (single module)
 **Performance Goals**: Merge join performance comparable to native same-type joins
 **Constraints**: No new C code required (reuse existing comparison functions); SQL-only changes
-**Scale/Scope**: 130 new btree family entries (70 in integer_ops + 30 in float4_ops + 30 in float8_ops)
+**Scale/Scope**: 130 new btree family entries (70 in integer_ops + 60 in float_ops)
 
 ## Constitution Check
 
@@ -184,8 +184,7 @@ See [quickstart.md](quickstart.md) for developer quick reference.
 ### Work Packages
 
 1. **SQL Implementation** (pg_num2int_direct_comp--1.0.0.sql)
-   - Add ALTER OPERATOR FAMILY statements for float4_ops btree
-   - Add ALTER OPERATOR FAMILY statements for float8_ops btree
+   - Add ALTER OPERATOR FAMILY statements for float_ops btree
    - Add float operators to integer_ops btree (for sort consistency)
    - Extend event trigger cleanup array
 

@@ -32,9 +32,10 @@ Exact numeric-to-integer comparison operators for PostgreSQL
   - [Example 5: Hash Joins for Large Tables](#example-5-hash-joins-for-large-tables)
   - [Example 6: Type Aliases](#example-6-type-aliases)
   - [Example 7: Query Optimization - Impossible Predicate Detection](#example-7-query-optimization---impossible-predicate-detection)
+- [Equivalence Expressions](#equivalence-expressions)
+- [Configuration](#configuration)
 - [Limitations](#limitations)
-  - [Merge Joins Not Supported](#merge-joins-not-supported)
-  - [Join Strategy Selection](#join-strategy-selection)
+  - [Performance Considerations](#performance-considerations)
 - [Documentation](#documentation)
 - [Technical Details](#technical-details)
 - [Compatibility](#compatibility)
@@ -47,7 +48,39 @@ Exact numeric-to-integer comparison operators for PostgreSQL
 
 ## Overview
 
-Database schemas drift and SQL expressions evolve such that cross-type comparisons between numeric types (numeric, float4, float8) and integer types (int2, int4, int8) can occur. If this is happening for you, PostgreSQL's default behavior injects implicit casts that cause two critical problems: **mathematically incorrect comparison results** and **poor query performance**. Whereas this extension provides **exact cross-type comparison operators** to address both problems.
+Database schemas drift and SQL expressions evolve such that cross-type comparisons between numeric types (numeric, float4, float8) and integer types (int2, int4, int8) can occur. If this is happening for you, PostgreSQL's default behavior injects implicit casts that cause two critical problems: **mathematically incorrect comparison results** and **poor query performance**. This extension provides **exact cross-type comparison operators** to address both problems.
+
+## Why Custom Operators?
+
+**"Why not just fix the application to use consistent types?"**
+
+While type consistency is ideal, real-world databases face type mismatches from:
+
+- **Legacy schemas** with mixed numeric/integer columns across related tables
+- **API integrations** that pass parameters as `numeric`/`float` when columns are `integer`
+- **ORMs and frameworks** that default to `numeric` for user inputs, even for integer IDs
+- **Data migration** from systems with different type preferences
+- **Cross-system joins** between tables designed by different teams over time
+
+**"Are custom operators standard PostgreSQL practice?"**
+
+**Yes.** PostgreSQL's extensibility is a core design feature:
+- **PostGIS** adds hundreds of geometric operators (`&&`, `@`, `~=`, etc.)
+- **pg_trgm** adds text similarity operators (`%`, `<->`, `<<->`)  
+- **btree_gin/btree_gist** extend comparison operations to new access methods
+- **Extensions in contrib/** ship with PostgreSQL itself
+
+This extension follows the same proven pattern: precise mathematical semantics for type combinations PostgreSQL doesn't handle optimally by default.
+
+**"What's the risk of custom operators?"**
+
+**Minimal operational risk:**
+- Uses existing PostgreSQL comparison functions (no new C code for core logic)
+- Follows established operator precedence and behavior patterns
+- Drops cleanly: `DROP EXTENSION` removes all operators instantly
+- No schema lock-in: queries work without the extension (just slower/less precise)
+
+**Switching Behavior:** Users migrating between standard PostgreSQL and this extension have clear equivalence expressions (see [Equivalence Expressions](#equivalence-expressions)).
 
 ### The Problem: Implicit Casting Produces Wrong Results
 
@@ -60,12 +93,11 @@ When integers are cast to floating-point types, precision can be lost.
 
 #### Why Precision Loss Occurs
 
-IEEE 754 floating-point used by PostgreSQL have limited mantissa bits:
+IEEE 754 floating-point types have limited mantissa bits:
+- **float4**: 23-bit mantissa → exact integers only up to 2²⁴ (16,777,216)
+- **float8**: 52-bit mantissa → exact integers only up to 2⁵³ (9,007,199,254,740,992)
 
-- **float4 (32-bit)**: 23-bit mantissa → can exactly represent integers only up to 2²⁴ (16,777,216). Beyond this, adjacent representable values are separated by increasing gaps (2 at 2²⁵, 4 at 2²⁶, ..., 2⁴⁰ at 2⁶³), so values like 2²⁴+1 round to the nearest representable float.
-- **float8 (64-bit)**: 52-bit mantissa → can exactly represent integers only up to 2⁵³ (9,007,199,254,740,992). Beyond this, adjacent representable values are separated by increasing gaps (2 at 2⁵⁴, 4 at 2⁵⁵, ..., 2¹¹ at 2⁶³).
-
-Integers get these **rounding errors** when explicitly or implicitly cast to float. The database silently loses precision, and default comparisons produce mathematically incorrect results:
+Beyond these limits, integers round to the nearest representable float value, causing silent precision loss in comparisons.
 
 ```sql
 -- Without extension (stock PostgreSQL):
@@ -355,6 +387,24 @@ See [Performance Benchmarking](#performance-benchmarking) section for detailed m
 
 Note: Serial types are automatically supported because PostgreSQL treats them as their underlying integer types (serial=int4, bigserial=int8, smallserial=int2).
 
+## Equivalence Expressions
+
+Users migrating between standard PostgreSQL and this extension can use these expressions to switch comparison behavior:
+
+| Comparison Type | With Extension | Stock PostgreSQL (both → float8) | Exact without Extension |
+|-----------------|----------------|-----------------------------------|-------------------------|
+| `int4 = float4` | `int4_col = float4_col` | `int4_col::float8 = float4_col::float8` | `int4_col::numeric = float4_col::numeric` |
+| `int8 = float4` | `int8_col = float4_col` | `int8_col::float8 = float4_col::float8` | `int8_col::numeric = float4_col::numeric` |
+| `int8 = float8` | `int8_col = float8_col` | `int8_col::float8 = float8_col` | `int8_col::numeric = float8_col::numeric` |
+| `int4 = numeric` | `int4_col = numeric_col` | `int4_col::numeric = numeric_col` | Same (already exact) |
+
+**Key Insights:**
+- **Extension operators**: Exact semantics, index-optimized, mathematically correct
+- **Explicit float8 casts**: Emulate stock PostgreSQL's implicit behavior (precision loss possible)  
+- **Numeric casts**: Force exact comparison without extension (index-incompatible, slower)
+
+**Migration Strategy:** Test queries with explicit casts first, then switch to extension operators for production performance.
+
 ## Installation
 
 ### Prerequisites
@@ -551,8 +601,6 @@ EXPLAIN SELECT * FROM table WHERE 10.0::float8 = integer_column;
 **When to disable**: Testing original PostgreSQL behavior, troubleshooting query plans, or if optimizations cause unexpected behavior.
 
 ---
-
-## Limitations
 
 ## Limitations
 

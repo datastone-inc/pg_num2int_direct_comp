@@ -15,10 +15,10 @@
 
 **Purpose**: Prepare test infrastructure and write failing tests BEFORE implementation (constitution.md requirement)
 
-- [ ] T001 Create new regression test file sql/float_int_ops.sql with header comments and initial failing test stubs (merge join, catalog queries, transitivity)
-- [ ] T002 [P] Create expected/float_int_ops.out with expected output (tests will FAIL until Phase 2 completes)
-- [ ] T003 [P] Add float_int_ops to REGRESS list in Makefile
-- [ ] T003a Verify tests FAIL with `make installcheck REGRESS=float_int_ops` (constitution gate)
+- [X] T001 Create new regression test file sql/float_int_ops.sql with header comments and initial failing test stubs (merge join, catalog queries, transitivity)
+- [X] T002 [P] Create expected/float_int_ops.out with expected output (tests will FAIL until Phase 2 completes)
+- [X] T003 [P] Add float_int_ops to REGRESS list in Makefile
+- [X] T003a Verify tests FAIL with `make installcheck REGRESS=float_int_ops` (constitution gate)
 
 ---
 
@@ -28,8 +28,8 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [X] T004 Add int x float4 operators to float4_ops btree family in pg_num2int_direct_comp--1.0.0.sql
-- [X] T005 Add int x float8 operators to float8_ops btree family in pg_num2int_direct_comp--1.0.0.sql
+- [X] T004 Add int x float4 operators to float_ops btree family in pg_num2int_direct_comp--1.0.0.sql
+- [X] T005 Add int x float8 operators to float_ops btree family in pg_num2int_direct_comp--1.0.0.sql
 - [X] T006 Add float4/float8 same-type and cross-type operators to integer_ops btree family in pg_num2int_direct_comp--1.0.0.sql
 - [X] T007 Extend event trigger cleanup array with new btree family DROP statements in pg_num2int_direct_comp--1.0.0.sql
 - [X] T008 Add GUC parameter `pg_num2int_direct_comp.enable_support_functions` with DefineCustomBoolVariable in _PG_init()
@@ -52,8 +52,7 @@
 - [X] T009 [P] [US1] Add merge join test for int4 x float8 in sql/float_int_ops.sql
 - [X] T010 [P] [US1] Add merge join test for int8 x float4 in sql/float_int_ops.sql
 - [X] T011 [P] [US1] Add merge join test for int8 x float8 in sql/float_int_ops.sql
-- [X] T012 [US1] Add pg_amop catalog verification query for float4_ops btree in sql/float_int_ops.sql (expect 30 entries)
-- [X] T013 [P] [US1] Add pg_amop catalog verification query for float8_ops btree in sql/float_int_ops.sql (expect 30 entries)
+- [X] T012 [US1] Add pg_amop catalog verification query for float_ops btree in sql/float_int_ops.sql (expect 60 entries)
 - [X] T014 [P] [US1] Add pg_amop catalog verification query for integer_ops btree float entries in sql/float_int_ops.sql (expect 70 entries)
 - [X] T014a [P] [US1] Add pg_operator verification query to confirm MERGES property on equality operators (FR-008)
 - [X] T015 [US1] Run regression test and capture expected/float_int_ops.out
@@ -90,18 +89,18 @@
 
 ### Implementation for User Story 3
 
-- [ ] T022 [US3] Measure baseline word count for README.md and doc/*.md (target: reduce from 11,234 to ≤8,987)
-- [ ] T023 [US3] Update README.md: add "Why Custom Operators?" section addressing non-standard concern
-- [ ] T024 [US3] Update README.md: remove duplicate precision loss explanations
-- [ ] T025 [US3] Update README.md: add equivalence expressions section (with/without extension)
-- [ ] T026 [US3] Update README.md: update Limitations section to reflect merge join support for int x float
-- [ ] T026a [US3] Update README.md: add GUC configuration section documenting pg_num2int_direct_comp.enable_support_functions
-- [ ] T027 [P] [US3] Update doc/api-reference.md: add float btree family information concisely
-- [ ] T028 [P] [US3] Update doc/operator-reference.md: add float operators to tables
-- [ ] T029 [US3] Add all README SQL examples to sql/doc_examples.sql per constitution.md
-- [ ] T029a [US3] Add GUC usage examples to sql/doc_examples.sql (enable/disable, SHOW command)
+- [X] T022 [US3] Measure baseline word count for README.md and doc/*.md (target: reduce from 11,234 to ≤8,987)
+- [X] T023 [US3] Update README.md: add "Why Custom Operators?" section addressing non-standard concern
+- [X] T024 [US3] Update README.md: remove duplicate precision loss explanations
+- [X] T025 [US3] Update README.md: add equivalence expressions section (with/without extension)
+- [X] T026 [US3] Update README.md: update Limitations section to reflect merge join support for int x float
+- [X] T026a [US3] Update README.md: add GUC configuration section documenting pg_num2int_direct_comp.enable_support_functions
+- [X] T027 [P] [US3] Update doc/api-reference.md: add float btree family information concisely
+- [X] T028 [P] [US3] Update doc/operator-reference.md: add float operators to tables
+- [X] T029 [US3] Add all README SQL examples to sql/doc_examples.sql per constitution.md
+- [X] T029a [US3] Add GUC usage examples to sql/doc_examples.sql (enable/disable, SHOW command)
 - [ ] T030 [US3] Run doc-example-reviewer skill to verify 100% compliance
-- [ ] T031 [US3] Measure final word count and verify ≥20% reduction
+- [X] T031 [US3] Measure final word count and verify ≥20% reduction
 
 **Checkpoint**: Documentation reduced and examples tested - US3 complete
 
@@ -111,12 +110,12 @@
 
 **Purpose**: Validation and cleanup across all user stories
 
-- [ ] T032 [P] Add extension lifecycle test (DROP/CREATE cycle) for float btree families in sql/extension_lifecycle.sql
-- [ ] T032a [P] Add GUC configuration testing to sql/extension_lifecycle.sql (SHOW, SET, enable/disable verification)
-- [ ] T033 [P] Update expected/extension_lifecycle.out with new cleanup verification
-- [ ] T034 Run full regression suite: make installcheck
-- [ ] T035 Verify all pg_amop entries removed after DROP EXTENSION via catalog query
-- [ ] T036 Run quickstart.md validation: execute all code blocks and verify expected output
+- [X] T032 [P] Add extension lifecycle test (DROP/CREATE cycle) for float btree families in sql/extension_lifecycle.sql
+- [X] T032a [P] Add GUC configuration testing to sql/extension_lifecycle.sql (SHOW, SET, enable/disable verification)
+- [X] T033 [P] Update expected/extension_lifecycle.out with new cleanup verification
+- [X] T034 Run full regression suite: make installcheck
+- [X] T035 Verify all pg_amop entries removed after DROP EXTENSION via catalog query
+- [X] T036 Run quickstart.md validation: execute all code blocks and verify expected output
 
 ---
 

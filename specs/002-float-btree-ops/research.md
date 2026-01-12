@@ -17,8 +17,8 @@
   - Register comparison support function (FUNCTION 1) for each type pair
 
 **Decision**: Follow identical pattern for float types:
-- Add int x float4 operators to `integer_ops` AND `float4_ops`
-- Add int x float8 operators to `integer_ops` AND `float8_ops`
+- Add int x float4 operators to `integer_ops` AND `float_ops`
+- Add int x float8 operators to `integer_ops` AND `float_ops`
 - Add same-type float4/float8 operators to `integer_ops`
 - Register existing comparison functions as FUNCTION 1
 
@@ -91,8 +91,7 @@ Existing cleanup function `pg_num2int_direct_comp_cleanup()`:
 - Validated by extension_lifecycle.sql regression test
 
 **Decision**: Extend the `ops` array with new entries:
-- float4_ops btree: 6 type pairs x 6 entries each = 36 DROP statements
-- float8_ops btree: 6 type pairs x 6 entries each = 36 DROP statements
+- float_ops btree: 12 type pairs x 6 entries each = 72 DROP statements
 - integer_ops btree: float4 and float8 same-type operators = 12 DROP statements
 
 **Rationale**: Consistent with existing pattern. Lifecycle test will catch any omissions.

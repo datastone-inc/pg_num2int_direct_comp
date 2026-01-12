@@ -154,7 +154,7 @@ Enables: Merge joins for equality-based JOIN operations on pre-sorted data.
 
 **Btree Families** (enables index scans and merge joins):
 
-- Cross-type operators added to `integer_ops`, `numeric_ops`, and `float_ops` btree families
+- Cross-type operators added to `integer_ops`, `numeric_ops`, `float_ops` btree families
 - Each operator registered with standard btree strategy (1=<, 2=<=, 3==, 4=>=, 5=>)
 - Each type pair has a dedicated comparison support function (FUNCTION 1)
 - Builtin same-type operators also added to enable sorting within the family context (e.g., numeric×numeric operators in `integer_ops` for merge join sorting)
@@ -382,8 +382,8 @@ Use exact comparisons to detect precision issues:
 
 ```sql
 -- Audit query
-SELECT COUNT(*) 
-FROM data_sync 
+SELECT COUNT(*)
+FROM data_sync
 WHERE source_id::int4 <> replica_id::float4;
 ```
 

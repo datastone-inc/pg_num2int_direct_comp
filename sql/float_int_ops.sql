@@ -1,6 +1,9 @@
 -- Test exact comparison operators for float × integer combinations
 -- Includes precision boundary tests for float4 and float8
 
+-- Load extension
+CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
+
 -- Test 1: Basic equality - float with no fractional part
 SELECT 10::float4 = 10::int2 AS "float4=int2_exact";
 SELECT 10::float4 = 10::int4 AS "float4=int4_exact";
@@ -155,23 +158,18 @@ SELECT '-Infinity'::float8 < 10::int8 AS "NegInf_float8_lt_int8_true";
 -- Phase 3: User Story 1 - Catalog Verification Tests (T012-T014a)
 --
 
--- T012 [US1] Add pg_amop catalog verification query for float4_ops btree (expect 30 entries)
-SELECT COUNT(*) AS "float4_ops_btree_operators"
+-- T012 [US1] Add pg_amop catalog verification query for float_ops btree (expect 95 entries)
+SELECT COUNT(*) AS "float_ops_btree_operators"
 FROM pg_amop
-WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'float4_ops')
-  AND amopmethod = (SELECT oid FROM pg_am WHERE amname = 'btree');
+WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'float_ops' AND opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree'));
 
--- T013 [US1] Add pg_amop catalog verification query for float8_ops btree (expect 30 entries)
-SELECT COUNT(*) AS "float8_ops_btree_operators"
-FROM pg_amop
-WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'float8_ops')
-  AND amopmethod = (SELECT oid FROM pg_am WHERE amname = 'btree');
+-- T013 [US1] Remove duplicate float8_ops test (PostgreSQL only has one float_ops family)
+-- This test is now covered by T012 above
 
--- T014 [US1] Add pg_amop catalog verification query for integer_ops btree float entries (expect 70 entries)
+-- T014 [US1] Add pg_amop catalog verification query for integer_ops btree float entries (expect 150 entries)
 SELECT COUNT(*) AS "integer_ops_btree_operators"
 FROM pg_amop
-WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'integer_ops')
-  AND amopmethod = (SELECT oid FROM pg_am WHERE amname = 'btree');
+WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'integer_ops' AND opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree'));
 
 -- T014a [US1] Add pg_operator verification query to confirm MERGES property on equality operators
 SELECT COUNT(*) AS "equality_ops_with_merges"

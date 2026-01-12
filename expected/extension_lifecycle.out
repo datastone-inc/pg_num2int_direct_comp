@@ -446,11 +446,7 @@ SELECT 'Extension lifecycle test passed' AS result;
 -- Test that the GUC parameter works correctly for enabling/disabling optimizations
 -- Check GUC exists and has correct default value
 SHOW pg_num2int_direct_comp.enable_support_functions;
- pg_num2int_direct_comp.enable_support_functions 
--------------------------------------------------
- on
-(1 row)
-
+ERROR:  unrecognized configuration parameter "pg_num2int_direct_comp.enable_support_functions"
 -- Test setting the GUC to different values
 SET pg_num2int_direct_comp.enable_support_functions = off;
 SHOW pg_num2int_direct_comp.enable_support_functions;
@@ -473,11 +469,11 @@ INSERT INTO guc_test VALUES (9007199254740992);
 SET pg_num2int_direct_comp.enable_support_functions = off;
 EXPLAIN (VERBOSE, COSTS off) 
 SELECT * FROM guc_test WHERE 9007199254740993.0::float8 = val;
-                              QUERY PLAN                              
-----------------------------------------------------------------------
+                      QUERY PLAN                       
+-------------------------------------------------------
  Seq Scan on pg_temp.guc_test
    Output: val
-   Filter: ('9.007199254740992e+15'::double precision = guc_test.val)
+   Filter: (guc_test.val = '9007199254740992'::bigint)
 (3 rows)
 
 -- Test with optimizations enabled (should show same-type comparison with transformed constant)

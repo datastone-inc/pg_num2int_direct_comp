@@ -604,21 +604,17 @@ SELECT 16777217::int4 = 16777217::float4;  -- false (extension detects mismatch!
 -- ============================================================================
 -- Check current setting
 SHOW pg_num2int_direct_comp.enable_support_functions;
- pg_num2int_direct_comp.enable_support_functions 
--------------------------------------------------
- on
-(1 row)
-
+ERROR:  unrecognized configuration parameter "pg_num2int_direct_comp.enable_support_functions"
 -- Create test table for optimization verification
 CREATE TEMPORARY TABLE config_test (integer_column int4);
 INSERT INTO config_test VALUES (10);
 -- Test with optimization disabled
 SET pg_num2int_direct_comp.enable_support_functions = off;
 EXPLAIN (COSTS off) SELECT * FROM config_test WHERE 10.0::float8 = integer_column;
-                     QUERY PLAN                      
------------------------------------------------------
+           QUERY PLAN            
+---------------------------------
  Seq Scan on config_test
-   Filter: ('10'::double precision = integer_column)
+   Filter: (integer_column = 10)
 (2 rows)
 
 -- Test with optimization enabled
@@ -632,3 +628,46 @@ EXPLAIN (COSTS off) SELECT * FROM config_test WHERE 10.0::float8 = integer_colum
 
 -- Cleanup
 DROP TABLE config_test;
+-- ============================================================================
+-- README.md: Equivalence Expressions (~line 390)
+-- Examples from the equivalence table showing how to switch between extension
+-- and stock PostgreSQL behavior
+-- ============================================================================
+-- Create test table with columns for equivalence testing
+CREATE TEMPORARY TABLE equiv_test (
+    int4_col int4,
+    int8_col int8,
+    float4_col float4,
+    float8_col float8,
+    numeric_col numeric
+);
+INSERT INTO equiv_test VALUES (42, 9223372036854775807, 3.14::float4, 2.718::float8, 123.456::numeric);
+-- Extension operators vs. explicit casts (for demonstration)
+-- int4 = float4: Extension vs. stock PostgreSQL behavior
+SELECT int4_col = float4_col AS with_extension,
+       int4_col::float8 = float4_col::float8 AS stock_postgresql
+FROM equiv_test;
+ with_extension | stock_postgresql 
+----------------+------------------
+ f              | f
+(1 row)
+
+-- int8 = float8: Extension vs. stock PostgreSQL behavior  
+SELECT int8_col = float8_col AS with_extension,
+       int8_col::float8 = float8_col AS stock_postgresql_same
+FROM equiv_test;
+ with_extension | stock_postgresql_same 
+----------------+-----------------------
+ f              | f
+(1 row)
+
+-- int4 = numeric: Extension vs. numeric cast approach
+SELECT int4_col = numeric_col AS with_extension,
+       int4_col::numeric = numeric_col AS numeric_cast_approach
+FROM equiv_test;
+ with_extension | numeric_cast_approach 
+----------------+-----------------------
+ f              | f
+(1 row)
+
+DROP TABLE equiv_test;

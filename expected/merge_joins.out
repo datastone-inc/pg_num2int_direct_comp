@@ -1,9 +1,9 @@
 -- Test: Merge Join Support for Direct Numeric-Integer Comparison
 -- Purpose: Verify that operators enable merge joins with symmetric registration in both families
 -- Rationale: Operators ARE mathematically transitive and safe to add to BOTH integer_ops AND
---            numeric_ops btree families. Research confirms: if A = B (no fractional part) and 
---            B = C, then A = C. If A = B returns false (has fractional part), transitive chain 
---            correctly propagates inequality. Example: 10.5 = 10 → false, so (10.5 = 10) AND 
+--            numeric_ops btree families. Research confirms: if A = B (no fractional part) and
+--            B = C, then A = C. If A = B returns false (has fractional part), transitive chain
+--            correctly propagates inequality. Example: 10.5 = 10 → false, so (10.5 = 10) AND
 --            (10 = X) → false regardless of X.
 --
 -- Implementation: Equality operators added to:
@@ -12,6 +12,7 @@
 --                 This symmetric registration allows PostgreSQL to use merge join strategy.
 -- Load extension
 CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
+NOTICE:  extension "pg_num2int_direct_comp" already exists, skipping
 -- Create test tables
 CREATE TEMPORARY TABLE merge_int4 (id SERIAL PRIMARY KEY, val INT4);
 CREATE TEMPORARY TABLE merge_numeric (id SERIAL PRIMARY KEY, val NUMERIC);
@@ -35,8 +36,8 @@ SET enable_hashjoin = off;
 \echo '=== Test 1: Merge Join for int4 = numeric ==='
 === Test 1: Merge Join for int4 = numeric ===
 EXPLAIN (COSTS OFF)
-SELECT COUNT(*) 
-FROM merge_int4 i 
+SELECT COUNT(*)
+FROM merge_int4 i
 JOIN merge_numeric n ON i.val = n.val;
                                  QUERY PLAN                                 
 ----------------------------------------------------------------------------
@@ -56,7 +57,7 @@ JOIN merge_numeric n ON i.val = n.val;
 -- Test 2: Verify operators ARE in both integer_ops AND numeric_ops families
 \echo '=== Test 2: Operator Family Membership Check ==='
 === Test 2: Operator Family Membership Check ===
-SELECT 
+SELECT
     op.oprname,
     op.oprleft::regtype,
     op.oprright::regtype,
@@ -123,7 +124,7 @@ ORDER BY op.oprname, op.oprleft, op.oprright;
 -- Test 3: Verify symmetric registration in integer_ops
 \echo '=== Test 3: Integer Ops Family Membership ==='
 === Test 3: Integer Ops Family Membership ===
-SELECT 
+SELECT
     op.oprname,
     op.oprleft::regtype,
     op.oprright::regtype,
@@ -211,7 +212,7 @@ JOIN merge_float_test f ON i.val_int4 = f.val_float4;
          ->  Seq Scan on merge_float_test f
 (8 rows)
 
--- Test int4 x float8 merge join  
+-- Test int4 x float8 merge join
 EXPLAIN (COSTS OFF, BUFFERS OFF)
 SELECT i.val_int4, f.val_float8
 FROM merge_int_float i
@@ -229,15 +230,15 @@ JOIN merge_float_test f ON i.val_int4 = f.val_float8;
 \echo '=== Test 6: Btree Family Registration Verification ==='
 === Test 6: Btree Family Registration Verification ===
 SELECT COUNT(*) as float_ops_operators
-FROM pg_amop 
+FROM pg_amop
 WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'float_ops' AND opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree'));
  float_ops_operators 
 ---------------------
                   95
 (1 row)
 
-SELECT COUNT(*) as integer_ops_operators  
-FROM pg_amop 
+SELECT COUNT(*) as integer_ops_operators
+FROM pg_amop
 WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'integer_ops' AND opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree'));
  integer_ops_operators 
 -----------------------
@@ -248,8 +249,8 @@ WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'integer_ops' AN
 \echo '=== Test 7: MERGES Property Verification ==='
 === Test 7: MERGES Property Verification ===
 SELECT COUNT(*) as merges_equality_operators
-FROM pg_operator 
-WHERE oprname = '=' 
+FROM pg_operator
+WHERE oprname = '='
   AND oprcanmerge = true
   AND ((oprleft = 'int4'::regtype AND oprright = 'float4'::regtype) OR
        (oprleft = 'float4'::regtype AND oprright = 'int4'::regtype) OR
@@ -266,7 +267,7 @@ WHERE oprname = '='
 
 -- Reset join settings
 RESET enable_hashjoin;
-RESET enable_nestloop; 
+RESET enable_nestloop;
 RESET enable_mergejoin;
 DROP TABLE merge_int_float;
 DROP TABLE merge_float_test;
@@ -300,8 +301,8 @@ SET enable_nestloop = off;
 \echo '=== Test: Merge Join for int4 = float4 ==='
 === Test: Merge Join for int4 = float4 ===
 EXPLAIN (COSTS OFF)
-SELECT COUNT(*) 
-FROM merge_int4_float i 
+SELECT COUNT(*)
+FROM merge_int4_float i
 JOIN merge_float4 f ON i.val = f.val;
                                 QUERY PLAN                                
 --------------------------------------------------------------------------
@@ -315,7 +316,7 @@ JOIN merge_float4 f ON i.val = f.val;
 (7 rows)
 
 SELECT COUNT(*) AS "int4_float4_matches"
-FROM merge_int4_float i 
+FROM merge_int4_float i
 JOIN merge_float4 f ON i.val = f.val;
  int4_float4_matches 
 ---------------------
@@ -326,8 +327,8 @@ JOIN merge_float4 f ON i.val = f.val;
 \echo '=== Test: Merge Join for int4 = float8 ==='
 === Test: Merge Join for int4 = float8 ===
 EXPLAIN (COSTS OFF)
-SELECT COUNT(*) 
-FROM merge_int4_float i 
+SELECT COUNT(*)
+FROM merge_int4_float i
 JOIN merge_float8_ext f ON i.val = f.val;
                                     QUERY PLAN                                    
 ----------------------------------------------------------------------------------
@@ -339,19 +340,19 @@ JOIN merge_float8_ext f ON i.val = f.val;
 (5 rows)
 
 SELECT COUNT(*) AS "int4_float8_matches"
-FROM merge_int4_float i 
+FROM merge_int4_float i
 JOIN merge_float8_ext f ON i.val = f.val;
  int4_float8_matches 
 ---------------------
                 1000
 (1 row)
 
--- T010 [US1] Add merge join test for int8 x float4  
+-- T010 [US1] Add merge join test for int8 x float4
 \echo '=== Test: Merge Join for int8 = float4 ==='
 === Test: Merge Join for int8 = float4 ===
 EXPLAIN (COSTS OFF)
-SELECT COUNT(*) 
-FROM merge_int8_float i 
+SELECT COUNT(*)
+FROM merge_int8_float i
 JOIN merge_float4 f ON i.val = f.val;
                                 QUERY PLAN                                
 --------------------------------------------------------------------------
@@ -365,7 +366,7 @@ JOIN merge_float4 f ON i.val = f.val;
 (7 rows)
 
 SELECT COUNT(*) AS "int8_float4_matches"
-FROM merge_int8_float i 
+FROM merge_int8_float i
 JOIN merge_float4 f ON i.val = f.val;
  int8_float4_matches 
 ---------------------
@@ -376,8 +377,8 @@ JOIN merge_float4 f ON i.val = f.val;
 \echo '=== Test: Merge Join for int8 = float8 ==='
 === Test: Merge Join for int8 = float8 ===
 EXPLAIN (COSTS OFF)
-SELECT COUNT(*) 
-FROM merge_int8_float i 
+SELECT COUNT(*)
+FROM merge_int8_float i
 JOIN merge_float8_ext f ON i.val = f.val;
                                     QUERY PLAN                                    
 ----------------------------------------------------------------------------------
@@ -391,7 +392,7 @@ JOIN merge_float8_ext f ON i.val = f.val;
 (7 rows)
 
 SELECT COUNT(*) AS "int8_float8_matches"
-FROM merge_int8_float i 
+FROM merge_int8_float i
 JOIN merge_float8_ext f ON i.val = f.val;
  int8_float8_matches 
 ---------------------

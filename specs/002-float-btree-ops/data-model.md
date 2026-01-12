@@ -14,8 +14,7 @@ This feature adds int x float comparison operators to PostgreSQL's builtin btree
 | Family | Access Method | Added Types |
 |--------|---------------|-------------|
 | `integer_ops` | btree | float4, float8 (same-type + cross-type) |
-| `float4_ops` | btree | int2, int4, int8 (cross-type only) |
-| `float8_ops` | btree | int2, int4, int8 (cross-type only) |
+| `float_ops` | btree | int2, int4, int8 (cross-type only) |
 
 ### pg_amop Entries (Operators)
 
@@ -39,29 +38,23 @@ This feature adds int x float comparison operators to PostgreSQL's builtin btree
 | int8 | float8 | 1-5 | <, <=, =, >=, > | 5 |
 | **Total** | | | | **70** |
 
-#### float4_ops btree additions
+#### float_ops btree additions
 
 | Left Type | Right Type | Strategy | Operator | Count |
 |-----------|------------|----------|----------|-------|
 | float4 | int2 | 1-5 | <, <=, =, >=, > | 5 |
 | float4 | int4 | 1-5 | <, <=, =, >=, > | 5 |
 | float4 | int8 | 1-5 | <, <=, =, >=, > | 5 |
-| int2 | float4 | 1-5 | <, <=, =, >=, > | 5 |
-| int4 | float4 | 1-5 | <, <=, =, >=, > | 5 |
-| int8 | float4 | 1-5 | <, <=, =, >=, > | 5 |
-| **Total** | | | | **30** |
-
-#### float8_ops btree additions
-
-| Left Type | Right Type | Strategy | Operator | Count |
-|-----------|------------|----------|----------|-------|
 | float8 | int2 | 1-5 | <, <=, =, >=, > | 5 |
 | float8 | int4 | 1-5 | <, <=, =, >=, > | 5 |
 | float8 | int8 | 1-5 | <, <=, =, >=, > | 5 |
+| int2 | float4 | 1-5 | <, <=, =, >=, > | 5 |
+| int4 | float4 | 1-5 | <, <=, =, >=, > | 5 |
+| int8 | float4 | 1-5 | <, <=, =, >=, > | 5 |
 | int2 | float8 | 1-5 | <, <=, =, >=, > | 5 |
 | int4 | float8 | 1-5 | <, <=, =, >=, > | 5 |
 | int8 | float8 | 1-5 | <, <=, =, >=, > | 5 |
-| **Total** | | | | **30** |
+| **Total** | | | | **60** |
 
 ### pg_amproc Entries (Support Functions)
 
@@ -95,10 +88,16 @@ This feature adds int x float comparison operators to PostgreSQL's builtin btree
 | int4 | float4 | int4_cmp_float4 | 1 |
 | int8 | float4 | int8_cmp_float4 | 1 |
 
-#### float8_ops btree additions
+#### float_ops btree additions
 
 | Left Type | Right Type | Function | Proc Num |
 |-----------|------------|----------|----------|
+| float4 | int2 | float4_cmp_int2 | 1 |
+| float4 | int4 | float4_cmp_int4 | 1 |
+| float4 | int8 | float4_cmp_int8 | 1 |
+| int2 | float4 | int2_cmp_float4 | 1 |
+| int4 | float4 | int4_cmp_float4 | 1 |
+| int8 | float4 | int8_cmp_float4 | 1 |
 | float8 | int2 | float8_cmp_int2 | 1 |
 | float8 | int4 | float8_cmp_int4 | 1 |
 | float8 | int8 | float8_cmp_int8 | 1 |

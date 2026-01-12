@@ -79,19 +79,13 @@ int4 float4_cmp_int2(float4 arg0, int2 arg1);
 
 **Total**: 70 operators, 14 support functions
 
-### float4_ops (btree)
+### float_ops (btree)
 
 **New operators added**:
 - float4 x int2, int4, int8 (cross-type, both directions)
-
-**Total**: 30 operators, 6 support functions
-
-### float8_ops (btree)
-
-**New operators added**:
 - float8 x int2, int4, int8 (cross-type, both directions)
 
-**Total**: 30 operators, 6 support functions
+**Total**: 60 operators, 12 support functions
 
 ## Test Contracts
 
@@ -128,16 +122,16 @@ SELECT
 
 ```sql
 -- GIVEN: Extension installed
--- WHEN: Querying pg_amop for float4_ops btree
+-- WHEN: Querying pg_amop for float_ops btree
 -- THEN: Cross-type operators are present
 
 SELECT COUNT(*) FROM pg_amop 
 WHERE amopfamily = (
   SELECT oid FROM pg_opfamily 
-  WHERE opfname = 'float4_ops' 
+  WHERE opfname = 'float_ops' 
     AND opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree')
 )
 AND (amoplefttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype)
   OR amoprighttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype));
--- Expected: 30
+-- Expected: 60
 ```

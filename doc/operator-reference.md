@@ -241,7 +241,7 @@ SELECT 9007199254740993::int8 = 9007199254740993::float8;  -- false
 
 - **Precision**: Arbitrary (limited by available memory)
 - **Exact range**: No inherent limits
-- **Integer types**: 
+- **Integer types**:
   - int2: -32,768 to 32,767
   - int4: -2,147,483,648 to 2,147,483,647
   - int8: -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807
@@ -375,8 +375,8 @@ Use exact comparisons to detect precision issues:
 
 ```sql
 -- Audit query
-SELECT COUNT(*) 
-FROM data_sync 
+SELECT COUNT(*)
+FROM data_sync
 WHERE source_id::int4 <> replica_id::float4;
 ```
 

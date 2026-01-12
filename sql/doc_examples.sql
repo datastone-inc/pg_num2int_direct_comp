@@ -407,3 +407,38 @@ EXPLAIN (COSTS off) SELECT * FROM config_test WHERE 10.0::float8 = integer_colum
 
 -- Cleanup
 DROP TABLE config_test;
+
+-- ============================================================================
+-- README.md: Equivalence Expressions (~line 390)
+-- Examples from the equivalence table showing how to switch between extension
+-- and stock PostgreSQL behavior
+-- ============================================================================
+
+-- Create test table with columns for equivalence testing
+CREATE TEMPORARY TABLE equiv_test (
+    int4_col int4,
+    int8_col int8,
+    float4_col float4,
+    float8_col float8,
+    numeric_col numeric
+);
+
+INSERT INTO equiv_test VALUES (42, 9223372036854775807, 3.14::float4, 2.718::float8, 123.456::numeric);
+
+-- Extension operators vs. explicit casts (for demonstration)
+-- int4 = float4: Extension vs. stock PostgreSQL behavior
+SELECT int4_col = float4_col AS with_extension,
+       int4_col::float8 = float4_col::float8 AS stock_postgresql
+FROM equiv_test;
+
+-- int8 = float8: Extension vs. stock PostgreSQL behavior  
+SELECT int8_col = float8_col AS with_extension,
+       int8_col::float8 = float8_col AS stock_postgresql_same
+FROM equiv_test;
+
+-- int4 = numeric: Extension vs. numeric cast approach
+SELECT int4_col = numeric_col AS with_extension,
+       int4_col::numeric = numeric_col AS numeric_cast_approach
+FROM equiv_test;
+
+DROP TABLE equiv_test;
