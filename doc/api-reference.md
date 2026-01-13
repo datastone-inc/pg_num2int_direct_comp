@@ -193,11 +193,18 @@ Enables: Merge joins for equality-based JOIN operations on pre-sorted data.
 **Example**:
 
 ```sql
-CREATE INDEX ON table(intkey1, intkey2);
--- Query with constants
-SELECT * FROM table WHERE intkey1 = 100.0::numeric AND intkey2 > 10.5::numeric;
--- num2int_support transforms to: intkey1 = 100 AND intkey2 >= 11
--- Result: Index Scan using table_intkey1_intkey2_idx
+CREATE TABLE example (intkey1 INT4, intkey2 INT4);
+CREATE INDEX ON example(intkey1, intkey2);
+
+-- Query with constants: num2int_support transforms predicates
+EXPLAIN (COSTS OFF) SELECT * FROM example
+    WHERE intkey1 = 100.0::numeric AND intkey2 > 10.5::numeric;
+--                              QUERY PLAN
+-- --------------------------------------------------------------------
+--  Index Only Scan using example_intkey1_intkey2_idx on example
+--    Index Cond: ((intkey1 = 100) AND (intkey2 >= 11))
+-- (2 rows)
+-- Transforms: intkey1 = 100.0 → intkey1 = 100, intkey2 > 10.5 → intkey2 >= 11
 ```
 
 ## Type Aliases
@@ -311,11 +318,15 @@ The extension's support functions optimize constant predicates during query plan
 When an integer column is compared to a fractional constant, the predicate is recognized as always-false:
 
 ```sql
+-- Assuming: CREATE TABLE example (int_col INT4);
+
 -- int_col can never equal 10.5 (fractional value)
-EXPLAIN (COSTS OFF) SELECT * FROM table WHERE int_col = 10.5::numeric;
--- Result:
+EXPLAIN (COSTS OFF) SELECT * FROM example WHERE int_col = 10.5::numeric;
+--         QUERY PLAN
+-- --------------------------
 --  Result
 --    One-Time Filter: false
+-- (2 rows)
 ```
 
 Benefits: Planner estimates rows=0, may skip table scan entirely.
@@ -325,11 +336,16 @@ Benefits: Planner estimates rows=0, may skip table scan entirely.
 When a numeric constant exactly equals an integer, it's transformed to use the native integer operator:
 
 ```sql
+-- Assuming: CREATE TABLE example (int_col INT4);
+--           CREATE INDEX idx_example ON example(int_col);
+
 -- 100::numeric exactly equals 100::int4
-EXPLAIN (COSTS OFF) SELECT * FROM table WHERE int_col = 100::numeric;
--- Result:
---  Index Scan using idx on table
---    Index Cond: (int_col = 100)    -- Native int4=int4 operator
+EXPLAIN (COSTS OFF) SELECT * FROM example WHERE int_col = 100::numeric;
+--                   QUERY PLAN
+-- ----------------------------------------------
+--  Index Scan using idx_example on example
+--    Index Cond: (int_col = 100)
+-- (2 rows)
 ```
 
 Benefits: Perfect selectivity estimation, most efficient comparison operator.

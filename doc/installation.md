@@ -6,7 +6,7 @@
 
 - **PostgreSQL**: Version 12 or later
 - **Build Tools**: GCC or Clang with C99 support
-- **PostgreSQL Development Headers**: 
+- **PostgreSQL Development Headers**:
   - Debian/Ubuntu: `postgresql-server-dev-<version>`
   - Red Hat/CentOS: `postgresql<version>-devel`
   - macOS (Homebrew): Included with `postgresql`
@@ -60,6 +60,7 @@ sudo make install
 ```
 
 This copies:
+
 - `pg_num2int_direct_comp.so` → `$libdir`
 - `pg_num2int_direct_comp--1.0.0.sql` → `$sharedir/extension`
 - `pg_num2int_direct_comp.control` → `$sharedir/extension`
@@ -88,7 +89,170 @@ SELECT 16777216::int4 = 16777217::float4;  -- true (float4 rounds to 16777216)
 SELECT 16777217::int4 = 16777217::float4;  -- false (extension detects mismatch!)
 ```
 
-See the [Quick Start examples](../README.md#quick-start) for more usage patterns.
+## Quick Start
+
+### Example 1: Detecting Float Precision Loss
+
+```sql
+-- Example: Detecting Float Precision Loss
+-- With extension:
+-- float4 cannot represent 16777217 exactly, it rounds to 16777216.0
+-- The extension detects when the integer differs from the float representation
+
+CREATE EXTENSION pg_num2int_direct_comp;
+
+-- This is TRUE because 16777217::float4 rounds to 16777216.0, matching 16777216
+SELECT 16777216::int4 = 16777217::float4;  -- true (both are 16777216)
+
+-- This is FALSE because 16777217 ≠ 16777216.0 (extension detects the mismatch!)
+SELECT 16777217::int4 = 16777217::float4;  -- false (correct - detects precision loss)
+```
+
+### Example 2: Planner Transitivity Inference
+
+```sql
+-- Example: Planner Transitivity Inference
+-- With extension:
+-- The query planner can infer transitive relationships across types for index optimization
+CREATE EXTENSION pg_num2int_direct_comp;
+
+CREATE TABLE orders (id SERIAL, customer_id NUMERIC);  -- numeric foreign key
+CREATE TABLE customers (id INT4 PRIMARY KEY, name TEXT);
+CREATE INDEX ON orders(customer_id);
+
+-- Query with cross-type join: orders.customer_id (numeric) = customers.id (int4)
+PREPARE find_orders(int4) AS
+  SELECT o.* FROM orders o JOIN customers c ON o.customer_id = c.id WHERE c.id = $1;
+
+-- With extension: planner infers o.customer_id = $1 across types, enabling index scan
+EXPLAIN (COSTS OFF) EXECUTE find_orders(42);
+--  Nested Loop
+--    ->  Index Scan using customers_pkey on customers c
+--          Index Cond: (id = 42)
+--    ->  Index Scan using orders_customer_id_idx on orders o
+--          Index Cond: (customer_id = 42)    ← inferred across numeric/int4!
+
+-- Without extension: planner cannot infer transitivity across types
+-- Would require scanning orders for each customer row without the inferred predicate
+```
+
+### Example 3: Index-Optimized Queries
+
+```sql
+-- Example: Index-Optimized Queries
+-- With extension:
+CREATE TABLE measurements (id SERIAL, value INT4);
+CREATE INDEX ON measurements(value);
+INSERT INTO measurements (value) SELECT generate_series(1, 1000000);
+
+-- Uses index efficiently (no cast on indexed column)
+EXPLAIN (COSTS OFF) SELECT * FROM measurements WHERE value = 500::numeric;
+--                       QUERY PLAN
+-- ---------------------------------------------------------
+--  Index Scan using measurements_value_idx on measurements
+--    Index Cond: (value = 500)
+-- (2 rows)
+```
+
+### Example 4: Fractional Comparisons
+
+```sql
+-- Example: Fractional Comparisons
+-- With extension:
+-- Fractional values never equal integers
+SELECT 10::int4 = 10.5::numeric;  -- false
+SELECT 10::int4 < 10.5::numeric;  -- true
+```
+
+### Example 5: Range Queries
+
+```sql
+-- Example: Range Queries
+CREATE TABLE inventory (item_id INT4, quantity INT4);
+INSERT INTO inventory VALUES (1, 10), (2, 11), (3, 12);
+
+-- Exact boundary handling
+SELECT * FROM inventory WHERE quantity > 10.5::float8;
+--  item_id | quantity
+-- ---------+----------
+--        2 |       11
+--        3 |       12
+-- (2 rows)
+```
+
+### Example 6: Hash Joins for Large Tables
+
+```sql
+-- Example: Hash Joins for Large Tables
+-- Hash joins work automatically for large table joins
+CREATE TABLE sales (id SERIAL, amount NUMERIC(10,2));
+CREATE TABLE targets (id SERIAL, threshold INT4);
+INSERT INTO sales SELECT generate_series(1, 1000000), random() * 1000;
+INSERT INTO targets SELECT generate_series(1, 1000000), (random() * 1000)::int4;
+
+-- Planner chooses hash join for large equijoin
+EXPLAIN (COSTS OFF) SELECT COUNT(*) FROM sales s JOIN targets t ON s.amount = t.threshold;
+--                  QUERY PLAN
+-- ---------------------------------------------
+--  Aggregate
+--    ->  Hash Join
+--          Hash Cond: (t.threshold = s.amount)
+--          ->  Seq Scan on targets t
+--          ->  Hash
+--                ->  Seq Scan on sales s
+-- (6 rows)
+```
+
+### Example 7: Type Aliases
+
+```sql
+-- Example: Type Aliases
+-- Serial types work automatically
+CREATE TABLE users (id SERIAL, score INT4);
+SELECT * FROM users WHERE id = 100.0::numeric;  -- Uses exact comparison
+
+-- Decimal type works automatically
+SELECT 10::int4 = 10.0::decimal;  -- true (decimal is alias for numeric)
+```
+
+### Example 8: Query Optimization - Impossible Predicate Detection
+
+The extension's support functions transform constant predicates during query planning for optimal performance:
+
+```sql
+-- Example: Query Optimization - Impossible Predicate Detection
+-- Assuming: CREATE TABLE measurements (id SERIAL, value INT4);
+--           CREATE INDEX ON measurements(value);
+
+-- Impossible predicate detection: integer can never equal fractional value
+EXPLAIN (COSTS OFF) SELECT * FROM measurements WHERE value = 10.5::numeric;
+--         QUERY PLAN
+-- --------------------------
+--  Result
+--    One-Time Filter: false
+-- (2 rows)
+-- The planner recognizes this is impossible and returns rows=0 estimate
+
+-- Exact match transformation: uses native integer operator
+EXPLAIN (COSTS OFF) SELECT * FROM measurements WHERE value = 100::numeric;
+--                        QUERY PLAN
+-- ---------------------------------------------------------
+--  Index Scan using measurements_value_idx on measurements
+--    Index Cond: (value = 100)
+-- (2 rows)
+-- Transformed from cross-type to native int=int for optimal selectivity
+
+-- Range boundary transformation: adjusts fractional boundaries
+-- "value > 10.5" becomes "value >= 11" (since no integer is between 10 and 11)
+SELECT * FROM measurements WHERE value > 10.5::numeric;
+-- Returns values 11, 12, 13, ... (correctly excludes 10)
+```
+
+These optimizations ensure:
+
+- Impossible predicates are detected early (rows=0 estimate, potential scan elimination)
+- Exact integer matches use native operators for perfect selectivity
+- Range boundaries are correctly adjusted for integer semantics
 
 ## Troubleshooting
 

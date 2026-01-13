@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD033 MD041 -->
 <div align="center">
 
 <img src="assets/datastone-logo.svg" alt="dataStone Logo" width="400"/>
@@ -12,34 +13,42 @@
 Exact numeric-to-integer comparison operators for PostgreSQL
 
 </div>
+<!-- markdownlint-enable MD033 MD041 -->
 
 ---
 
 ## Table of Contents
 
 - [Overview](#overview)
+  - [Why not just fix the application to use consistent types?](#why-not-just-fix-the-application-to-use-consistent-types)
+  - [What's the risk of custom operators?](#whats-the-risk-of-custom-operators)
+  - [The Problem: Implicit Casting](#the-problem-implicit-casting)
+    - [Implicit Cast: Mathematically Incorrect Comparison Results](#implicit-cast-mathematically-incorrect-comparison-results)
+    - [Implicit Cast: Poor Query Performance](#implicit-cast-poor-query-performance)
+    - [Why PostgreSQL Cannot Infer Transitive Equality](#why-postgresql-cannot-infer-transitive-equality)
+    - [With the Extension: Transitive Equality Correct Results (and Better Plans)](#with-the-extension-transitive-equality-correct-results-and-better-plans)
+    - [Example: Implicit Casting Problems](#example-implicit-casting-problems)
+  - [The Solution: Exact Cross-Type Comparison](#the-solution-exact-cross-type-comparison)
+    - [How Exact Comparison Works](#how-exact-comparison-works)
+    - [Index Optimization via Support Functions](#index-optimization-via-support-functions)
+    - [Hash Support for Joins, GROUP BY, and DISTINCT](#hash-support-for-joins-group-by-and-distinct)
+    - [Merge Join Support via Btree Operator Families](#merge-join-support-via-btree-operator-families)
+    - [Performance: Correctness Enables Speed](#performance-correctness-enables-speed)
   - [Key Features](#key-features)
   - [Supported Types](#supported-types)
+- [SQL Equivalents With and Without the Extension](#sql-equivalents-with-and-without-the-extension)
 - [Installation](#installation)
   - [Prerequisites](#prerequisites)
   - [Build and Install](#build-and-install)
   - [Enable in Database](#enable-in-database)
-- [Quick Start](#quick-start)
-  - [Example 1: Detecting Float Precision Loss](#example-1-detecting-float-precision-loss)
-  - [Example 2: Planner Transitivity Inference](#example-2-planner-transitivity-inference)
-  - [Example 3: Index-Optimized Queries](#example-3-index-optimized-queries)
-  - [Example 4: Fractional Comparisons](#example-4-fractional-comparisons)
-  - [Example 5: Hash Joins for Large Tables](#example-5-hash-joins-for-large-tables)
-  - [Example 6: Type Aliases](#example-6-type-aliases)
-  - [Example 7: Query Optimization - Impossible Predicate Detection](#example-7-query-optimization---impossible-predicate-detection)
-- [Equivalence Expressions](#equivalence-expressions)
-- [Configuration](#configuration)
+- [Support Function Chicken Switch](#support-function-chicken-switch)
+  - [pg_num2int_direct_comp.enable_support_functions](#pg_num2int_direct_compenable_support_functions)
 - [Limitations](#limitations)
-  - [Performance Considerations](#performance-considerations)
 - [Documentation](#documentation)
 - [Technical Details](#technical-details)
+  - [Project Structure](#project-structure)
+  - [Implementation Notes](#implementation-notes)
 - [Compatibility](#compatibility)
-- [Performance Benchmarking](#performance-benchmarking)
 - [Support](#support)
 - [License](#license)
 - [Acknowledgments](#acknowledgments)
@@ -50,31 +59,20 @@ Exact numeric-to-integer comparison operators for PostgreSQL
 
 Database schemas drift and SQL expressions evolve such that cross-type comparisons between numeric types (numeric, float4, float8) and integer types (int2, int4, int8) can occur. If this is happening for you, PostgreSQL's default behavior injects implicit casts that cause two critical problems: **mathematically incorrect comparison results** and **poor query performance**. This extension provides **exact cross-type comparison operators** to address both problems.
 
-## Why Custom Operators?
+### Why not just fix the application to use consistent types?
 
-**"Why not just fix the application to use consistent types?"**
+While type consistency is the ideal, real-world databases face type mismatches from:
 
-While type consistency is ideal, real-world databases face type mismatches from:
-
-- **Legacy schemas** with mixed numeric/integer columns across related tables
+- **Joins in evolving systems** between tables designed by different teams over time
 - **API integrations** that pass parameters as `numeric`/`float` when columns are `integer`
-- **ORMs and frameworks** that default to `numeric` for user inputs, even for integer IDs
-- **Data migration** from systems with different type preferences
-- **Cross-system joins** between tables designed by different teams over time
+- **ORMs and frameworks** that default to `numeric`/`float` for user inputs, even for `integer` IDs
+- **Evolving SQL expressions** that introduce mixed-type comparisons unintentionally
+- **Ad-hoc queries** by analysts exploring data without strict type discipline
 
-**"Are custom operators standard PostgreSQL practice?"**
-
-**Yes.** PostgreSQL's extensibility is a core design feature:
-- **PostGIS** adds hundreds of geometric operators (`&&`, `@`, `~=`, etc.)
-- **pg_trgm** adds text similarity operators (`%`, `<->`, `<<->`)  
-- **btree_gin/btree_gist** extend comparison operations to new access methods
-- **Extensions in contrib/** ship with PostgreSQL itself
-
-This extension follows the same proven pattern: precise mathematical semantics for type combinations PostgreSQL doesn't handle optimally by default.
-
-**"What's the risk of custom operators?"**
+### What's the risk of custom operators?
 
 **Minimal operational risk:**
+
 - Uses existing PostgreSQL comparison functions (no new C code for core logic)
 - Follows established operator precedence and behavior patterns
 - Drops cleanly: `DROP EXTENSION` removes all operators instantly
@@ -82,205 +80,187 @@ This extension follows the same proven pattern: precise mathematical semantics f
 
 **Switching Behavior:** Users migrating between standard PostgreSQL and this extension have clear equivalence expressions (see [Equivalence Expressions](#equivalence-expressions)).
 
-### The Problem: Implicit Casting Produces Wrong Results
+### The Problem: Implicit Casting
 
 When no direct cross-type comparison operator exists, PostgreSQL implicitly casts operands to a common type before comparing. The type resolution depends on which types are involved:
 
 - **Float vs. integer** (e.g., `float4 = int4`): Both operands are implicitly cast to `float8`, since it's the *preferred type* when floats are involved
 - **Numeric vs. integer** (e.g., `numeric = int8`): The integer is implicitly cast to `numeric`
 
-When integers are cast to floating-point types, precision can be lost.
+#### Implicit Cast: Mathematically Incorrect Comparison Results
 
-#### Why Precision Loss Occurs
-
+When integers are implicitly cast to floating-point types, precision can be lost because
 IEEE 754 floating-point types have limited mantissa bits:
+
 - **float4**: 23-bit mantissa → exact integers only up to 2²⁴ (16,777,216)
 - **float8**: 52-bit mantissa → exact integers only up to 2⁵³ (9,007,199,254,740,992)
 
 Beyond these limits, integers round to the nearest representable float value, causing silent precision loss in comparisons.
 
+#### Implicit Cast: Poor Query Performance
+
+When integers are implicitly cast, the PostgreSQL query planner is crippled:
+
+- cannot exploit btree indexes on indexed columns that are implicitly cast, often reducing to sequential scans.
+- cannot choose indexed nested-loop joins or merge joins for cross-type equality conditions
+- cannot infer transitive equality (see below)
+
+#### Why PostgreSQL Cannot Infer Transitive Equality
+
+Transitivity is a fundamental property of equality: if `a = b` and `b = c`, then `a = c` should hold. However, PostgreSQL's implicit casting violates this property, as shown in the next SQL example a=b and b=c however a≠c. So in stock PostgreSQL, the implicit cast expressions intentionally don't qualify for operator class membership, and the planner does not infer any transitive relationships because they would be wrong, see [Behavior of B-Tree Operator Classes](https://www.postgresql.org/docs/current/btree.html#BTREE-BEHAVIOR).
+
 ```sql
+-- Example: Transitive Equality Violations not detected at the float8 2^53 boundary (different at the last digit)
 -- Without extension (stock PostgreSQL):
--- PostgreSQL's DEFAULT behavior (Mathematically WRONG):
-SELECT 16777216::int4 = 16777217::float4   -- default returns TRUE (!?)
-     , 16777217::int4 = 16777217::float4;  -- default returns FALSE (!?)
+SELECT 9007199254740993::int8 = 9007199254740993::float8 AS "a=b"  -- a=b TRUE (int8 cast to float8, rounds)
+     , 9007199254740993::float8 = 9007199254740992::int8 AS "b=c"  -- b=c TRUE (int8 cast to float8, rounds)
+     , 9007199254740993::int8 = 9007199254740992::int8   AS "a=c"; -- a=c FALSE!
+--  a=b | b=c | a=c
+-- -----+-----+-----
+--  t   | t   | f
+-- (1 row)
 
--- What actually happens:
--- 1. 16777217::float4 cannot be exactly represented, rounds to 1.6777216e7
--- 2. PostgreSQL casts both operands to float8 for comparison
--- 3. 1.6777216e7 = 1.6777216e7 → TRUE and 1.6777217e7 = 1.6777216e7 → FALSE
-
--- The same integer literal on both sides returns FALSE. There are many integer
--- values for which there are no equal float4 or float8 representations.
--- If you rely on cross-type comparisons, this leads to silent incorrect results.
+-- If PostgreSQL inferred a=c from a=b AND b=c, it would get wrong results.
+-- PostgreSQL knows this, so it CANNOT use transitivity for plan optimization.
 ```
 
-This affects real-world scenarios, and for myself, this is why I originally created this extension: a customer's applications was passing user IDs (and all numeric parameters) as float4 values, leading to silent data integrity and performance issues, e.g.:
+This limitation affects query optimization: the planner cannot propagate equality conditions across joins or eliminate redundant predicates when cross-type comparisons are involved.
+
+#### With the Extension: Transitive Equality Correct Results (and Better Plans)
 
 ```sql
+-- Example: Transitive Equality Violations detected at the float8 2^53 boundary (different at the last digit)
+SELECT 9007199254740993::int8 = 9007199254740993::float8 AS "a=b"  -- a=b FALSE (b lossy NOT EQUAL)
+     , 9007199254740993::float8 = 9007199254740992::int8 AS "b=c"  -- b=c TRUE (int8 cast to rounded float8)
+     , 9007199254740993::int8 = 9007199254740992::int8   AS "a=c"; -- a=c FALSE!
+--  a=b | b=c | a=c
+-- -----+-----+-----
+--  f   | t   | f
+-- (1 row)
+```
+
+With the extension, the cross-type equality operators provide mathematically correct results, preserving transitivity where applicable. The planner can now safely infer relationships and optimize queries effectively, e.g., if a=b and b=c, then correctly infer a=c.
+
+Note that the extension also adds such planning inference capabilities for integer x numeric comparisons which is missing in stock PostgreSQL.
+
+> **This extension guarantees mathematical correctness.** All comparison operators satisfy reflexivity, symmetry, and transitivity for equality, and irreflexivity, transitivity, and trichotomy for ordering. Because the extension's operators are mathematically correct, PostgreSQL's planner CAN safely infer transitivity for optimizations.
+
+#### Example: Implicit Casting Problems
+
+The following example demonstrates how stock PostgreSQL produces "wrong" results and suffers poor performance due to forced sequential scans and lack of transitivity inference:
+
+```sql
+-- Example: Wrong results, seq scans, and no transitivity from cross-type comparison
 -- Without extension (stock PostgreSQL):
--- User lookup returns the WRONG person
-CREATE TABLE users(id int4 PRIMARY KEY, name text);
-INSERT INTO users VALUES (16777216, 'Alice'), (16777217, 'Bob');
+CREATE TABLE orders (orderid int8 PRIMARY KEY, customer text);
+CREATE TABLE order_items (id serial, orderid int8, product text);
+CREATE INDEX ON order_items(orderid);
 
--- Application passes user ID as float4 parameter
-PREPARE find_user(float4) AS SELECT * FROM users WHERE id = $1;
-EXECUTE find_user(16777217);  -- Looking for Bob...
---    id    | name
--- ---------+-------
---  16777216 | Alice   ← WRONG! and SLOW!
---
--- We asked for Bob and got Alice. Bob cannot be found.
--- WRONG! because 16777217::float4 rounds to 16777216.0 before the comparison.
--- SLOW! because it does a sequential scan of users (cannot use index on id).
+-- Bulk insert, plus two orders with adjacent IDs at the float8 precision boundary
+INSERT INTO orders SELECT g, 'customer' || g FROM generate_series(1, 100000) g;
+INSERT INTO orders VALUES (9007199254740992, 'Alice'), (9007199254740993, 'Bob');
+
+INSERT INTO order_items (orderid, product) SELECT g, 'product' || g FROM generate_series(1, 100000) g;
+INSERT INTO order_items VALUES (DEFAULT, 9007199254740992, 'Widget'), (DEFAULT, 9007199254740993, 'Gadget');
+ANALYZE orders; ANALYZE order_items;
+
+-- Application queries for Alice's order (9007199254740992) using float8 parameter
+EXPLAIN (COSTS OFF)
+SELECT o.customer, oi.product FROM orders o
+JOIN order_items oi ON o.orderid = oi.orderid
+WHERE o.orderid = 9007199254740992::float8;
+--                                            QUERY PLAN
+-- -------------------------------------------------------------------------------------------------
+--  Hash Join
+--    Hash Cond: (oi.orderid = o.orderid)
+--    ->  Seq Scan on order_items oi                              ← NO TRANSITIVITY! (filter not pushed)
+--    ->  Hash
+--          ->  Seq Scan on orders o                              ← SLOW! (100K+ rows scanned)
+--                Filter: ((orderid)::double precision = '9.007199254740992e+15'::double precision)
+-- (6 rows)
+
+SELECT o.customer, oi.product FROM orders o
+JOIN order_items oi ON o.orderid = oi.orderid
+WHERE o.orderid = 9007199254740992::float8;
+--  customer | product
+-- ----------+---------
+--  Alice    | Widget
+--  Bob      | Gadget                                              ← WRONG! (asked for Alice's order)
+-- (2 rows)
 ```
 
-> **Note Well**: This extension cannot fix this wrong result case (float4 parameter rounding error) because the value `16777217` is rounded to `16777216.0` when converted to float4, *before* any comparison happens. The solution is to (a) use same type `int4` or even `numeric` parameters instead of float4 when exact int4 values are needed, or (b) use a range predicate that accounts for the rounding error ... it is hard to construct such a predicate.
+**Summary without the extension installed:**
 
-#### Transitive Equality Violations
+- We asked for ONE order (Alice's 9007199254740992) but got TWO rows (Alice AND Bob), effectively violating the PK constraint.
+- WRONG: both int8 IDs round to the same float8 value (9007199254740992.0)
+- SLOW: seq scans on BOTH tables because PostgreSQL casts orderid to float8
+- NO TRANSITIVITY: planner cannot infer order_items.orderid = constant from join + filter
 
-PostgreSQL's default implicit casting also violates transitivity, normally a fundamental property of equality:
+**Same exact SQL explain and query with the extension installed:**
 
 ```sql
--- Without extension (stock PostgreSQL):
--- If a = b and b = c, then a = c should always hold
--- but when int8 is implicitly cast to float8 there can be rounding errors, e.g., at the float8 2^53 boundary:
-SELECT 9007199254740992::int8 = 9007199254740993::float8;  -- a=b TRUE?! (both become same float8 due to rounding error)
-SELECT 9007199254740993::float8 = 9007199254740992::int8;  -- b=c TRUE (left float8 rounds to 9007199254740992)
-SELECT 9007199254740993::int8 = 9007199254740992::int8;    -- a=c FALSE!
--- Mathematical transitivity violated: a=b, b=c, but a≠c.
--- PostgreSQL doesn't infer transitivity because it knows about the implicit cast rounding error seen in a=b.
+-- Example: Correct results with index scans and transitive equality
+-- Application queries for Alice's order (9007199254740992) using float8 parameter
+EXPLAIN (COSTS OFF)
+SELECT o.customer, oi.product FROM orders o
+JOIN order_items oi ON o.orderid = oi.orderid
+WHERE o.orderid = 9007199254740992::float8;
+--                                            QUERY PLAN
+-- -------------------------------------------------------------------------------------------------
+--  Nested Loop
+--    ->  Index Scan using orders_pkey on orders o               ← FAST! (index scan)
+--          Index Cond: (orderid = 9007199254740992)
+--    ->  Index Scan using order_items_orderid_idx on order_items oi  ← FAST! (index scan)
+--          Index Cond: (orderid = 9007199254740992)              ← TRANSITIVITY inferred!
+-- (6 rows)
+
+SELECT o.customer, oi.product FROM orders o
+JOIN order_items oi ON o.orderid = oi.orderid
+WHERE o.orderid = 9007199254740992::float8;
+--  customer | product
+-- ----------+---------
+--  Alice    | Widget
+-- (1 row)
 ```
 
-Implicit casts can creep into user queries in surprising ways, e.g., expressions that promote integers to float8, causing precision loss at the 2^53 boundary:
+**Summary with the extension installed:**
 
-```sql
--- Without extension (stock PostgreSQL):
--- Why PostgreSQL cannot infer a=c from a=f(b) AND f(b)=c when f() causes float8 promotion
-WITH vals(a, b, c, d) AS (
-    VALUES (9007199254740993::int8,   -- A: cannot be exactly represented in float8
-            9007199254740993::int8,   -- B: same as A
-            9007199254740992::int8,   -- C: one less (exact in float8)
-            0.0::float8)              -- D: float8 zero
-)
-SELECT a, b, c,
-    a = (b + d) AS a_eq_bplusd,    -- TRUE ?!: b+d promotes to float8, rounds to 9007199254740992.0
-    (b + d) = c AS bplusd_eq_c,    -- TRUE: 9007199254740992.0 = 9007199254740992
-    a = c AS a_eq_c                -- FALSE: 9007199254740993 ≠ 9007199254740992
-FROM vals
-WHERE a = (b + d) AND (b + d) = c;
--- Row IS returned! If PostgreSQL incorrectly inferred a=c, this row would be filtered out.
--- With the extension, a_eq_bplusd would be FALSE (no rows), a_eq_c still FALSE.
-```
-
-> **This extension guarantees mathematical correctness.** All comparison operators added by this extension satisfy reflexivity, symmetry, and transitivity for equality, and irreflexivity, transitivity, and trichotomy for ordering. Cross-type comparisons work correctly without precision loss. For example, in the above cases, the extension's operators preserve transitivity:
-
-```sql
--- With extension:
--- integral values compared to float values detect precision loss correctly:
-SELECT 16777217::int4 = 16777216::float4;                  -- FALSE, preserving transitivity
-SELECT 9007199254740992::int8 = 9007199254740993::float8;  -- FALSE, preserving transitivity
-```
-
-PostgreSQL's query planner can leverage transitivity (inferring `a=c` from `a=b` and `b=c`) only when operators are defined with appropriate btree [operator class](https://www.postgresql.org/docs/current/btree.html#BTREE-SUPPORT-FUNCS) strategies. Stock PostgreSQL's implicit-cast-based comparisons don't provide this, leading to missed optimizations. This extension defines proper operator classes for it's cross-type comparisons, but only when they are mathematically correct.
-
-### The Problem: Implicit Casting Destroys Performance
-
-Besides correctness, implicit casts prevent the query optimizer from using indexes, hash joins, and merge joins efficiently.
-
-#### Index Scans Become Sequential Scans
-
-When you write `WHERE intkey = 10.0::numeric`, PostgreSQL's default behavior:
-
-1. Sees a type mismatch (int4 column vs. numeric literal)
-2. Casts `intkey` to numeric for every row in the table
-3. Cannot use a btree index on `intkey` because the indexed expression is `intkey`, not `intkey::numeric`
-4. Falls back to a **sequential scan** of the entire table
-
-```sql
--- Without this extension:
-EXPLAIN SELECT * FROM million_row_table WHERE intkey = 10.0::numeric;
---  Seq Scan on million_row_table  (cost=0.00..19425.00 rows=5000 width=8)
---    Filter: ((intkey)::numeric = 10.0)
---  Execution time: 850ms
-
--- With this extension:
-EXPLAIN SELECT * FROM million_row_table WHERE intkey = 10.0::numeric;
---  Index Scan using idx_intkey on million_row_table  (cost=0.42..8.44 rows=1 width=8)
---    Index Cond: (intkey = 10)
---  Execution time: 0.1ms
--- Note: constants like 10.0::numeric are simplified to 10 by the extension
--- but non-constants like $1::numeric or join conditions gain index SARGability.
-```
-
-#### Hash Joins Disabled for Cross-Type Equijoins
-
-PostgreSQL cannot use hash joins for cross-type equality conditions because different types have different hash functions. A hash join requires `hash(a) = hash(b)` whenever `a = b`, but:
-
-```sql
--- These hash differently by default, so no hash join possible:
-hash(10::int4) ≠ hash(10.0::numeric)
-```
-
-Without hash join support, large table joins default to nested loops without index optimization. This can be orders of magnitude slower.
+- We get the CORRECT result: only Alice's order is returned, i.e., 9007199254740992::int8 ≠ 9007199254740993::int8
+- FAST: index lookups on BOTH tables (no casts on indexed columns)
+- TRANSITIVITY: filter on orders.orderid is pushed to order_items through the join
 
 ### The Solution: Exact Cross-Type Comparison
 
-This extension provides 108 comparison operators that compare numeric and integer types **directly**, without implicit casting. The comparison logic ensures mathematical correctness. This enables PostgreSQL to use indexes, hash joins, and merge joins effectively. This extension also implements [support function callbacks](https://www.postgresql.org/docs/current/xfunc-optimization.html) that transform cross-type comparisons into native integer comparisons when possible.
+This extension provides 108 comparison operators that compare integer and numeric types **directly**, without implicit casting and adds them to the appropriate operator classes. The comparison logic ensures mathematical correctness. This enables PostgreSQL to use indexes, hash joins, and merge joins effectively. This extension also implements [support function callbacks](https://www.postgresql.org/docs/current/xfunc-optimization.html) that transform cross-type comparisons into native integer comparisons when possible.
 
 #### How Exact Comparison Works
 
-For `numeric_value = integer_value`:
+Implemented in C for efficiency, e.g., int=num (float or numeric) equality calculated roughly as:
 
-1. **Bounds check**: If `numeric_value` is outside the integer type's range (e.g., > 2³¹-1 for int4), return the appropriate ordering result immediately
-2. **Truncate to integer part**: Extract the integer portion of the numeric value
-3. **Compare integer parts**: If truncated value ≠ integer, they're not equal
-4. **Check for nonzero fractional part**: If numeric has any nonzero fractional component, equality is false; for ordering, the nonzero fractional part determines if numeric is greater/less than the truncated integer
-
-```c
-// Pseudocode C comparison function
-int compare_numeric_to_int(numeric num, int32 i) {
-    // Handle special values (NaN, ±Infinity)
-    if (is_nan(num)) return GREATER;  // NaN > every integer in PostgreSQL
-    if (is_inf(num)) return (positive ? GREATER : LESS);
-
-    // Check if num is outside int32 range
-    if (num > INT32_MAX) return GREATER;
-    if (num < INT32_MIN) return LESS;
-
-    // Truncate numeric to integer part
-    int32 num_truncated = trunc(num);
-
-    // Compare integer values
-    if (num_truncated > i) return GREATER;
-    if (num_truncated < i) return LESS;
-
-    // Integer parts equal, check for nonzero fractional part
-    if (has_fractional_part(num)) return (i > 0) ? GREATER : LESS;
-
-    // exact EQUALITY
-    return EQUAL;
-}
-```
+1. **Special values**: Handle if num is NaN or ±Infinity according to PostgreSQL semantics
+2. **Bounds check**: If num is outside the integer type's range (e.g., > 2³¹-1 for int4), return the appropriate ordering result immediately
+3. **Truncate to integer part**: Extract the integer portion of the num value
+4. **Check for nonzero fractional part**: If num has any nonzero fractional component, equality is false. (For ordering, the nonzero fractional part determines if num is greater/less than the truncated integer)
+5. **Compare integer parts**: If truncated value ≠ integer, they're not equal
 
 This approach is **mathematically correct** because:
 
 - No precision is lost, so we never cast integers to floats
 - Fractional parts are preserved and compared exactly
 - Values outside representable ranges are handled correctly
-- IEEE 754 special values (NaN, ±Infinity) follow standard PostgreSQL semantics
+- Special values (NaN, ±Infinity) follow standard PostgreSQL semantics. In particular, NaN > all integer values [search "NaN" here Comparison](https://www.postgresql.org/docs/current/datatype-numeric.html)
 
 #### Index Optimization via Support Functions
 
-The extension uses PostgreSQL's [`SupportRequestSimplify` and `SupportRequestIndexCondition`](https://www.postgresql.org/docs/current/xfunc-optimization.html) mechanisms to enable index usage for all comparison operators (`=`, `<`, `<=`, `>`, `>=`, `<>`). When the query contains a cross-type comparison like `intkey >= 10.0::numeric` or `intkey = $1` (where `$1` is a numeric parameter and the statement is prepared with a custom plan), the support function performs these optimizations:
+The extension uses PostgreSQL's [`SupportRequestSimplify`](https://www.postgresql.org/docs/current/xfunc-optimization.html) mechanism to gain exact integer comparison when possible. This enables the Planner to consider integer histograms for better costed plan choices. When the query contains a cross-type comparison like `intkey >= 10.0::numeric` or `intkey = $1` (where `$1` is a numeric parameter and the statement is prepared with a custom plan), the support function performs these optimizations:
 
 1. The support function intercepts the comparison
 2. It checks if the numeric value is exactly representable as the integer type
 3. If yes: transforms to `intkey >= 10` (pure integer comparison), enabling index scan
-4. If no: adjusts the comparison appropriately (e.g., `intkey > 10.5` becomes `intkey >= 11`)
+4. If no: adjusts the comparison appropriately, e.g., `intkey > 10.5` becomes `intkey >= 11`, and `intkey = 10.5` becomes `FALSE` (impossible predicate)
 
 ```sql
--- Real-world example: API passes product ID as numeric parameter
+-- Example: API passes product ID as numeric parameter
 CREATE TABLE products(id int4 PRIMARY KEY, parent int4 REFERENCES products, name text);
 PREPARE find_product(numeric) AS SELECT * FROM products WHERE id = $1;
 
@@ -295,33 +275,6 @@ EXPLAIN (COSTS OFF) EXECUTE find_product(42);
 --    Index Cond: (id = 42)                     ← uses primary key index
 ```
 
-**More complex example with joins:**
-
-```sql
--- Hierarchical lookup: find parent product name given child ID
-CREATE INDEX ON products(parent);
-PREPARE find_parent(numeric) AS
-  SELECT p.name AS parent_name
-  FROM products p, products c
-  WHERE p.id = c.parent AND c.id = $1;
-
--- Without this extension: sequential scan on both tables
-EXPLAIN (COSTS OFF) EXECUTE find_parent(42);
---  Nested Loop
---    ->  Seq Scan on products c
---          Filter: ((id)::numeric = '42'::numeric)   ← full table scan!
---    ->  Seq Scan on products p
---          Filter: (id = c.parent)                   ← another full scan!
-
--- With this extension: index scans on both tables
-EXPLAIN (COSTS OFF) EXECUTE find_parent(42);
---  Nested Loop
---    ->  Index Scan using products_pkey on products c
---          Index Cond: (id = 42)                     ← uses primary key
---    ->  Index Scan using products_pkey on products p
---          Index Cond: (id = c.parent)               ← uses primary key
-```
-
 #### Hash Support for Joins, GROUP BY, and DISTINCT
 
 The extension provides cross-type hash functions that ensure equal values hash identically regardless of type. This enables PostgreSQL to use hash-based operations across type boundaries:
@@ -330,47 +283,78 @@ The extension provides cross-type hash functions that ensure equal values hash i
 
 - Cross-type equality operators are added to the `numeric_ops` hash operator family (for numeric × integer comparisons)
 - Cross-type equality operators are added to the `float_ops` hash operator family (for float × integer comparisons)
-- When hashing an integer for cross-type comparison, it computes the hash of the equivalent higher-precision value
+- When hashing an integer for cross-type comparison with numeric, it converts to numeric (lossless). For float comparisons, it hashes the float8 representation. Collisions at precision boundaries are correctly filtered by the (exact) equality check.
+  - Note: the same number of hash buckets are used with or without the extension, so there is no change in hash table sizing or performance characteristics.
 - This guarantees `a = b → hash(a) = hash(b)` across types, enabling hash joins
-
-**Operations enabled:**
-
-```sql
--- Hash joins across int4 and numeric columns
-EXPLAIN (COSTS OFF) SELECT c.name, SUM(o.amount)
-FROM customers c                              -- c.id is int4
-JOIN orders o ON c.id = o.customer_id         -- o.customer_id is numeric
-GROUP BY c.name;
-
---  HashAggregate
---    Group Key: c.name
---    ->  Hash Join                           ← hash join across types!
---          Hash Cond: (o.customer_id = c.id)
---          ->  Seq Scan on orders o
---          ->  Hash
---                ->  Seq Scan on customers c
-
--- Without this extension, PostgreSQL cannot hash-join across types
--- and falls back to slower nested loop joins
-```
 
 GROUP BY and DISTINCT also benefit when mixing types, as PostgreSQL can use HashAggregate instead of Sort-based approaches.
 
+Note that stock PostgreSQL also supports these hash operations with implicit cast equi-joins, so this extension is fully compatible. So the hash join plans are the same as stock PostgreSQL, but hash collisions are resolved with the extension's exact comparison operators.
+
+#### Merge Join Support via Btree Operator Families
+
+For merge joins to work across type boundaries, PostgreSQL requires that cross-type comparison operators belong to the same btree operator *family*. This extension registers all cross-type operators into the appropriate btree families:
+
+**How it works:**
+
+- Cross-type operators are added to the `integer_ops`, `numeric_ops`, and `float_ops` btree families
+- All six comparison operators (`<`, `<=`, `=`, `>=`, `>`, `<>`) are registered for each type pair
+- The operators share common btree comparison functions that return consistent ordering across types
+- This enables PostgreSQL's planner to recognize that cross-type comparisons can be merge-joined directly
+
+**Why this matters:**
+
+Stock PostgreSQL cannot use merge joins for cross-type comparisons because the implicit-cast operators don't belong to a common operator family. The planner falls back to hash joins or nested loops. With this extension:
+
+- **Pre-sorted inputs** (e.g., from index scans) can be merge-joined efficiently
+- **Large sorted datasets** benefit from streaming merge without hash table memory overhead
+- **Memory efficiency**: Merge joins don't require building a hash table, reducing memory pressure
+
+**Implementation complexity:**
+
+Adding operators to btree families requires careful attention to:
+
+- Consistent ordering semantics across all type combinations
+- Proper strategy numbers (1-5 for `<`, `<=`, `=`, `>=`, `>`)
+- Correct `oprcom` and `oprnegate` relationships between operators
+- Registration in both directions (e.g., `int8 < numeric` and `numeric > int8`)
+- Cleanup on extension drop (see [Implementation Notes](#implementation-notes))
+
+See [Float × Integer Btree Ops](specs/002-float-btree-ops/research.md) for more detailed design rationale.
+
 #### Performance: Correctness Enables Speed
 
-A natural question: isn't this per-comparison logic slower than PostgreSQL's simple float cast-and-compare?
+Is this per-comparison logic slower than PostgreSQL's simple cast-and-compare?
 
-**Per-operation**: Yes. The exact comparison involves bounds checking, truncation, and fractional-part detection which is more expensive than a raw float comparison. However, this overhead is in C. It is negligible compared to I/O costs and is usually outweighed by query-level optimizations.
+**Per-operation**: Yes. The exact comparison involves bounds checking, truncation, and fractional-part detection which is more expensive than a raw `numeric`/`float` comparison. However, this overhead is in C. It is negligible compared to I/O costs and is usually outweighed by query-level optimizations.
 
-**Overall query performance**: This extension is typically **much faster** than stock PostgreSQL for cross-type comparisons because:
+**Overall query performance**: This extension is typically faster than stock PostgreSQL for cross-type comparisons because:
 
 1. **Index scans instead of sequential scans**: Stock PostgreSQL casts the indexed column, forcing sequential scans. This extension enables index usage, reducing I/O and CPU usage.
-
-2. **Hash joins instead of nested loops**: Stock PostgreSQL cannot hash-join across types. This extension enables hash joins for a single pass through each table instead of repeatedly scanning one table for every row in the other.
+2. **SupportRequestSimplify**: Transforms cross-type comparisons into native integer comparisons when possible, enabling the planner to generate more efficient plans.
+3. **Merge joins instead of nested loops**: With index-optimized operators, the planner can choose merge joins for sorted inputs rather than nested loops that repeatedly scan one table.
+4. **Transitive equality inference**: The planner can propagate equality conditions, enabling more efficient filtering and join strategies.
 
 The irony is that PostgreSQL's "fast" implicit cast approach is actually *slow* for real queries because it defeats the planner. **Correctness and performance are not at odds here. The correct approach enables fast query plans.**
 
-See [Performance Benchmarking](#performance-benchmarking) section for detailed metrics.
+**Benchmark highlights:**
+
+- **Index lookups**: Sub-millisecond on 1M+ row tables
+- **Hash joins**: Efficient cross-type hashing, faster than cast-based joins
+- **Merge joins**: Faster than stock with less memory usage
+- **Overhead**: <10% vs native integer comparisons
+
+For comprehensive performance testing, run the benchmark suite:
+
+```bash
+# Quick performance test (~seconds, 100K rows)
+make installcheck REGRESS=performance
+
+# Full benchmark (~70 seconds, 1M rows)
+make installcheck REGRESS=benchmark
+```
+
+See [Benchmark Guide](doc/benchmark.md) for detailed methodology and analysis.
 
 ### Key Features
 
@@ -387,25 +371,26 @@ See [Performance Benchmarking](#performance-benchmarking) section for detailed m
 
 Note: Serial types are automatically supported because PostgreSQL treats them as their underlying integer types (serial=int4, bigserial=int8, smallserial=int2).
 
-## Equivalence Expressions
+## SQL Equivalents With and Without the Extension
 
 Users migrating between standard PostgreSQL and this extension can use these expressions to switch comparison behavior:
 
 | Comparison Type | With Extension | Stock PostgreSQL (both → float8) | Exact without Extension |
-|-----------------|----------------|-----------------------------------|-------------------------|
+| --------------- | -------------- | --------------------------------- | ----------------------- |
 | `int4 = float4` | `int4_col = float4_col` | `int4_col::float8 = float4_col::float8` | `int4_col::numeric = float4_col::numeric` |
 | `int8 = float4` | `int8_col = float4_col` | `int8_col::float8 = float4_col::float8` | `int8_col::numeric = float4_col::numeric` |
 | `int8 = float8` | `int8_col = float8_col` | `int8_col::float8 = float8_col` | `int8_col::numeric = float8_col::numeric` |
 | `int4 = numeric` | `int4_col = numeric_col` | `int4_col::numeric = numeric_col` | Same (already exact) |
 
 **Key Insights:**
-- **Extension operators**: Exact semantics, index-optimized, mathematically correct
-- **Explicit float8 casts**: Emulate stock PostgreSQL's implicit behavior (precision loss possible)  
-- **Numeric casts**: Force exact comparison without extension (index-incompatible, slower)
 
-**Migration Strategy:** Test queries with explicit casts first, then switch to extension operators for production performance.
+- **Extension operators**: Exact semantics, index-optimized, mathematically correct
+- **Explicit float8 casts**: Emulate stock PostgreSQL's implicit behavior (precision loss possible)
+- **Numeric casts**: Force exact comparison without extension, however with the extension is index-incompatible and generally better plans.
 
 ## Installation
+
+See the [Installation Guide](doc/installation.md) for more detailed instructions.
 
 ### Prerequisites
 
@@ -426,140 +411,9 @@ sudo make install
 CREATE EXTENSION pg_num2int_direct_comp;
 ```
 
-## Quick Start
+For usage examples, see the [Quick Start Guide](doc/installation.md#quick-start) in the Installation documentation.
 
-### Example 1: Detecting Float Precision Loss
-
-```sql
--- With extension:
--- float4 cannot represent 16777217 exactly, it rounds to 16777216.0
--- The extension detects when the integer differs from the float representation
-
-CREATE EXTENSION pg_num2int_direct_comp;
-
--- This is TRUE because 16777217::float4 rounds to 16777216.0, matching 16777216
-SELECT 16777216::int4 = 16777217::float4;  -- true (both are 16777216)
-
--- This is FALSE because 16777217 ≠ 16777216.0 (extension detects the mismatch!)
-SELECT 16777217::int4 = 16777217::float4;  -- false (correct - detects precision loss)
-```
-
-### Example 2: Planner Transitivity Inference
-
-```sql
--- With extension:
--- The query planner can infer transitive relationships across types for index optimization
-CREATE EXTENSION pg_num2int_direct_comp;
-
-CREATE TABLE orders (id SERIAL, customer_id NUMERIC);  -- numeric foreign key
-CREATE TABLE customers (id INT4 PRIMARY KEY, name TEXT);
-CREATE INDEX ON orders(customer_id);
-
--- Query with cross-type join: orders.customer_id (numeric) = customers.id (int4)
-PREPARE find_orders(int4) AS
-  SELECT o.* FROM orders o JOIN customers c ON o.customer_id = c.id WHERE c.id = $1;
-
--- With extension: planner infers o.customer_id = $1 across types, enabling index scan
-EXPLAIN (COSTS OFF) EXECUTE find_orders(42);
---  Nested Loop
---    ->  Index Scan using customers_pkey on customers c
---          Index Cond: (id = 42)
---    ->  Index Scan using orders_customer_id_idx on orders o
---          Index Cond: (customer_id = 42)    ← inferred across numeric/int4!
-
--- Without extension: planner cannot infer transitivity across types
--- Would require scanning orders for each customer row without the inferred predicate
-```
-
-### Example 3: Index-Optimized Queries
-
-```sql
-CREATE TABLE measurements (id SERIAL, value INT4);
-CREATE INDEX ON measurements(value);
-INSERT INTO measurements (value) SELECT generate_series(1, 1000000);
-
--- Uses index efficiently (no cast on indexed column)
-EXPLAIN SELECT * FROM measurements WHERE value = 500.0::numeric;
--- Result: Index Scan using measurements_value_idx
-```
-
-### Example 4: Fractional Comparisons
-
-```sql
--- Fractional values never equal integers
-SELECT 10::int4 = 10.5::numeric;  -- false
-SELECT 10::int4 < 10.5::numeric;  -- true
-```
-
-### Example 4: Range Queries
-
-```sql
-CREATE TABLE inventory (item_id INT4, quantity INT4);
-INSERT INTO inventory VALUES (1, 10), (2, 11), (3, 12);
-
--- Exact boundary handling
-SELECT * FROM inventory WHERE quantity > 10.5::float8;
--- Returns: (2, 11), (3, 12)
-```
-
-### Example 5: Hash Joins for Large Tables
-
-```sql
--- Hash joins work automatically for large table joins
-CREATE TABLE sales (id SERIAL, amount NUMERIC(10,2));
-CREATE TABLE targets (id SERIAL, threshold INT4);
-INSERT INTO sales SELECT generate_series(1, 1000000), random() * 1000;
-INSERT INTO targets SELECT generate_series(1, 1000000), (random() * 1000)::int4;
-
--- Planner chooses hash join for large equijoin
-EXPLAIN SELECT COUNT(*) FROM sales s JOIN targets t ON s.amount = t.threshold;
--- Result: Hash Join (when tables are large)
-```
-
-### Example 7: Type Aliases
-
-```sql
--- Serial types work automatically
-CREATE TABLE users (id SERIAL, score INT4);
-SELECT * FROM users WHERE id = 100.0::numeric;  -- Uses exact comparison
-
--- Decimal type works automatically
-SELECT 10::int4 = 10.0::decimal;  -- true (decimal is alias for numeric)
-```
-
-### Example 7: Query Optimization - Impossible Predicate Detection
-
-The extension's support functions transform constant predicates during query planning for optimal performance:
-
-```sql
--- Impossible predicate detection: integer can never equal fractional value
-EXPLAIN (COSTS OFF) SELECT * FROM measurements WHERE value = 10.5::numeric;
--- Result:
---  Result
---    One-Time Filter: false
--- The planner recognizes this is impossible and returns rows=0 estimate
-
--- Exact match transformation: uses native integer operator
-EXPLAIN (COSTS OFF) SELECT * FROM measurements WHERE value = 100::numeric;
--- Result:
---  Index Scan using measurements_value_idx on measurements
---    Index Cond: (value = 100)
--- Transformed from cross-type to native int=int for optimal selectivity
-
--- Range boundary transformation: adjusts fractional boundaries
--- "value > 10.5" becomes "value >= 11" (since no integer is between 10 and 11)
-SELECT * FROM measurements WHERE value > 10.5::numeric;
--- Returns values 11, 12, 13, ... (correctly excludes 10)
-```
-
-These optimizations ensure:
-- Impossible predicates are detected early (rows=0 estimate, potential scan elimination)
-- Exact integer matches use native operators for perfect selectivity
-- Range boundaries are correctly adjusted for integer semantics
-
----
-
-## Configuration
+## Support Function Chicken Switch
 
 The extension provides a configuration parameter to control query optimization behavior:
 
@@ -571,7 +425,8 @@ Controls whether the extension's query optimizations are active.
 **Context**: Can be changed by any user (PGC_USERSET)
 **Values**: `on`, `off`
 
-**Purpose**: 
+**Purpose**:
+
 - **`on`**: Enable SupportRequestSimplify and SupportRequestIndexCondition optimizations
 - **`off`**: Disable optimizations for testing, troubleshooting, or compatibility
 
@@ -604,27 +459,17 @@ EXPLAIN SELECT * FROM table WHERE 10.0::float8 = integer_column;
 
 ## Limitations
 
-### Performance Considerations
-
-✅ **All Join Types Supported**: The extension now supports indexed nested loop joins, hash joins, **and merge joins** for all type combinations.
-
-**Merge Join Support**:
-- ✅ **Int × Numeric**: Fully supported via btree family registration
-- ✅ **Int × Float**: Fully supported via extended btree family registration  
-
-**Join Strategy Selection**:
-- ✅ **Indexed Nested Loop Joins**: Optimal for small result sets
-- ✅ **Hash Joins**: Optimal for large unsorted datasets
-- ✅ **Merge Joins**: Optimal when both inputs are pre-sorted (e.g., index scans)
-
-PostgreSQL's query planner automatically selects the optimal join strategy based on data size, available indexes, and sort requirements.
+Numeric x float are not supported because IEEE 754 floating-point numbers do not have a fixed precision, making exact comparison with numeric types infeasible.
 
 ## Documentation
 
 - [Installation Guide](doc/installation.md) - Detailed setup instructions
 - [Operator Reference](doc/operator-reference.md) - Operator reference and usage guide
+- [Benchmark Guide](doc/benchmark.md) - Performance testing methodology and results
 - [Development Guide](doc/development.md) - Contributing and testing
-- [Research & Design](specs/001-num-int-direct-comp/research.md) - Architectural decisions and trade-offs
+- Research & Design:
+  - [Numeric × Integer Comparison](specs/001-num-int-direct-comp/research.md) - Architectural decisions and trade-offs
+  - [Float × Integer Btree Ops](specs/002-float-btree-ops/research.md) - Float comparison design
 
 ## Technical Details
 
@@ -635,23 +480,11 @@ PostgreSQL's query planner automatically selects the optimal join strategy based
 
 ### Project Structure
 
-```
-pg_num2int_direct_comp.c       # Core C implementation (comparison + support functions)
-pg_num2int_direct_comp.h       # Header with type definitions and declarations
-pg_num2int_direct_comp--1.0.0.sql  # Extension SQL (operators, families, triggers)
-pg_num2int_direct_comp.control # Extension metadata
-Makefile                       # PGXS build configuration
-sql/                           # Regression test input files
-expected/                      # Expected test output files
-doc/                           # Documentation (installation, API, development)
-specs/                         # Design specifications and research notes
-```
-
 See [Development Guide](doc/development.md#project-structure) for complete layout.
 
 ### Implementation Notes
 
-This extension uses two PostgreSQL mechanisms to ensure correct behavior across DROP/CREATE EXTENSION cycles:
+This extension uses two PostgreSQL mechanisms to ensure correct behavior across DROP/ALTER..UPDATE/CREATE EXTENSION cycles:
 
 1. **Event Trigger for Operator Family Cleanup**: When adding built-in operators to existing operator families (like `integer_ops`), PostgreSQL doesn't track these memberships as extension-owned. An event trigger on `ddl_command_start` cleans up `pg_amop` entries when the extension is dropped, preventing "operator already exists" errors on reinstall.
 
@@ -663,27 +496,6 @@ See [Research & Design](specs/001-num-int-direct-comp/research.md) sections 7.6 
 
 - PostgreSQL 12, 13, 14, 15, 16
 - Linux, macOS, Windows (via MinGW)
-
-## Performance Benchmarking
-
-- **Index lookups**: Sub-millisecond on 1M+ row tables
-- **Merge joins**: Efficient for sorted or indexed data (int × numeric only)
-- **Hash joins**: Efficient for large table equijoins
-- **Merge joins**: 23% faster than stock with optimal plan, 56% less memory
-- **Overhead**: <10% vs native integer comparisons
-- **Optimized**: Uses PostgreSQL's built-in numeric primitives and hash functions
-
-For comprehensive performance testing, run the benchmark suite:
-
-```bash
-# Quick performance test (~seconds, 100K rows)
-make installcheck REGRESS=performance
-
-# Full benchmark (~70 seconds, 1M rows)
-make installcheck REGRESS=benchmark
-```
-
-See [Benchmark Guide](doc/benchmark.md) for detailed methodology, results, and analysis of the planner's cost model behavior with merge joins.
 
 ## Support
 

@@ -11,42 +11,34 @@ CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
 SET client_min_messages = notice;
 
 -- ============================================================================
--- README.md: The Problem - Implicit Casting Produces Wrong Results (~line 74)
+-- README.md: Wrong results AND poor performance from cross-type comparison (~line 118)
+-- Without extension: both orderids match the float8 query AND uses seq scan
 -- ============================================================================
 
--- PostgreSQL's DEFAULT behavior (Mathematically WRONG):
--- With extension: exact comparison detects the mismatch
-SELECT 16777217::int4 = 16777216::float4 AS should_be_false;
+-- Without extension (verifies documented stock PostgreSQL behavior)
+DROP EXTENSION pg_num2int_direct_comp;
+
+CREATE TEMPORARY TABLE doc_orders (orderid int8 PRIMARY KEY, amount numeric(10,2));
+INSERT INTO doc_orders SELECT g, (g % 1000)::numeric(10,2) FROM generate_series(1, 1000) g;
+INSERT INTO doc_orders VALUES
+    (9007199254740992, 1000.00),
+    (9007199254740993, 2000.00);
+ANALYZE doc_orders;
+
+-- Stock PostgreSQL: returns BOTH rows (wrong!) and uses seq scan (slow!)
+EXPLAIN (COSTS OFF) SELECT * FROM doc_orders WHERE orderid = 9007199254740993::float8;
+SELECT * FROM doc_orders WHERE orderid = 9007199254740993::float8;
+
+-- With extension (behavior documented - index scan, 1 row)
+CREATE EXTENSION pg_num2int_direct_comp;
+
+EXPLAIN (COSTS OFF) SELECT * FROM doc_orders WHERE orderid = 9007199254740993::float8;
+SELECT * FROM doc_orders WHERE orderid = 9007199254740993::float8;
+
+DROP TABLE doc_orders;
 
 -- ============================================================================
--- README.md: User lookup example (~line 85)
--- This demonstrates a problem the extension CANNOT fix: when the application
--- passes a float4 parameter, the value is already corrupted before comparison.
--- float4 cannot represent 16777217, so it becomes 16777216.0 before PostgreSQL
--- even sees the comparison.
--- ============================================================================
-
-CREATE TEMPORARY TABLE users(id int4 PRIMARY KEY, name text);
-INSERT INTO users VALUES (16777216, 'Alice'), (16777217, 'Bob');
-
--- This shows the PROBLEM: float4 parameter is already corrupted
--- 16777217::float4 becomes 16777216.0, so Alice is returned (WRONG!)
--- The extension cannot fix this - the value is lost before comparison
-PREPARE find_user(float4) AS SELECT * FROM users WHERE id = $1;
-EXECUTE find_user(16777217);  -- Returns Alice (id=16777216), not Bob!
-
-DEALLOCATE find_user;
-
--- SOLUTION: Use numeric parameter type instead of float4
--- numeric can exactly represent any integer, so Bob is correctly found
-PREPARE find_user_numeric(numeric) AS SELECT * FROM users WHERE id = $1;
-EXECUTE find_user_numeric(16777217);  -- Correctly returns Bob!
-
-DEALLOCATE find_user_numeric;
-DROP TABLE users;
-
--- ============================================================================
--- README.md: Transitive Equality Violations (~line 107)
+-- README.md: Why PostgreSQL Cannot Infer Transitive Equality (~line 115)
 -- Stock PostgreSQL violates transitivity with int8/float8 at 2^53 boundary.
 -- We test both stock behavior (extension disabled) and extension behavior.
 -- ============================================================================
@@ -137,7 +129,7 @@ DEALLOCATE find_parent;
 DROP TABLE products;
 
 -- ============================================================================
--- README.md: Quick Start Example 1 - Detecting Float Precision Loss (~line 359)
+-- doc/installation.md: Quick Start Example 1 - Detecting Float Precision Loss
 -- The extension detects when int4 value differs from float4 representation.
 -- 16777217::float4 rounds to 16777216.0, so:
 -- - 16777216::int4 = 16777217::float4 → TRUE (both are 16777216)
@@ -149,7 +141,7 @@ SELECT 16777216::int4 = 16777217::float4 AS both_are_16777216;  -- TRUE
 SELECT 16777217::int4 = 16777217::float4 AS detects_mismatch;   -- FALSE (extension detects it!)
 
 -- ============================================================================
--- README.md: Quick Start Example 2 - Planner Transitivity Inference (~line 383)
+-- doc/installation.md: Quick Start Example 2 - Planner Transitivity Inference
 -- ============================================================================
 
 -- The query planner can infer transitive relationships across types for index optimization
@@ -177,7 +169,7 @@ DROP TABLE ex2_orders;
 DROP TABLE ex2_customers;
 
 -- ============================================================================
--- README.md: Quick Start Example 3 - Index-Optimized Queries (~line 410)
+-- doc/installation.md: Quick Start Example 3 - Index-Optimized Queries
 -- ============================================================================
 
 CREATE TEMPORARY TABLE measurements (id SERIAL, value INT4);
@@ -189,7 +181,7 @@ ANALYZE measurements;
 EXPLAIN (COSTS OFF) SELECT * FROM measurements WHERE value = 500::numeric;
 
 -- ============================================================================
--- README.md: Quick Start Example 4 - Fractional Comparisons (~line 422)
+-- doc/installation.md: Quick Start Example 4 - Fractional Comparisons
 -- ============================================================================
 
 -- Fractional values never equal integers
@@ -197,39 +189,51 @@ SELECT 10::int4 = 10.5::numeric AS should_be_false;
 SELECT 10::int4 < 10.5::numeric AS should_be_true;
 
 -- ============================================================================
--- README.md: Quick Start Example 5 - Hash Joins for Large Tables (~line 430)
+-- doc/installation.md: Quick Start Example 5 - Range Queries (~line 166)
+-- ============================================================================
+
+CREATE TEMPORARY TABLE inventory (item_id INT4, quantity INT4);
+INSERT INTO inventory VALUES (1, 10), (2, 11), (3, 12);
+
+-- Exact boundary handling: quantity > 10.5 returns quantities 11 and 12
+SELECT * FROM inventory WHERE quantity > 10.5::float8;
+
+DROP TABLE inventory;
+
+-- ============================================================================
+-- doc/installation.md: Quick Start Example 6 - Hash Joins for Large Tables (~line 178)
 -- ============================================================================
 
 -- Hash joins work automatically for large table joins
-CREATE TEMPORARY TABLE ex5_sales (id SERIAL, amount NUMERIC(10,2));
-CREATE TEMPORARY TABLE ex5_targets (id SERIAL, threshold INT4);
-INSERT INTO ex5_sales SELECT generate_series(1, 1000), (random() * 1000)::numeric(10,2);
-INSERT INTO ex5_targets SELECT generate_series(1, 1000), (random() * 1000)::int4;
-ANALYZE ex5_sales;
-ANALYZE ex5_targets;
+CREATE TEMPORARY TABLE ex6_sales (id SERIAL, amount NUMERIC(10,2));
+CREATE TEMPORARY TABLE ex6_targets (id SERIAL, threshold INT4);
+INSERT INTO ex6_sales SELECT generate_series(1, 1000), (random() * 1000)::numeric(10,2);
+INSERT INTO ex6_targets SELECT generate_series(1, 1000), (random() * 1000)::int4;
+ANALYZE ex6_sales;
+ANALYZE ex6_targets;
 
 -- Planner can choose hash join for large equijoin (depends on cost estimates)
-EXPLAIN (COSTS OFF) SELECT COUNT(*) FROM ex5_sales s JOIN ex5_targets t ON s.amount = t.threshold;
+EXPLAIN (COSTS OFF) SELECT COUNT(*) FROM ex6_sales s JOIN ex6_targets t ON s.amount = t.threshold;
 
-DROP TABLE ex5_sales;
-DROP TABLE ex5_targets;
+DROP TABLE ex6_sales;
+DROP TABLE ex6_targets;
 
 -- ============================================================================
--- README.md: Quick Start Example 6 - Type Aliases (~line 444)
+-- doc/installation.md: Quick Start Example 7 - Type Aliases (~line 193)
 -- ============================================================================
 
 -- Serial types work automatically
-CREATE TEMPORARY TABLE ex6_users (id SERIAL, score INT4);
-INSERT INTO ex6_users (score) VALUES (100);
-SELECT * FROM ex6_users WHERE id = 1.0::numeric;  -- Uses exact comparison
+CREATE TEMPORARY TABLE ex7_users (id SERIAL, score INT4);
+INSERT INTO ex7_users (score) VALUES (100);
+SELECT * FROM ex7_users WHERE id = 1.0::numeric;  -- Uses exact comparison
 
 -- Decimal type works automatically (decimal is alias for numeric)
 SELECT 10::int4 = 10.0::decimal AS decimal_alias_test;
 
-DROP TABLE ex6_users;
+DROP TABLE ex7_users;
 
 -- ============================================================================
--- README.md: Quick Start Example 7 - Impossible Predicate Detection (~line 455)
+-- doc/installation.md: Quick Start Example 8 - Impossible Predicate Detection
 -- ============================================================================
 
 -- Impossible predicate detection: integer can never equal fractional value

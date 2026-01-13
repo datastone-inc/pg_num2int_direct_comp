@@ -7,7 +7,7 @@ This extension was developed using **VS Code Copilot in agent mode** with [speck
 ### Workflow
 
 1. **Specification First**: Features are defined in `specs/` with detailed requirements, research, and implementation plans before any code is written
-2. **Agent-Assisted Implementation**: VS Code Copilot (Claude) implements features based on specifications, with human review and guidance
+2. **Agent-Assisted Implementation**: VS Code Copilot (Claude) implements features based on specifications, with human review and guidance by Dave Sharpe
 3. **Test-Driven Verification**: All features have regression tests that validate behavior against the specification
 4. **Iterative Refinement**: Specifications and implementations are refined through agent-human collaboration
 
@@ -123,7 +123,7 @@ All files require copyright notice:
 ```c
 /*
  * Copyright (c) 2026 dataStone Inc.
- * 
+ *
  * SPDX-License-Identifier: MIT
  * See LICENSE file for full license text.
  */
@@ -133,7 +133,7 @@ All files require copyright notice:
  * @brief Exact comparison operators for numeric and integer types
  * @author Dave Sharpe
  * @date 2025-12-23
- * 
+ *
  * This file was developed with assistance from AI tools.
  */
 ```
@@ -167,13 +167,19 @@ make installcheck REGRESS=numeric_int_ops EXTRA_REGRESS_OPTS="--verbose"
 1. **numeric_int_ops.sql** - Numeric × integer comparisons
 2. **float_int_ops.sql** - Float × integer comparisons
 3. **index_usage.sql** - Index optimization verification
-4. **hash_joins.sql** - Hash join functionality
-5. **merge_joins.sql** - Merge join functionality
-6. **null_handling.sql** - NULL semantics
-7. **special_values.sql** - NaN, Infinity handling
-8. **edge_cases.sql** - Boundary values, overflow
-9. **transitivity.sql** - Non-transitivity verification
-10. **performance.sql** - Performance benchmarks
+4. **index_nested_loop.sql** - Indexed nested loop joins
+5. **hash_joins.sql** - Hash join functionality
+6. **merge_joins.sql** - Merge join functionality
+7. **null_handling.sql** - NULL semantics
+8. **special_values.sql** - NaN, Infinity handling
+9. **edge_cases.sql** - Boundary values, overflow
+10. **transitivity.sql** - Transitivity verification
+11. **selectivity.sql** - Selectivity estimation
+12. **range_boundary.sql** - Range predicate transformation
+13. **extension_lifecycle.sql** - DROP/CREATE extension cycles
+14. **doc_examples.sql** - Documentation example verification
+15. **performance.sql** - Quick performance benchmarks (~seconds)
+16. **benchmark.sql** - Full performance benchmarks (~70 seconds)
 
 ### Writing Tests
 
@@ -237,6 +243,7 @@ pg-num2int-direct-comp/
 │   ├── numeric_int_ops.sql        #   - Numeric × integer tests
 │   ├── float_int_ops.sql          #   - Float × integer tests
 │   ├── index_usage.sql            #   - Index scan verification
+│   ├── index_nested_loop.sql      #   - Indexed nested loop joins
 │   ├── hash_joins.sql             #   - Hash join tests
 │   ├── merge_joins.sql            #   - Merge join tests
 │   ├── null_handling.sql          #   - NULL semantics
@@ -245,10 +252,10 @@ pg-num2int-direct-comp/
 │   ├── transitivity.sql           #   - Transitivity verification
 │   ├── selectivity.sql            #   - Selectivity estimation
 │   ├── range_boundary.sql         #   - Range predicate transformation
-│   ├── index_nested_loop.sql      #   - Indexed nested loop joins
 │   ├── extension_lifecycle.sql    #   - DROP/CREATE extension cycles
 │   ├── doc_examples.sql           #   - Documentation examples
-│   └── performance.sql            #   - Performance benchmarks
+│   ├── performance.sql            #   - Quick performance benchmarks
+│   └── benchmark.sql              #   - Full performance benchmarks
 │
 ├── expected/                      # Expected test output (*.out files)
 │
@@ -257,15 +264,21 @@ pg-num2int-direct-comp/
 ├── doc/                           # Documentation
 │   ├── installation.md            #   - Setup and prerequisites
 │   ├── operator-reference.md      #   - Operator reference and usage guide
+│   ├── benchmark.md               #   - Benchmark guide and results
 │   └── development.md             #   - Contributing guide (this file)
 │
 ├── specs/                         # Design specifications
-│   └── 001-num-int-direct-comp/
-│       ├── spec.md                #   - Feature specification
-│       ├── research.md            #   - Research and design decisions
-│       ├── plan.md                #   - Implementation plan
-│       ├── tasks.md               #   - Task breakdown
-│       └── implementation-notes.md #  - Implementation journal
+│   ├── 001-num-int-direct-comp/   #   - Numeric × integer comparison spec
+│   │   ├── spec.md                #     - Feature specification
+│   │   ├── research.md            #     - Research and design decisions
+│   │   ├── plan.md                #     - Implementation plan
+│   │   ├── tasks.md               #     - Task breakdown
+│   │   └── implementation-notes.md #    - Implementation journal
+│   └── 002-float-btree-ops/       #   - Float × integer btree ops spec
+│       ├── spec.md                #     - Feature specification
+│       ├── research.md            #     - Research and design decisions
+│       ├── plan.md                #     - Implementation plan
+│       └── tasks.md               #     - Task breakdown
 │
 └── assets/                        # Images and logos
 ```
@@ -293,17 +306,7 @@ pg-num2int-direct-comp/
 
 ### Benchmarking
 
-```sql
--- Create large test table
-CREATE TABLE perf_test (id SERIAL, value INT4);
-INSERT INTO perf_test (value) SELECT generate_series(1, 1000000);
-CREATE INDEX ON perf_test(value);
-ANALYZE perf_test;
-
--- Test query performance
-EXPLAIN (ANALYZE, BUFFERS) 
-SELECT * FROM perf_test WHERE value = 500000::numeric;
-```
+See [`doc/benchmark.md`](doc/benchmark.md) for detailed benchmarking instructions.
 
 ### Performance Goals
 
@@ -371,19 +374,19 @@ jobs:
     strategy:
       matrix:
         pg_version: [12, 13, 14, 15, 16]
-    
+
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Install PostgreSQL
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-${{ matrix.pg_version }} \
             postgresql-server-dev-${{ matrix.pg_version }}
-      
+
       - name: Build
         run: make PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg_version }}/bin/pg_config
-      
+
       - name: Test
         run: make installcheck PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg_version }}/bin/pg_config
 ```
@@ -430,7 +433,7 @@ make dist
 
 Follow conventional commits:
 
-```
+```text
 feat: add support for decimal type alias
 fix: correct overflow handling in float4_cmp_int8
 docs: update API reference for serial types

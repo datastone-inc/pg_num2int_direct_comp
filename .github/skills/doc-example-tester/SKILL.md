@@ -36,6 +36,8 @@ process_markdown_file() {
       sql_code=""
       expected_output=""
       without_extension=0
+      output_started=0
+      output_ended=0
     }
 
     # Start of SQL block
@@ -47,6 +49,8 @@ process_markdown_file() {
       sql_code=""
       expected_output=""
       without_extension=0
+      output_started=0
+      output_ended=0
       next
     }
 
@@ -64,15 +68,22 @@ process_markdown_file() {
       next
     }
 
-    # Collect SQL code (non-comment lines)
-    in_sql && !/^--/ && !/^```/ {
+    # Collect SQL code (non-comment lines, non-blank)
+    in_sql && !/^--/ && !/^```/ && !/^[[:space:]]*$/ {
       if (sql_code != "") sql_code = sql_code "\n"
       sql_code = sql_code $0
       next
     }
 
-    # Collect expected output (comment lines)
-    in_sql && /^--[^-]/ {
+    # Blank line ends expected output collection (comments after are ignored)
+    in_sql && /^[[:space:]]*$/ {
+      if (output_started) output_ended=1
+      next
+    }
+
+    # Collect expected output (comment lines, before blank line)
+    in_sql && /^--[^-]/ && !output_ended {
+      output_started=1
       sub(/^-- ?/, "", $0)
       if (expected_output != "") expected_output = expected_output "\n"
       expected_output = expected_output $0
@@ -215,18 +226,23 @@ EOF
 
   # Generate with/without blocks if needed
   if [[ "$with_without" == "1" ]]; then
-    echo "-- Without extension"
+    echo "-- Without extension (verifies documented stock PostgreSQL behavior)"
     echo "\\echo '--- Without extension ---'"
     echo "DROP EXTENSION IF EXISTS ${EXT_NAME} CASCADE;"
     echo "$sql"
     echo
+    echo "-- With extension (behavior not documented - for completeness only)"
+    echo "\\echo '--- With extension ---'"
+    echo "CREATE EXTENSION IF NOT EXISTS ${EXT_NAME};"
+    echo "$sql"
+    echo
+  else
+    echo "-- With extension"
+    echo "\\echo '--- With extension ---'"
+    echo "CREATE EXTENSION IF NOT EXISTS ${EXT_NAME};"
+    echo "$sql"
+    echo
   fi
-
-  echo "-- With extension"
-  echo "\\echo '--- With extension ---'"
-  echo "CREATE EXTENSION IF NOT EXISTS ${EXT_NAME};"
-  echo "$sql"
-  echo
 
   # Generate cleanup
   if [[ -n "$setup_sql" ]]; then
