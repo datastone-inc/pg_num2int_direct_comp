@@ -1,12 +1,10 @@
-# pg-num2int-direct-comp Development Guidelines
+# pg_num2int_direct_comp Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2025-12-23
+Auto-generated from all feature plans. Last updated: 2026-01-11
 
 ## Active Technologies
-- C (C99) for PostgreSQL backend extension + PostgreSQL 12+ development headers, PGXS build system (001-num-int-direct-comp)
-- N/A (operators only, no data storage) (001-num-int-direct-comp)
 
-- C (C99 minimum) for PostgreSQL backend extension + PostgreSQL 12+ headers (fmgr.h, utils/numeric.h, utils/float.h, optimizer/optimizer.h) (001-num-int-direct-comp)
+- C (PostgreSQL 12+), SQL (PL/pgSQL) + PostgreSQL PGXS, existing pg_num2int_direct_comp v1.0.0 codebase (002-float-btree-ops)
 
 ## Project Structure
 
@@ -17,17 +15,15 @@ tests/
 
 ## Commands
 
-# Add commands for C (C99 minimum) for PostgreSQL backend extension
+# Add commands for C (PostgreSQL 12+), SQL (PL/pgSQL)
 
 ## Code Style
 
-C (C99 minimum) for PostgreSQL backend extension: Follow standard conventions
+C (PostgreSQL 12+), SQL (PL/pgSQL): Follow standard conventions
 
 ## Recent Changes
-- 001-num-int-direct-comp: Added C (C99) for PostgreSQL backend extension + PostgreSQL 12+ development headers, PGXS build system
-- 001-num-int-direct-comp: Added C (C99) for PostgreSQL backend extension + PostgreSQL 12+ development headers, PGXS build system
 
-- 001-num-int-direct-comp: Added C (C99 minimum) for PostgreSQL backend extension + PostgreSQL 12+ headers (fmgr.h, utils/numeric.h, utils/float.h, optimizer/optimizer.h)
+- 002-float-btree-ops: Added C (PostgreSQL 12+), SQL (PL/pgSQL) + PostgreSQL PGXS, existing pg_num2int_direct_comp v1.0.0 codebase
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

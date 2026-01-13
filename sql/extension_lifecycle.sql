@@ -148,11 +148,54 @@ AND am.amname = 'btree'
 AND ao.amoplefttype = 'int4'::regtype
 AND ao.amoprighttype = 'int4'::regtype;
 
+-- Verify no int×float operators remain in float_ops (new test for btree family integration)
+SELECT COUNT(*) AS leftover_float_ops
+FROM pg_amop ao
+JOIN pg_opfamily of ON ao.amopfamily = of.oid
+JOIN pg_am am ON of.opfmethod = am.oid
+WHERE of.opfname = 'float_ops' 
+AND am.amname = 'btree'
+AND ((ao.amoplefttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype) AND ao.amoprighttype IN ('float4'::regtype, 'float8'::regtype))
+     OR (ao.amoplefttype IN ('float4'::regtype, 'float8'::regtype) AND ao.amoprighttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype)));
+
+-- Verify no float×int operators remain in integer_ops (new test for btree family integration)  
+SELECT COUNT(*) AS leftover_integer_ops
+FROM pg_amop ao
+JOIN pg_opfamily of ON ao.amopfamily = of.oid
+JOIN pg_am am ON of.opfmethod = am.oid
+WHERE of.opfname = 'integer_ops'
+AND am.amname = 'btree'
+AND ((ao.amoplefttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype) AND ao.amoprighttype IN ('float4'::regtype, 'float8'::regtype))
+     OR (ao.amoplefttype IN ('float4'::regtype, 'float8'::regtype) AND ao.amoprighttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype)));
+
 -- Recreate extension
 CREATE EXTENSION pg_num2int_direct_comp;
 
 -- Test functionality after reinstall
 SELECT 10::numeric = 10::int4 AS after_reinstall_test;
+
+-- Test int×float operators after reinstall (new test for btree family integration)
+SELECT 10::int4 = 10.0::float4 AS int4_float4_reinstall_test;
+SELECT 10::int4 = 10.0::float8 AS int4_float8_reinstall_test;
+
+-- Verify btree family registrations were recreated correctly
+SELECT COUNT(*) AS recreated_float_ops
+FROM pg_amop ao
+JOIN pg_opfamily of ON ao.amopfamily = of.oid
+JOIN pg_am am ON of.opfmethod = am.oid
+WHERE of.opfname = 'float_ops' 
+AND am.amname = 'btree'
+AND ((ao.amoplefttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype) AND ao.amoprighttype IN ('float4'::regtype, 'float8'::regtype))
+     OR (ao.amoplefttype IN ('float4'::regtype, 'float8'::regtype) AND ao.amoprighttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype)));
+
+SELECT COUNT(*) AS recreated_integer_ops
+FROM pg_amop ao
+JOIN pg_opfamily of ON ao.amopfamily = of.oid
+JOIN pg_am am ON of.opfmethod = am.oid
+WHERE of.opfname = 'integer_ops'
+AND am.amname = 'btree'
+AND ((ao.amoplefttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype) AND ao.amoprighttype IN ('float4'::regtype, 'float8'::regtype))
+     OR (ao.amoplefttype IN ('float4'::regtype, 'float8'::regtype) AND ao.amoprighttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype)));
 
 -- Verify event trigger was recreated
 SELECT evtname FROM pg_event_trigger 
@@ -222,3 +265,44 @@ FROM (VALUES
 
 -- Final verification
 SELECT 'Extension lifecycle test passed' AS result;
+
+-- ============================================================================
+-- GUC Configuration Tests  
+-- ============================================================================
+-- Test that the GUC parameter works correctly for enabling/disabling optimizations
+
+-- Check GUC exists and has correct default value
+SHOW pg_num2int_direct_comp.enable_support_functions;
+
+-- Test setting the GUC to different values
+SET pg_num2int_direct_comp.enable_support_functions = off;
+SHOW pg_num2int_direct_comp.enable_support_functions;
+
+SET pg_num2int_direct_comp.enable_support_functions = on;  
+SHOW pg_num2int_direct_comp.enable_support_functions;
+
+-- Create test table for optimization verification
+CREATE TEMPORARY TABLE guc_test (val int8);
+INSERT INTO guc_test VALUES (9007199254740992);
+
+-- Test with optimizations disabled (should show cross-type comparison)
+SET pg_num2int_direct_comp.enable_support_functions = off;
+EXPLAIN (VERBOSE, COSTS off) 
+SELECT * FROM guc_test WHERE 9007199254740993.0::float8 = val;
+
+-- Test with optimizations enabled (should show same-type comparison with transformed constant)
+SET pg_num2int_direct_comp.enable_support_functions = on;
+EXPLAIN (VERBOSE, COSTS off)
+SELECT * FROM guc_test WHERE 9007199254740993.0::float8 = val;
+
+-- Verify actual query results are correct in both modes
+SET pg_num2int_direct_comp.enable_support_functions = off;
+SELECT count(*) AS disabled_count FROM guc_test WHERE 9007199254740993.0::float8 = val;
+
+SET pg_num2int_direct_comp.enable_support_functions = on;
+SELECT count(*) AS enabled_count FROM guc_test WHERE 9007199254740993.0::float8 = val;
+
+-- Cleanup
+DROP TABLE guc_test;
+
+SELECT 'GUC configuration test passed' AS result;

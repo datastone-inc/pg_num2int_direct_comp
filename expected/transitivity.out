@@ -117,6 +117,30 @@ WHERE o.oprname IN ('=', '<>', '<', '>', '<=', '>=')
 ORDER BY o.oprname, opf.opfname;
  oprname |   opfname   
 ---------+-------------
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | float_ops
+ <       | integer_ops
+ <       | integer_ops
+ <       | integer_ops
+ <       | integer_ops
+ <       | integer_ops
+ <       | integer_ops
+ <       | integer_ops
+ <       | integer_ops
+ <       | integer_ops
+ <       | integer_ops
+ <       | integer_ops
+ <       | integer_ops
  <       | integer_ops
  <       | integer_ops
  <       | integer_ops
@@ -129,6 +153,30 @@ ORDER BY o.oprname, opf.opfname;
  <       | numeric_ops
  <       | numeric_ops
  <       | numeric_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | float_ops
+ <=      | integer_ops
+ <=      | integer_ops
+ <=      | integer_ops
+ <=      | integer_ops
+ <=      | integer_ops
+ <=      | integer_ops
+ <=      | integer_ops
+ <=      | integer_ops
+ <=      | integer_ops
+ <=      | integer_ops
+ <=      | integer_ops
+ <=      | integer_ops
  <=      | integer_ops
  <=      | integer_ops
  <=      | integer_ops
@@ -141,6 +189,30 @@ ORDER BY o.oprname, opf.opfname;
  <=      | numeric_ops
  <=      | numeric_ops
  <=      | numeric_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | float_ops
+ =       | integer_ops
+ =       | integer_ops
+ =       | integer_ops
+ =       | integer_ops
+ =       | integer_ops
+ =       | integer_ops
+ =       | integer_ops
+ =       | integer_ops
+ =       | integer_ops
+ =       | integer_ops
+ =       | integer_ops
+ =       | integer_ops
  =       | integer_ops
  =       | integer_ops
  =       | integer_ops
@@ -153,6 +225,30 @@ ORDER BY o.oprname, opf.opfname;
  =       | numeric_ops
  =       | numeric_ops
  =       | numeric_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | float_ops
+ >       | integer_ops
+ >       | integer_ops
+ >       | integer_ops
+ >       | integer_ops
+ >       | integer_ops
+ >       | integer_ops
+ >       | integer_ops
+ >       | integer_ops
+ >       | integer_ops
+ >       | integer_ops
+ >       | integer_ops
+ >       | integer_ops
  >       | integer_ops
  >       | integer_ops
  >       | integer_ops
@@ -165,6 +261,30 @@ ORDER BY o.oprname, opf.opfname;
  >       | numeric_ops
  >       | numeric_ops
  >       | numeric_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | float_ops
+ >=      | integer_ops
+ >=      | integer_ops
+ >=      | integer_ops
+ >=      | integer_ops
+ >=      | integer_ops
+ >=      | integer_ops
+ >=      | integer_ops
+ >=      | integer_ops
+ >=      | integer_ops
+ >=      | integer_ops
+ >=      | integer_ops
+ >=      | integer_ops
  >=      | integer_ops
  >=      | integer_ops
  >=      | integer_ops
@@ -177,7 +297,7 @@ ORDER BY o.oprname, opf.opfname;
  >=      | numeric_ops
  >=      | numeric_ops
  >=      | numeric_ops
-(60 rows)
+(180 rows)
 
 -- Test 7: Demonstrate why transitivity would be unsafe
 -- If 10.5::numeric = 10::int (false) and 10::int = 10.0::float8 (true)

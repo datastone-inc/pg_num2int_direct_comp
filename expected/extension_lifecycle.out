@@ -268,6 +268,34 @@ AND ao.amoprighttype = 'int4'::regtype;
                   0
 (1 row)
 
+-- Verify no int×float operators remain in float_ops (new test for btree family integration)
+SELECT COUNT(*) AS leftover_float_ops
+FROM pg_amop ao
+JOIN pg_opfamily of ON ao.amopfamily = of.oid
+JOIN pg_am am ON of.opfmethod = am.oid
+WHERE of.opfname = 'float_ops' 
+AND am.amname = 'btree'
+AND ((ao.amoplefttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype) AND ao.amoprighttype IN ('float4'::regtype, 'float8'::regtype))
+     OR (ao.amoplefttype IN ('float4'::regtype, 'float8'::regtype) AND ao.amoprighttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype)));
+ leftover_float_ops 
+--------------------
+                  0
+(1 row)
+
+-- Verify no float×int operators remain in integer_ops (new test for btree family integration)  
+SELECT COUNT(*) AS leftover_integer_ops
+FROM pg_amop ao
+JOIN pg_opfamily of ON ao.amopfamily = of.oid
+JOIN pg_am am ON of.opfmethod = am.oid
+WHERE of.opfname = 'integer_ops'
+AND am.amname = 'btree'
+AND ((ao.amoplefttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype) AND ao.amoprighttype IN ('float4'::regtype, 'float8'::regtype))
+     OR (ao.amoplefttype IN ('float4'::regtype, 'float8'::regtype) AND ao.amoprighttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype)));
+ leftover_integer_ops 
+----------------------
+                    0
+(1 row)
+
 -- Recreate extension
 CREATE EXTENSION pg_num2int_direct_comp;
 -- Test functionality after reinstall
@@ -275,6 +303,46 @@ SELECT 10::numeric = 10::int4 AS after_reinstall_test;
  after_reinstall_test 
 ----------------------
  t
+(1 row)
+
+-- Test int×float operators after reinstall (new test for btree family integration)
+SELECT 10::int4 = 10.0::float4 AS int4_float4_reinstall_test;
+ int4_float4_reinstall_test 
+----------------------------
+ t
+(1 row)
+
+SELECT 10::int4 = 10.0::float8 AS int4_float8_reinstall_test;
+ int4_float8_reinstall_test 
+----------------------------
+ t
+(1 row)
+
+-- Verify btree family registrations were recreated correctly
+SELECT COUNT(*) AS recreated_float_ops
+FROM pg_amop ao
+JOIN pg_opfamily of ON ao.amopfamily = of.oid
+JOIN pg_am am ON of.opfmethod = am.oid
+WHERE of.opfname = 'float_ops' 
+AND am.amname = 'btree'
+AND ((ao.amoplefttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype) AND ao.amoprighttype IN ('float4'::regtype, 'float8'::regtype))
+     OR (ao.amoplefttype IN ('float4'::regtype, 'float8'::regtype) AND ao.amoprighttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype)));
+ recreated_float_ops 
+---------------------
+                  60
+(1 row)
+
+SELECT COUNT(*) AS recreated_integer_ops
+FROM pg_amop ao
+JOIN pg_opfamily of ON ao.amopfamily = of.oid
+JOIN pg_am am ON of.opfmethod = am.oid
+WHERE of.opfname = 'integer_ops'
+AND am.amname = 'btree'
+AND ((ao.amoplefttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype) AND ao.amoprighttype IN ('float4'::regtype, 'float8'::regtype))
+     OR (ao.amoplefttype IN ('float4'::regtype, 'float8'::regtype) AND ao.amoprighttype IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype)));
+ recreated_integer_ops 
+-----------------------
+                    60
 (1 row)
 
 -- Verify event trigger was recreated
@@ -370,5 +438,75 @@ SELECT 'Extension lifecycle test passed' AS result;
              result              
 ---------------------------------
  Extension lifecycle test passed
+(1 row)
+
+-- ============================================================================
+-- GUC Configuration Tests  
+-- ============================================================================
+-- Test that the GUC parameter works correctly for enabling/disabling optimizations
+-- Check GUC exists and has correct default value
+SHOW pg_num2int_direct_comp.enable_support_functions;
+ERROR:  unrecognized configuration parameter "pg_num2int_direct_comp.enable_support_functions"
+-- Test setting the GUC to different values
+SET pg_num2int_direct_comp.enable_support_functions = off;
+SHOW pg_num2int_direct_comp.enable_support_functions;
+ pg_num2int_direct_comp.enable_support_functions 
+-------------------------------------------------
+ off
+(1 row)
+
+SET pg_num2int_direct_comp.enable_support_functions = on;  
+SHOW pg_num2int_direct_comp.enable_support_functions;
+ pg_num2int_direct_comp.enable_support_functions 
+-------------------------------------------------
+ on
+(1 row)
+
+-- Create test table for optimization verification
+CREATE TEMPORARY TABLE guc_test (val int8);
+INSERT INTO guc_test VALUES (9007199254740992);
+-- Test with optimizations disabled (should show cross-type comparison)
+SET pg_num2int_direct_comp.enable_support_functions = off;
+EXPLAIN (VERBOSE, COSTS off) 
+SELECT * FROM guc_test WHERE 9007199254740993.0::float8 = val;
+                      QUERY PLAN                       
+-------------------------------------------------------
+ Seq Scan on pg_temp.guc_test
+   Output: val
+   Filter: (guc_test.val = '9007199254740992'::bigint)
+(3 rows)
+
+-- Test with optimizations enabled (should show same-type comparison with transformed constant)
+SET pg_num2int_direct_comp.enable_support_functions = on;
+EXPLAIN (VERBOSE, COSTS off)
+SELECT * FROM guc_test WHERE 9007199254740993.0::float8 = val;
+                      QUERY PLAN                       
+-------------------------------------------------------
+ Seq Scan on pg_temp.guc_test
+   Output: val
+   Filter: (guc_test.val = '9007199254740992'::bigint)
+(3 rows)
+
+-- Verify actual query results are correct in both modes
+SET pg_num2int_direct_comp.enable_support_functions = off;
+SELECT count(*) AS disabled_count FROM guc_test WHERE 9007199254740993.0::float8 = val;
+ disabled_count 
+----------------
+              1
+(1 row)
+
+SET pg_num2int_direct_comp.enable_support_functions = on;
+SELECT count(*) AS enabled_count FROM guc_test WHERE 9007199254740993.0::float8 = val;
+ enabled_count 
+---------------
+             1
+(1 row)
+
+-- Cleanup
+DROP TABLE guc_test;
+SELECT 'GUC configuration test passed' AS result;
+            result             
+-------------------------------
+ GUC configuration test passed
 (1 row)
 

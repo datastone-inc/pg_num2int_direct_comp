@@ -9,14 +9,14 @@ PostgreSQL extension providing 108 exact comparison operators for cross-type com
 
 ## Technical Context
 
-**Language/Version**: C (C99) for PostgreSQL backend extension  
-**Primary Dependencies**: PostgreSQL 12+ development headers, PGXS build system  
-**Storage**: N/A (operators only, no data storage)  
-**Testing**: pg_regress framework (constitution requirement)  
-**Target Platform**: Linux, macOS, Windows (via MinGW) - PostgreSQL 12-16  
-**Project Type**: Single PostgreSQL extension  
-**Performance Goals**: Sub-millisecond index lookups on 1M+ row tables, <10% overhead vs native comparisons  
-**Constraints**: Must compile with `-Wall -Wextra -Werror`, no C++ in backend code  
+**Language/Version**: C (C99) for PostgreSQL backend extension
+**Primary Dependencies**: PostgreSQL 12+ development headers, PGXS build system
+**Storage**: N/A (operators only, no data storage)
+**Testing**: pg_regress framework (constitution requirement)
+**Target Platform**: Linux, macOS, Windows (via MinGW) - PostgreSQL 12-16
+**Project Type**: Single PostgreSQL extension
+**Performance Goals**: Sub-millisecond index lookups on 1M+ row tables, <10% overhead vs native comparisons
+**Constraints**: Must compile with `-Wall -Wextra -Werror`, no C++ in backend code
 **Scale/Scope**: 108 operators (9 type combinations × 6 ops × 2 directions)
 
 ## Constitution Check
@@ -98,11 +98,13 @@ doc/                            # User documentation
 - Single generic `num2int_support()` function via `SupportRequestIndexCondition`
 - Both operator directions need real C functions (shell operators cannot have support functions)
 - Support function returns `List *` via `list_make1()`
+- Modeled after PostgreSQL's LIKE operator implementation
 
 ### 3. Hash Join Support
 - Cast integers to higher-precision type before hashing
-- Use PostgreSQL's native hash functions (`hash_numeric`, `hashfloat8`)
+- Use PostgreSQL's native hash functions (`hash_numeric`, `hashfloat4`, `hashfloat8`)
 - All equality operators have HASHES property
+- Ensures hash invariant: if a = b then hash(a) = hash(b)
 
 ### 4. Btree Family Strategy
 - Add int×numeric operators to BOTH `integer_ops` AND `numeric_ops` (enables merge joins)

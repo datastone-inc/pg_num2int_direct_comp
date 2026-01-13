@@ -1,6 +1,9 @@
 -- Test exact comparison operators for float × integer combinations
 -- Includes precision boundary tests for float4 and float8
 
+-- Load extension
+CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
+
 -- Test 1: Basic equality - float with no fractional part
 SELECT 10::float4 = 10::int2 AS "float4=int2_exact";
 SELECT 10::float4 = 10::int4 AS "float4=int4_exact";
@@ -150,3 +153,82 @@ SELECT 'NaN'::float4 < 10::int4 AS "NaN_float4_lt_int4_false";
 SELECT 'NaN'::float4 > 10::int4 AS "NaN_float4_gt_int4_true";
 SELECT 'Infinity'::float4 > 10::int4 AS "Inf_float4_gt_int4_true";
 SELECT '-Infinity'::float8 < 10::int8 AS "NegInf_float8_lt_int8_true";
+
+--
+-- Phase 3: User Story 1 - Catalog Verification Tests (T012-T014a)
+--
+
+-- T012 [US1] Add pg_amop catalog verification query for float_ops btree (expect 95 entries)
+SELECT COUNT(*) AS "float_ops_btree_operators"
+FROM pg_amop
+WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'float_ops' AND opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree'));
+
+-- T013 [US1] Remove duplicate float8_ops test (PostgreSQL only has one float_ops family)
+-- This test is now covered by T012 above
+
+-- T014 [US1] Add pg_amop catalog verification query for integer_ops btree float entries (expect 150 entries)
+SELECT COUNT(*) AS "integer_ops_btree_operators"
+FROM pg_amop
+WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'integer_ops' AND opfmethod = (SELECT oid FROM pg_am WHERE amname = 'btree'));
+
+-- T014a [US1] Add pg_operator verification query to confirm MERGES property on equality operators
+SELECT COUNT(*) AS "equality_ops_with_merges"
+FROM pg_operator
+WHERE oprname = '='
+  AND (oprleft IN (SELECT oid FROM pg_type WHERE typname IN ('int2', 'int4', 'int8', 'float4', 'float8'))
+       OR oprright IN (SELECT oid FROM pg_type WHERE typname IN ('int2', 'int4', 'int8', 'float4', 'float8')))
+  AND oprcanmerge = true;
+
+--
+-- Phase 4: User Story 2 - Transitivity Tests (T016-T020a)
+--
+
+-- T016 [US2] Add transitivity test for int4 = float4 = int4 chain
+-- Create test scenario: if a = b and b = c, then a = c
+SELECT
+  (42::int4 = 42.0::float4) AS "int4_eq_float4",
+  (42.0::float4 = 42::int4) AS "float4_eq_int4_reverse",
+  (42::int4 = 42::int4) AS "int4_eq_int4_transitive"
+WHERE 42::int4 = 42.0::float4 AND 42.0::float4 = 42::int4;
+
+-- T017 [US2] Add transitivity test for int8 = float8 = int8 chain
+SELECT
+  (1000000::int8 = 1000000.0::float8) AS "int8_eq_float8",
+  (1000000.0::float8 = 1000000::int8) AS "float8_eq_int8_reverse",
+  (1000000::int8 = 1000000::int8) AS "int8_eq_int8_transitive"
+WHERE 1000000::int8 = 1000000.0::float8 AND 1000000.0::float8 = 1000000::int8;
+
+-- T018 [US2] Add NaN transitivity test (NaN = NaN, NaN > all non-NaN)
+SELECT
+  ('NaN'::float4 = 'NaN'::float4) AS "NaN_eq_NaN_float4",
+  ('NaN'::float8 = 'NaN'::float8) AS "NaN_eq_NaN_float8",
+  ('NaN'::float4 > 999999::int4) AS "NaN_gt_maxint",
+  ('NaN'::float8 > 999999::int8) AS "NaN_gt_maxint8";
+
+-- T019 [US2] Add +/-Infinity ordering test (-Inf < all ints < +Inf)
+SELECT
+  ('-Infinity'::float4 < (-2147483648)::int4) AS "negInf_lt_minint4",
+  ('Infinity'::float4 > 2147483647::int4) AS "posInf_gt_maxint4",
+  ('-Infinity'::float8 < (-9223372036854775808)::int8) AS "negInf_lt_minint8",
+  ('Infinity'::float8 > 9223372036854775807::int8) AS "posInf_gt_maxint8";
+
+-- T020 [US2] Add precision boundary transitivity test (16777216 boundary for float4)
+SELECT
+  (16777216::int4 = 16777216::float4) AS "at_float4_limit_true",
+  (16777217::int4 = 16777217::float4) AS "beyond_float4_limit_false",
+  (9007199254740992::int8 = 9007199254740992::float8) AS "at_float8_limit_true",
+  (9007199254740993::int8 = 9007199254740993::float8) AS "beyond_float8_limit_false";
+
+-- Create test table for transitive inference test
+CREATE TEMPORARY TABLE transitivity_test (val int4);
+INSERT INTO transitivity_test VALUES (42), (100), (200);
+
+-- T020a [US2] Add EXPLAIN test for transitive inference (verify planner simplifies chained conditions)
+EXPLAIN (COSTS false)
+SELECT * FROM transitivity_test t
+WHERE t.val = 42::float4
+  AND 42::float4 = 42::int4
+  AND 42::int4 = t.val;
+
+-- Cleanup
+DROP TABLE transitivity_test;
