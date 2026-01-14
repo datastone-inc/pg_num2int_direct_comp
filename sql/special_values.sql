@@ -47,7 +47,7 @@ SELECT 'Infinity > int4 (should return 1)'::text AS test, COUNT(*) AS count FROM
 SELECT '-Infinity < int4 (should return 1)'::text AS test, COUNT(*) AS count FROM t_special WHERE val_f4 < (-2147483648)::int4;
 SELECT 'Normal value = int4 (should return 1)'::text AS test, COUNT(*) AS count FROM t_special WHERE val_f4 = 100::int4;
 
--- NaN vs Infinity
-SELECT '''NaN''::float4 = ''Infinity''::float4'::text AS test, 'NaN'::float4 = 'Infinity'::float4 AS result;  -- Should be false
-SELECT '''NaN''::float4 > ''Infinity''::float4'::text AS test, 'NaN'::float4 > 'Infinity'::float4 AS result;  -- Should be false (NaN comparisons are always false)
-SELECT '''NaN''::float4 < ''-Infinity''::float4'::text AS test, 'NaN'::float4 < '-Infinity'::float4 AS result;  -- Should be false
+-- NaN vs Infinity (PostgreSQL semantics: NaN = NaN is false, NaN > all non-NaN for ordering)
+SELECT '''NaN''::float4 = ''Infinity''::float4'::text AS test, 'NaN'::float4 = 'Infinity'::float4 AS result;  -- Should be false (NaN never equals anything)
+SELECT '''NaN''::float4 > ''Infinity''::float4'::text AS test, 'NaN'::float4 > 'Infinity'::float4 AS result;  -- Should be true (PostgreSQL: NaN > all for sorting)
+SELECT '''NaN''::float4 < ''-Infinity''::float4'::text AS test, 'NaN'::float4 < '-Infinity'::float4 AS result;  -- Should be false (PostgreSQL: NaN is never less than anything)

@@ -59,8 +59,8 @@ SELECT 10::real = 10::int4 AS "real=int4";
 SELECT 10.5::real <> 10::int4 AS "real_frac<>int4";
 
 -- Test 11: Double precision type (alias for float8)
-SELECT 10::"double precision" = 10::int8 AS "double=int8";
-SELECT 10.5::"double precision" <> 10::int8 AS "double_frac<>int8";
+SELECT 10::float8 = 10::int8 AS "double=int8";
+SELECT 10.5::float8 <> 10::int8 AS "double_frac<>int8";
 
 -- Test 12: NaN handling (NaN never equals anything)
 SELECT 'NaN'::float4 = 10::int4 AS "NaN_float4=int4_false";

@@ -194,20 +194,20 @@ SELECT 'Normal value = int4 (should return 1)'::text AS test, COUNT(*) AS count 
  Normal value = int4 (should return 1) |     1
 (1 row)
 
--- NaN vs Infinity
-SELECT '''NaN''::float4 = ''Infinity''::float4'::text AS test, 'NaN'::float4 = 'Infinity'::float4 AS result;  -- Should be false
+-- NaN vs Infinity (PostgreSQL semantics: NaN = NaN is false, NaN > all non-NaN for ordering)
+SELECT '''NaN''::float4 = ''Infinity''::float4'::text AS test, 'NaN'::float4 = 'Infinity'::float4 AS result;  -- Should be false (NaN never equals anything)
                 test                | result 
 ------------------------------------+--------
  'NaN'::float4 = 'Infinity'::float4 | f
 (1 row)
 
-SELECT '''NaN''::float4 > ''Infinity''::float4'::text AS test, 'NaN'::float4 > 'Infinity'::float4 AS result;  -- Should be false (NaN comparisons are always false)
+SELECT '''NaN''::float4 > ''Infinity''::float4'::text AS test, 'NaN'::float4 > 'Infinity'::float4 AS result;  -- Should be true (PostgreSQL: NaN > all for sorting)
                 test                | result 
 ------------------------------------+--------
  'NaN'::float4 > 'Infinity'::float4 | t
 (1 row)
 
-SELECT '''NaN''::float4 < ''-Infinity''::float4'::text AS test, 'NaN'::float4 < '-Infinity'::float4 AS result;  -- Should be false
+SELECT '''NaN''::float4 < ''-Infinity''::float4'::text AS test, 'NaN'::float4 < '-Infinity'::float4 AS result;  -- Should be false (PostgreSQL: NaN is never less than anything)
                 test                 | result 
 -------------------------------------+--------
  'NaN'::float4 < '-Infinity'::float4 | f
