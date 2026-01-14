@@ -181,7 +181,7 @@ Enables: Merge joins for equality-based JOIN operations on pre-sorted data.
 
 **Purpose**: Optimizes cross-type comparisons during query planning
 
-**Mechanism**: Implements `SupportRequestSimplify` and `SupportRequestIndexCondition` to transform predicates at plan time
+**Mechanism**: Implements `SupportRequestSimplify` to transform predicates during query planning
 
 **Behavior**:
 

@@ -252,7 +252,7 @@ This approach is **mathematically correct** because:
 
 #### Index Optimization via Support Functions
 
-The extension uses PostgreSQL's [`SupportRequestSimplify`](https://www.postgresql.org/docs/current/xfunc-optimization.html) mechanism to gain exact integer comparison when possible. This enables the Planner to consider integer histograms for better costed plan choices. When the query contains a cross-type comparison like `intkey >= 10.0::numeric` or `intkey = $1` (where `$1` is a numeric parameter and the statement is prepared with a custom plan), the support function performs these optimizations:
+The extension uses PostgreSQL's [`SupportRequestSimplify`](https://www.postgresql.org/docs/current/xfunc-optimization.html) mechanism to enable index usage for all comparison operators (`=`, `<`, `<=`, `>`, `>=`, `<>`). When the query contains a cross-type comparison like `intkey >= 10.0::numeric` or `intkey = $1` (where `$1` is a numeric parameter and the statement is prepared with a custom plan), the support function performs these optimizations:
 
 1. The support function intercepts the comparison
 2. It checks if the numeric value is exactly representable as the integer type
@@ -425,9 +425,8 @@ Controls whether the extension's query optimizations are active.
 **Context**: Can be changed by any user (PGC_USERSET)
 **Values**: `on`, `off`
 
-**Purpose**:
-
-- **`on`**: Enable SupportRequestSimplify and SupportRequestIndexCondition optimizations
+**Purpose**: 
+- **`on`**: Enable SupportRequestSimplify optimization
 - **`off`**: Disable optimizations for testing, troubleshooting, or compatibility
 
 **Usage**:

@@ -385,14 +385,13 @@ extern bool numericToint64(Numeric num, int64 *result);
 extern void initOidCache(OperatorOidCache *cache);
 
 /**
- * @brief Generic support function for all comparison operators
+ * @brief Support function for query optimization via SupportRequestSimplify
  * @param fcinfo Function call information structure
- * @return Node pointer for index condition or NULL if not supported
+ * @return Node pointer for simplified expression or NULL
  *
- * Implements SupportRequestIndexCondition to enable btree index usage for
- * exact comparison predicates. Inspects the operator OID to determine the
- * type combination being compared, validates that the constant operand is
- * within range, and transforms the predicate for index scanning.
+ * Implements SupportRequestSimplify to transform cross-type comparisons with
+ * constants into native integer comparisons. This enables btree index usage
+ * because the planner recognizes native integer operators for index scans.
  */
 extern Datum num2int_support(PG_FUNCTION_ARGS);
 

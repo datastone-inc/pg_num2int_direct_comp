@@ -21,7 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enables hash joins for large table equijoins
   - 18 hash wrapper functions (cast integers to numeric/float before hashing)
   - HASHES property on all equality operators
-- Index optimization support via SupportRequestIndexCondition for btree indexes
 - **Constant predicate optimization** via SupportRequestSimplify (FR-015, FR-016, FR-017):
   - Impossible predicate detection: `int_col = 10.5::numeric` → `FALSE` (rows=0 estimate)
   - Exact match transformation: `int_col = 100::numeric` → `int_col = 100` (native operator)
