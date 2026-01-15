@@ -73,12 +73,12 @@ While type consistency is the ideal, real-world databases face type mismatches f
 
 **Minimal operational risk:**
 
-- Uses existing PostgreSQL comparison functions (no new C code for core logic)
+- Uses existing PostgreSQL comparison logic (no new C code for core logic)
 - Follows established operator precedence and behavior patterns
 - Drops cleanly: `DROP EXTENSION` removes all operators instantly
 - No schema lock-in: queries work without the extension (just slower/less precise)
 
-**Switching Behavior:** Users migrating between standard PostgreSQL and this extension have clear equivalence expressions (see [Equivalence Expressions](#equivalence-expressions)).
+**Switching Behavior:** Users switching between standard PostgreSQL and this extension have [SQL Equivalents With and Without the Extension](#sql-equivalents-with-and-without-the-extension).
 
 ### The Problem: Implicit Casting
 
