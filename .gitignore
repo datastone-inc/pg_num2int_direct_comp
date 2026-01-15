@@ -55,3 +55,6 @@ coverage/
 *.dSYM/
 core
 vgcore.*
+
+# Miscellaneous
+copilot_analysis/

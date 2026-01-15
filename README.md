@@ -425,7 +425,7 @@ Controls whether the extension's query optimizations are active.
 **Context**: Can be changed by any user (PGC_USERSET)
 **Values**: `on`, `off`
 
-**Purpose**: 
+**Purpose**:
 - **`on`**: Enable SupportRequestSimplify optimization
 - **`off`**: Disable optimizations for testing, troubleshooting, or compatibility
 
@@ -508,4 +508,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-This extension was developed by Dave Sharpe (<dave.sharpe@datastone.ca>) using VS Code Copilot in agent mode with [speckit](https://github.com/github/spec-kit) for spec-driven development. See [Development Guide](doc/development.md#development-methodology) for details. My collegue Justin made a different solution for the same problem, which inspired me to create this extension.
+This extension was developed by Dave Sharpe (<dave.sharpe@datastone.ca>) using AI Assistance of VS Code Copilot in agent mode with [speckit](https://github.com/github/spec-kit) for spec-driven development. See [Development Guide](doc/development.md#development-methodology) for details. My collegue Justin made a different solution for the same problem, which inspired me to create this extension.
