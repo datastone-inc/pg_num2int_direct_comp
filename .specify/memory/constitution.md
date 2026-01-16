@@ -193,15 +193,22 @@ Every extension repository MUST include `project_template.md` which defines the 
 See `project_template.md` for documentation templates and structure guidelines.
 
 All SQL examples in user documentation MUST have corresponding regression tests in
-`sql/doc_examples.sql` to ensure examples remain accurate as code evolves. Test
-comments MUST reference the documentation location being validated:
+`sql/doc_examples.sql` to ensure examples remain accurate as code evolves. Tests
+MUST validate that:
+
+1. The SQL in the test matches the SQL in the documentation
+2. The actual output matches the documented expected output (when provided)
+
+Test comments MUST reference the documentation location being validated:
 
 ```sql
--- README.md example: Basic usage (~line 45)
+-- ============================================================================
+-- README.md: Basic usage (~line 45)
+-- ============================================================================
 SELECT process_custom(ROW(1, 'test', NOW())::custom_type);
 ```
 
-Automated compliance checking available via `pg-extension-review` skill.
+Automated test generation and validation available via `doc-example-tester` skill.
 
 Code submissions MUST pass all checks in `code_review_checklist.md` before merge.
 

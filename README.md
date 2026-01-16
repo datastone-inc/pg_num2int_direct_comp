@@ -103,7 +103,7 @@ When integers are implicitly cast, the PostgreSQL query planner is crippled:
 
 - cannot exploit btree indexes on indexed columns that are implicitly cast, often reducing to sequential scans.
 - cannot choose indexed nested-loop joins or merge joins for cross-type equality conditions
-- cannot infer transitive equality (see below)
+- cannot infer transitive equality (see next)
 
 #### Why PostgreSQL Cannot Infer Transitive Equality
 

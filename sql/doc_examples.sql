@@ -11,34 +11,53 @@ CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
 SET client_min_messages = notice;
 
 -- ============================================================================
--- README.md: Wrong results AND poor performance from cross-type comparison (~line 118)
--- Without extension: both orderids match the float8 query AND uses seq scan
+-- README.md: Wrong results, seq scans, and no transitivity from cross-type comparison (~line 152)
+-- Without extension: returns wrong results (2 rows instead of 1), uses seq scans, no transitivity
 -- ============================================================================
 
 -- Without extension (verifies documented stock PostgreSQL behavior)
 DROP EXTENSION pg_num2int_direct_comp;
 
-CREATE TEMPORARY TABLE doc_orders (orderid int8 PRIMARY KEY, amount numeric(10,2));
-INSERT INTO doc_orders SELECT g, (g % 1000)::numeric(10,2) FROM generate_series(1, 1000) g;
-INSERT INTO doc_orders VALUES
-    (9007199254740992, 1000.00),
-    (9007199254740993, 2000.00);
-ANALYZE doc_orders;
+CREATE TEMPORARY TABLE orders (orderid int8 PRIMARY KEY, customer text);
+CREATE TEMPORARY TABLE order_items (id serial, orderid int8, product text);
+CREATE INDEX ON order_items(orderid);
+
+-- Bulk insert, plus two orders with adjacent IDs at the float8 precision boundary
+INSERT INTO orders SELECT g, 'customer' || g FROM generate_series(1, 100000) g;
+INSERT INTO orders VALUES (9007199254740992, 'Alice'), (9007199254740993, 'Bob');
+
+INSERT INTO order_items (orderid, product) SELECT g, 'product' || g FROM generate_series(1, 100000) g;
+INSERT INTO order_items VALUES (DEFAULT, 9007199254740992, 'Widget'), (DEFAULT, 9007199254740993, 'Gadget');
+ANALYZE orders; ANALYZE order_items;
 
 -- Stock PostgreSQL: returns BOTH rows (wrong!) and uses seq scan (slow!)
-EXPLAIN (COSTS OFF) SELECT * FROM doc_orders WHERE orderid = 9007199254740993::float8;
-SELECT * FROM doc_orders WHERE orderid = 9007199254740993::float8;
+-- Application queries for Alice's order (9007199254740992) using float8 parameter
+EXPLAIN (COSTS OFF)
+SELECT o.customer, oi.product FROM orders o
+JOIN order_items oi ON o.orderid = oi.orderid
+WHERE o.orderid = 9007199254740992::float8;
+
+SELECT o.customer, oi.product FROM orders o
+JOIN order_items oi ON o.orderid = oi.orderid
+WHERE o.orderid = 9007199254740992::float8;
 
 -- With extension (behavior documented - index scan, 1 row)
 CREATE EXTENSION pg_num2int_direct_comp;
 
-EXPLAIN (COSTS OFF) SELECT * FROM doc_orders WHERE orderid = 9007199254740993::float8;
-SELECT * FROM doc_orders WHERE orderid = 9007199254740993::float8;
+-- Same exact SQL - should now return correct results with index scans
+EXPLAIN (COSTS OFF)
+SELECT o.customer, oi.product FROM orders o
+JOIN order_items oi ON o.orderid = oi.orderid
+WHERE o.orderid = 9007199254740992::float8;
 
-DROP TABLE doc_orders;
+SELECT o.customer, oi.product FROM orders o
+JOIN order_items oi ON o.orderid = oi.orderid
+WHERE o.orderid = 9007199254740992::float8;
+
+DROP TABLE orders, order_items;
 
 -- ============================================================================
--- README.md: Why PostgreSQL Cannot Infer Transitive Equality (~line 115)
+-- README.md: Transitive Equality Violations not detected at the float8 2^53 boundary (different at the last digit) (~line 112)
 -- Stock PostgreSQL violates transitivity with int8/float8 at 2^53 boundary.
 -- We test both stock behavior (extension disabled) and extension behavior.
 -- ============================================================================
@@ -46,9 +65,9 @@ DROP TABLE doc_orders;
 -- First, test STOCK PostgreSQL behavior (matches README examples)
 DROP EXTENSION pg_num2int_direct_comp;
 
-SELECT 9007199254740993::int8 = 9007199254740993::float8 AS stock_a_eq_b;  -- TRUE (both become same float8)
-SELECT 9007199254740993::float8 = 9007199254740992::int8 AS stock_b_eq_c;  -- TRUE (float8 already rounded)
-SELECT 9007199254740993::int8 = 9007199254740992::int8 AS stock_a_eq_c;    -- FALSE
+SELECT 9007199254740993::int8 = 9007199254740993::float8 AS "a=b"  -- a=b TRUE (int8 cast to float8, rounds)
+     , 9007199254740993::float8 = 9007199254740992::int8 AS "b=c"  -- b=c TRUE (int8 cast to float8, rounds)
+     , 9007199254740993::int8 = 9007199254740992::int8   AS "a=c"; -- a=c FALSE!
 -- Transitivity violated: a=b, b=c, but a≠c
 
 -- Reinstall extension and test fixed behavior
@@ -60,27 +79,7 @@ SELECT 9007199254740993::int8 = 9007199254740992::int8 AS ext_a_eq_c;      -- FA
 -- Extension fixes first comparison; second is TRUE because float8 literal is not rounded
 
 -- ============================================================================
--- README.md: Implicit cast via float8 arithmetic (~line 119)
--- Adding a float8 column promotes integers to float8, causing precision loss
--- ============================================================================
-
--- This demonstrates why PostgreSQL cannot infer a=c from a=f(b) AND f(b)=c
-WITH vals(a, b, c, d) AS (
-    VALUES (9007199254740993::int8,   -- A: cannot be exactly represented in float8
-            9007199254740993::int8,   -- B: same as A
-            9007199254740992::int8,   -- C: one less (exact in float8)
-            0.0::float8)              -- D: zero, but float8 type forces promotion
-)
-SELECT a, b, c,
-    a = (b + d) AS a_eq_bplusd,    -- TRUE: b+d promotes to float8, rounds
-    (b + d) = c AS bplusd_eq_c,    -- TRUE: 9007199254740992.0 = 9007199254740992
-    a = c AS a_eq_c                -- FALSE: 9007199254740993 ≠ 9007199254740992
-FROM vals
-WHERE a = (b + d) AND (b + d) = c;
--- Row IS returned! If PostgreSQL incorrectly inferred a=c, this row would be filtered out.
-
--- ============================================================================
--- README.md: Index Optimization via Support Functions (~line 213)
+-- README.md: Correct results with index scans and transitive equality (~line 201)
 -- Single-table lookup and self-join with numeric parameter
 -- ============================================================================
 
@@ -129,7 +128,44 @@ DEALLOCATE find_parent;
 DROP TABLE products;
 
 -- ============================================================================
--- doc/installation.md: Quick Start Example 1 - Detecting Float Precision Loss
+-- README.md: API passes product ID as numeric parameter (~line 263)
+-- Support function transforms cross-type comparison to native integer comparison
+-- ============================================================================
+
+-- Test without extension
+DROP EXTENSION pg_num2int_direct_comp;
+
+CREATE TEMPORARY TABLE api_products(id int4 PRIMARY KEY, parent int4, name text);
+-- Add more rows to ensure planner prefers index
+INSERT INTO api_products SELECT g, CASE WHEN g = 1 THEN NULL ELSE 1 END, 'Product ' || g
+FROM generate_series(1, 1000) g;
+UPDATE api_products SET name = 'Product 42' WHERE id = 42;
+ANALYZE api_products;
+
+PREPARE api_find_product(numeric) AS SELECT * FROM api_products WHERE id = $1;
+
+-- Without extension: sequential scan (casts indexed column)
+EXPLAIN (COSTS OFF) EXECUTE api_find_product(42);
+
+-- Test with extension
+CREATE EXTENSION pg_num2int_direct_comp;
+
+-- Re-prepare statement after extension install to use new operators
+DEALLOCATE api_find_product;
+PREPARE api_find_product(numeric) AS SELECT * FROM api_products WHERE id = $1;
+
+-- With extension: index scan (transforms to integer comparison)
+EXPLAIN (COSTS OFF) EXECUTE api_find_product(42);
+
+-- Verify result
+SELECT * FROM api_products WHERE id = 42::numeric;
+
+-- Clean up
+DEALLOCATE api_find_product;
+DROP TABLE api_products;
+
+-- ============================================================================
+-- doc/installation.md: Detecting Float Precision Loss (~line 96)
 -- The extension detects when int4 value differs from float4 representation.
 -- 16777217::float4 rounds to 16777216.0, so:
 -- - 16777216::int4 = 16777217::float4 → TRUE (both are 16777216)
@@ -141,7 +177,7 @@ SELECT 16777216::int4 = 16777217::float4 AS both_are_16777216;  -- TRUE
 SELECT 16777217::int4 = 16777217::float4 AS detects_mismatch;   -- FALSE (extension detects it!)
 
 -- ============================================================================
--- doc/installation.md: Quick Start Example 2 - Planner Transitivity Inference
+-- doc/installation.md: Planner Transitivity Inference (~line 113)
 -- ============================================================================
 
 -- The query planner can infer transitive relationships across types for index optimization
@@ -169,7 +205,7 @@ DROP TABLE ex2_orders;
 DROP TABLE ex2_customers;
 
 -- ============================================================================
--- doc/installation.md: Quick Start Example 3 - Index-Optimized Queries
+-- doc/installation.md: Index-Optimized Queries (~line 141)
 -- ============================================================================
 
 CREATE TEMPORARY TABLE measurements (id SERIAL, value INT4);
@@ -181,7 +217,7 @@ ANALYZE measurements;
 EXPLAIN (COSTS OFF) SELECT * FROM measurements WHERE value = 500::numeric;
 
 -- ============================================================================
--- doc/installation.md: Quick Start Example 4 - Fractional Comparisons
+-- doc/installation.md: Fractional Comparisons (~line 159)
 -- ============================================================================
 
 -- Fractional values never equal integers
@@ -189,7 +225,7 @@ SELECT 10::int4 = 10.5::numeric AS should_be_false;
 SELECT 10::int4 < 10.5::numeric AS should_be_true;
 
 -- ============================================================================
--- doc/installation.md: Quick Start Example 5 - Range Queries (~line 166)
+-- doc/installation.md: Range Queries (~line 169)
 -- ============================================================================
 
 CREATE TEMPORARY TABLE inventory (item_id INT4, quantity INT4);
@@ -201,7 +237,7 @@ SELECT * FROM inventory WHERE quantity > 10.5::float8;
 DROP TABLE inventory;
 
 -- ============================================================================
--- doc/installation.md: Quick Start Example 6 - Hash Joins for Large Tables (~line 178)
+-- doc/installation.md: Hash Joins for Large Tables (~line 185)
 -- ============================================================================
 
 -- Hash joins work automatically for large table joins
@@ -219,7 +255,7 @@ DROP TABLE ex6_sales;
 DROP TABLE ex6_targets;
 
 -- ============================================================================
--- doc/installation.md: Quick Start Example 7 - Type Aliases (~line 193)
+-- doc/installation.md: Type Aliases (~line 208)
 -- ============================================================================
 
 -- Serial types work automatically
@@ -233,7 +269,7 @@ SELECT 10::int4 = 10.0::decimal AS decimal_alias_test;
 DROP TABLE ex7_users;
 
 -- ============================================================================
--- doc/installation.md: Quick Start Example 8 - Impossible Predicate Detection
+-- doc/installation.md: Query Optimization - Impossible Predicate Detection (~line 222)
 -- ============================================================================
 
 -- Impossible predicate detection: integer can never equal fractional value
@@ -245,8 +281,7 @@ EXPLAIN (COSTS OFF) SELECT * FROM measurements WHERE value = 100::numeric;
 DROP TABLE measurements;
 
 -- ============================================================================
--- doc/operator-reference.md: Precision Boundaries - float4 example
--- Same as above: 16777217::float4 rounds to 16777216.0
+-- doc/operator-reference.md: Impossible Predicate Detection (~line 251)
 -- ============================================================================
 
 -- 16777217::float4 rounds to 16777216.0, so comparison with 16777216 is TRUE
@@ -254,7 +289,7 @@ SELECT 16777216::bigint = 16777217::float4 AS both_are_16777216;  -- TRUE
 SELECT 16777217::bigint = 16777217::float4 AS detects_mismatch;   -- FALSE (extension detects it!)
 
 -- ============================================================================
--- doc/operator-reference.md: Index Usage example
+-- doc/operator-reference.md: Exact Match Transformation (~line 270)
 -- ============================================================================
 
 CREATE TEMPORARY TABLE large_table (id INT4 PRIMARY KEY, data TEXT);
@@ -268,7 +303,7 @@ EXPLAIN (COSTS OFF) SELECT * FROM large_table WHERE id <= 100::float8;
 DROP TABLE large_table;
 
 -- ============================================================================
--- doc/operator-reference.md: Commutator Operators
+-- doc/operator-reference.md: Range Boundary Transformation (~line 290)
 -- ============================================================================
 
 -- Both directions work identically
@@ -435,7 +470,7 @@ SELECT int4_col = float4_col AS with_extension,
        int4_col::float8 = float4_col::float8 AS stock_postgresql
 FROM equiv_test;
 
--- int8 = float8: Extension vs. stock PostgreSQL behavior  
+-- int8 = float8: Extension vs. stock PostgreSQL behavior
 SELECT int8_col = float8_col AS with_extension,
        int8_col::float8 = float8_col AS stock_postgresql_same
 FROM equiv_test;
@@ -446,3 +481,11 @@ SELECT int4_col = numeric_col AS with_extension,
 FROM equiv_test;
 
 DROP TABLE equiv_test;
+
+-- ============================================================================
+-- README.md: Transitive Equality Violations detected at the float8 2^53 boundary (different at the last digit) (~line 132)
+-- ============================================================================
+
+SELECT 9007199254740993::int8 = 9007199254740993::float8 AS "a=b",  -- a=b FALSE (b lossy NOT EQUAL)
+       9007199254740993::float8 = 9007199254740992::int8 AS "b=c",  -- b=c TRUE (int8 cast to rounded float8)
+       9007199254740993::int8 = 9007199254740992::int8   AS "a=c";  -- a=c FALSE!
