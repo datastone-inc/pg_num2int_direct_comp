@@ -250,7 +250,7 @@ When an integer column is compared to a fractional constant, the predicate is re
 
 ```sql
 -- Example: Impossible Predicate Detection
--- Assuming: CREATE TABLE example (int_col INT4);
+-- Assuming: CREATE TABLE example (int_col INT4 NOT NULL);
 
 -- int_col can never equal 10.5 (fractional value)
 EXPLAIN (COSTS OFF) SELECT * FROM example WHERE int_col = 10.5::numeric;
@@ -262,6 +262,21 @@ EXPLAIN (COSTS OFF) SELECT * FROM example WHERE int_col = 10.5::numeric;
 ```
 
 Benefits: Planner estimates rows=0, may skip table scan entirely.
+
+The full bare-boolean collapse only fires when the integer column is
+`NOT NULL`. On a nullable column the support function preserves NULL
+semantics — required because `SupportRequestSimplify` substitutes the
+rewritten node in every expression context (SELECT list, `NOT(...)`,
+`CASE`, view definitions), not just `WHERE`. The cross-type comparison
+is left in place and remains index-eligible via the `integer_ops` btree
+family, so an indexed lookup still finds zero matches with no
+measurable cost.
+
+Out-of-range constants (a numeric literal outside the integer type's
+domain) are always rewritten to a same-side integer-domain bound on
+the column — e.g. `int4_col = 99999999999::numeric` becomes
+`int4_col > 2147483647`. The synthesized predicate is NULL-preserving
+by construction, so the rewrite applies regardless of column nullability.
 
 ### Exact Match Transformation
 

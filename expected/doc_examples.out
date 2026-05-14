@@ -276,7 +276,7 @@ DROP TABLE ex2_customers;
 -- ============================================================================
 -- doc/installation.md: Index-Optimized Queries (~line 141)
 -- ============================================================================
-CREATE TEMPORARY TABLE measurements (id SERIAL, value INT4);
+CREATE TEMPORARY TABLE measurements (id SERIAL, value INT4 NOT NULL);
 CREATE INDEX ON measurements(value);
 INSERT INTO measurements (value) SELECT generate_series(1, 1000);
 ANALYZE measurements;
@@ -530,7 +530,7 @@ SELECT 10.001::numeric = 10::int4 AS small_frac_eq;
 -- ============================================================================
 -- doc/operator-reference.md: Query Optimization - Impossible Predicate Detection (FR-015)
 -- ============================================================================
-CREATE TEMPORARY TABLE fr015_test (int_col INT4);
+CREATE TEMPORARY TABLE fr015_test (int_col INT4 NOT NULL);
 INSERT INTO fr015_test SELECT generate_series(1, 100);
 ANALYZE fr015_test;
 -- int_col can never equal 10.5 (fractional value)
@@ -630,10 +630,10 @@ SELECT 9007199254740993::int8 = 9007199254740993::float8 AS beyond_range;
 -- ============================================================================
 -- Check extension is loaded
 \dx pg_num2int_direct_comp
-                                        List of installed extensions
-          Name          | Version | Schema |                          Description                           
-------------------------+---------+--------+----------------------------------------------------------------
- pg_num2int_direct_comp | 1.0.0   | public | Exact comparison operators for numeric/float and integer types
+                                                 List of installed extensions
+          Name          | Version | Default version | Schema |                          Description                           
+------------------------+---------+-----------------+--------+----------------------------------------------------------------
+ pg_num2int_direct_comp | 1.0.0   | 1.0.0           | public | Exact comparison operators for numeric/float and integer types
 (1 row)
 
 -- Test precision loss detection (stock PostgreSQL returns true for both)

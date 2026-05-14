@@ -430,7 +430,7 @@ SELECT 'float8 at int8 MAX + 0.1'::text AS test,
 
 -- Edge Case: SupportRequestSimplify (SRS) path (var op const)
 -- These require a table column to trigger the optimizer support function
-CREATE TEMPORARY TABLE t_boundary_int8 (val int8);
+CREATE TEMPORARY TABLE t_boundary_int8 (val int8 NOT NULL);
 INSERT INTO t_boundary_int8 VALUES
   (('-9223372036854775808'::numeric)::int8),  -- MIN
   (9223372036854775807);                       -- MAX
@@ -469,10 +469,11 @@ SELECT 'SRS: int8 col = numeric below MIN'::text AS test,
 
 -- Verify EXPLAIN shows the transformation (should be Result or use native int8 ops)
 EXPLAIN (COSTS OFF) SELECT * FROM t_boundary_int8 WHERE val > '-9223372036854775808.1'::numeric;
-         QUERY PLAN          
------------------------------
+                    QUERY PLAN                     
+---------------------------------------------------
  Seq Scan on t_boundary_int8
-(1 row)
+   Filter: (val >= '-9223372036854775808'::bigint)
+(2 rows)
 
 EXPLAIN (COSTS OFF) SELECT * FROM t_boundary_int8 WHERE val < '9223372036854775807.1'::numeric;
          QUERY PLAN          

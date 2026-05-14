@@ -208,7 +208,7 @@ DROP TABLE ex2_customers;
 -- doc/installation.md: Index-Optimized Queries (~line 141)
 -- ============================================================================
 
-CREATE TEMPORARY TABLE measurements (id SERIAL, value INT4);
+CREATE TEMPORARY TABLE measurements (id SERIAL, value INT4 NOT NULL);
 CREATE INDEX ON measurements(value);
 INSERT INTO measurements (value) SELECT generate_series(1, 1000);
 ANALYZE measurements;
@@ -349,7 +349,7 @@ SELECT 10.001::numeric = 10::int4 AS small_frac_eq;
 -- doc/operator-reference.md: Query Optimization - Impossible Predicate Detection (FR-015)
 -- ============================================================================
 
-CREATE TEMPORARY TABLE fr015_test (int_col INT4);
+CREATE TEMPORARY TABLE fr015_test (int_col INT4 NOT NULL);
 INSERT INTO fr015_test SELECT generate_series(1, 100);
 ANALYZE fr015_test;
 

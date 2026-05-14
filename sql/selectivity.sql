@@ -11,11 +11,16 @@ CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
 -- Setup: Create test table
 -- ============================================================================
 DROP TABLE IF EXISTS selectivity_test;
+-- Columns are declared NOT NULL so the planner-support function can
+-- collapse impossible-fractional and range-boundary predicates to
+-- bare TRUE/FALSE. On a nullable column the rewrite preserves the
+-- cross-type op to keep NULL semantics intact in non-WHERE contexts;
+-- nullable-column behaviour is covered separately by null_handling.
 CREATE TABLE selectivity_test (
   id serial PRIMARY KEY,
-  int2_col int2,
-  int4_col int4,
-  int8_col int8
+  int2_col int2 NOT NULL,
+  int4_col int4 NOT NULL,
+  int8_col int8 NOT NULL
 );
 INSERT INTO selectivity_test (int2_col, int4_col, int8_col)
 SELECT i::int2, i, i::int8

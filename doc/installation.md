@@ -31,7 +31,7 @@ pg_config --includedir-server
 
 ```bash
 git clone https://github.com/datastone-inc/pg_num2int_direct_comp.git
-cd pg-num2int-direct-comp
+cd pg_num2int_direct_comp
 ```
 
 ### Build Extension
@@ -41,6 +41,7 @@ make
 ```
 
 Expected output:
+
 ```
 gcc -Wall -Wextra -Werror -std=gnu99 -fPIC ...
 ```
@@ -56,7 +57,7 @@ All tests should pass (100% pass rate required).
 ### Install Extension
 
 ```bash
-sudo make install
+sudo make install PG_CONFIG=$(which pg_config)
 ```
 
 This copies:
@@ -221,8 +222,13 @@ The extension's support functions transform constant predicates during query pla
 
 ```sql
 -- Example: Query Optimization - Impossible Predicate Detection
--- Assuming: CREATE TABLE measurements (id SERIAL, value INT4);
+-- Assuming: CREATE TABLE measurements (id SERIAL, value INT4 NOT NULL);
 --           CREATE INDEX ON measurements(value);
+-- NOTE: The "One-Time Filter: false" collapse requires value to be NOT
+-- NULL. On a nullable column the support function must preserve NULL
+-- semantics for non-WHERE expression contexts (SELECT list, NOT, CASE,
+-- views), so the cross-type comparison is left in place — still
+-- index-eligible via the integer_ops btree family.
 
 -- Impossible predicate detection: integer can never equal fractional value
 EXPLAIN (COSTS OFF) SELECT * FROM measurements WHERE value = 10.5::numeric;
@@ -261,6 +267,7 @@ These optimizations ensure:
 **Error**: `pg_config: command not found`
 
 **Solution**: Add PostgreSQL bin directory to PATH:
+
 ```bash
 export PATH=/usr/pgsql-<version>/bin:$PATH  # Red Hat/CentOS
 export PATH=/usr/lib/postgresql/<version>/bin:$PATH  # Debian/Ubuntu
@@ -269,6 +276,7 @@ export PATH=/usr/lib/postgresql/<version>/bin:$PATH  # Debian/Ubuntu
 **Error**: `postgres.h: No such file or directory`
 
 **Solution**: Install development headers:
+
 ```bash
 sudo apt install postgresql-server-dev-<version>  # Debian/Ubuntu
 sudo yum install postgresql<version>-devel         # Red Hat/CentOS
@@ -279,6 +287,7 @@ sudo yum install postgresql<version>-devel         # Red Hat/CentOS
 **Error**: `permission denied` during `make install`
 
 **Solution**: Use sudo or install to custom directory:
+
 ```bash
 sudo make install
 # OR
@@ -290,6 +299,7 @@ make install DESTDIR=/custom/path
 **Error**: `could not access file "$libdir/pg_num2int_direct_comp"`
 
 **Solution**: Verify library is in correct location:
+
 ```bash
 pg_config --pkglibdir
 ls $(pg_config --pkglibdir)/pg_num2int_direct_comp.so
@@ -304,6 +314,7 @@ Standard PGXS build works on all distributions.
 ### macOS
 
 Homebrew PostgreSQL includes all required headers. Use:
+
 ```bash
 make PG_CONFIG=/opt/homebrew/bin/pg_config  # Apple Silicon
 make PG_CONFIG=/usr/local/bin/pg_config     # Intel
@@ -312,6 +323,7 @@ make PG_CONFIG=/usr/local/bin/pg_config     # Intel
 ### Windows
 
 Build with MinGW or MSVC:
+
 ```cmd
 SET PATH=C:\Program Files\PostgreSQL\<version>\bin;%PATH%
 make
@@ -326,7 +338,7 @@ DROP EXTENSION pg_num2int_direct_comp;
 
 ```bash
 # Remove files
-sudo make uninstall
+sudo make uninstall PG_CONFIG=$(which pg_config)
 ```
 
 ## Next Steps

@@ -20,15 +20,19 @@
  */
 
 #include "pg_num2int_direct_comp.h"
+#include "access/htup_details.h"
+#include "catalog/pg_attribute.h"
 #include "catalog/pg_proc_d.h"
 #include "catalog/pg_type_d.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_operator.h"
 #include "common/hashfn.h"
+#include "nodes/pathnodes.h"
 #include "nodes/supportnodes.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/makefuncs.h"
 #include "optimizer/optimizer.h"
+#include "parser/parsetree.h"
 #include "utils/fmgrprotos.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -839,6 +843,26 @@ getNativeOpOid(OpType opType, Oid intType) {
 }
 
 /**
+ * @brief Return the min/max representable values for an integer type
+ * @param intType INT2OID, INT4OID, or INT8OID
+ * @param minOut Output: type minimum (cast to int64)
+ * @param maxOut Output: type maximum (cast to int64)
+ */
+static void
+getIntTypeBounds(Oid intType, int64 *minOut, int64 *maxOut) {
+  if (intType == INT2OID) {
+    *minOut = PG_INT16_MIN;
+    *maxOut = PG_INT16_MAX;
+  } else if (intType == INT4OID) {
+    *minOut = PG_INT32_MIN;
+    *maxOut = PG_INT32_MAX;
+  } else {
+    *minOut = PG_INT64_MIN;
+    *maxOut = PG_INT64_MAX;
+  }
+}
+
+/**
  * @brief Create an integer constant node
  * @param intType Integer type OID
  * @param intVal Integer value
@@ -902,20 +926,15 @@ static Oid
 computeRangeTransform(OpType opType, Oid intType, int64 intVal,
                       bool hasFraction, int64 *adjustedVal,
                       bool *isAlwaysTrue, bool *isAlwaysFalse) {
+  int64 typeMin;
   int64 typeMax;
 
   *adjustedVal = intVal;
   *isAlwaysTrue = false;
   *isAlwaysFalse = false;
 
-  /* Determine type bounds */
-  if (intType == INT2OID) {
-    typeMax = PG_INT16_MAX;
-  } else if (intType == INT4OID) {
-    typeMax = PG_INT32_MAX;
-  } else {
-    typeMax = PG_INT64_MAX;
-  }
+  /* typeMin is unused in this function; kept for helper symmetry. */
+  getIntTypeBounds(intType, &typeMin, &typeMax);
 
   if (hasFraction) {
     if (opType == OP_TYPE_GT || opType == OP_TYPE_GE) {
@@ -946,6 +965,129 @@ computeRangeTransform(OpType opType, Oid intType, int64 intVal,
 
   /* No fraction - preserve original operator */
   return getNativeOpOid(opType, intType);
+}
+
+/**
+ * @brief Return true iff varNode references a NOT NULL base-table column
+ *
+ * Conservative: returns false if root is NULL, the Var is from an outer
+ * query level, the Var is a whole-row or system column, the Var can be
+ * nulled by an outer join (varnullingrels), the Var is a non-default
+ * RETURNING OLD/NEW reference, or the underlying range-table entry is
+ * not a base relation. Used by num2int_support to decide whether
+ * collapsing a column-vs-constant predicate to a bare boolean would
+ * lose NULL semantics in non-WHERE expression contexts.
+ */
+static bool
+isVarNotNull(PlannerInfo *root, Var *varNode) {
+  RangeTblEntry *rte;
+  HeapTuple tp;
+  bool notnull;
+
+  if (root == NULL)
+    return false;
+  if (varNode->varlevelsup != 0)
+    return false;
+  if (varNode->varattno <= 0)
+    return false;
+  /*
+   * A Var nulled by an outer join can be NULL at runtime even though the
+   * underlying column is declared NOT NULL. Same for RETURNING OLD/NEW
+   * references, which produce NULL on the non-applicable side of an
+   * INSERT/UPDATE/DELETE.
+   */
+  if (!bms_is_empty(varNode->varnullingrels))
+    return false;
+  if (varNode->varreturningtype != VAR_RETURNING_DEFAULT)
+    return false;
+
+  rte = planner_rt_fetch(varNode->varno, root);
+  if (rte == NULL || rte->rtekind != RTE_RELATION)
+    return false;
+
+  tp = SearchSysCache2(ATTNUM,
+                       ObjectIdGetDatum(rte->relid),
+                       Int16GetDatum(varNode->varattno));
+  if (!HeapTupleIsValid(tp))
+    return false;
+  notnull = ((Form_pg_attribute) GETSTRUCT(tp))->attnotnull;
+  ReleaseSysCache(tp);
+  return notnull;
+}
+
+/**
+ * @brief Build a NULL-preserving same-side integer-domain bound predicate
+ *
+ * For a column-vs-constant comparison whose truth value is determined for
+ * every in-range integer (because the constant lies outside the integer
+ * type's domain), build an equivalent predicate on varNode against its
+ * type bound. The synthesized predicate evaluates to the same truth value
+ * as the original on every non-NULL input and to NULL on NULL input, so
+ * substitution is safe in every expression context (SELECT list, NOT,
+ * CASE, view defs) — not just WHERE.
+ *
+ *   outOfRangeHigh:
+ *     =       -> intCol > typeMax     (always false on non-NULL)
+ *     <>      -> intCol <= typeMax    (always true  on non-NULL)
+ *     <, <=   -> intCol <= typeMax    (always true  on non-NULL)
+ *     >, >=   -> intCol > typeMax     (always false on non-NULL)
+ *   outOfRangeLow:
+ *     =       -> intCol < typeMin
+ *     <>      -> intCol >= typeMin
+ *     <, <=   -> intCol < typeMin
+ *     >, >=   -> intCol >= typeMin
+ */
+static Node *
+buildOutOfRangeBound(Var *varNode, Oid intType, OpType opType,
+                     bool outOfRangeHigh, int location) {
+  int64 typeMin;
+  int64 typeMax;
+  int64 boundVal;
+  OpType boundOp;
+  Oid nativeOpOid;
+
+  getIntTypeBounds(intType, &typeMin, &typeMax);
+
+  if (outOfRangeHigh) {
+    boundVal = typeMax;
+    switch (opType) {
+      case OP_TYPE_EQ:
+      case OP_TYPE_GT:
+      case OP_TYPE_GE:
+        boundOp = OP_TYPE_GT;
+        break;
+      case OP_TYPE_NE:
+      case OP_TYPE_LT:
+      case OP_TYPE_LE:
+        boundOp = OP_TYPE_LE;
+        break;
+      default:
+        /* opType is pre-validated by findOperatorByFuncid. */
+        Assert(false);
+        return NULL;
+    }
+  } else {
+    boundVal = typeMin;
+    switch (opType) {
+      case OP_TYPE_EQ:
+      case OP_TYPE_LT:
+      case OP_TYPE_LE:
+        boundOp = OP_TYPE_LT;
+        break;
+      case OP_TYPE_NE:
+      case OP_TYPE_GT:
+      case OP_TYPE_GE:
+        boundOp = OP_TYPE_GE;
+        break;
+      default:
+        Assert(false);
+        return NULL;
+    }
+  }
+
+  nativeOpOid = getNativeOpOid(boundOp, intType);
+  return (Node *) buildNativeOpExpr(nativeOpOid, varNode, boundVal,
+                                    intType, location, InvalidOid);
 }
 
 /*
@@ -1047,33 +1189,15 @@ num2int_support(PG_FUNCTION_ARGS) {
     /* Handle out-of-range constants */
     if (conv.outOfRangeHigh || conv.outOfRangeLow) {
       /*
-       * Constant is outside the range of the integer type.
-       * We can determine the result based on operator type:
-       * - EQ: always FALSE (no integer can equal an out-of-range value)
-       * - NE: always TRUE (every integer differs from an out-of-range value)
-       * - LT/LE: TRUE if const is high, FALSE if const is low
-       * - GT/GE: FALSE if const is high, TRUE if const is low
+       * Constant lies outside int_col's domain, so the original
+       * predicate's truth value is determined for every in-range
+       * integer. Emit a same-side integer-domain bound on int_col that
+       * matches that truth value on non-NULL input and is NULL on NULL.
+       * NULL-preserving by construction: safe to substitute in SELECT
+       * lists, NOT(), CASE, views — not just WHERE.
        */
-      switch (opType) {
-        case OP_TYPE_EQ:
-          ret = (Node *) makeBoolConst(false, false);
-          break;
-        case OP_TYPE_NE:
-          ret = (Node *) makeBoolConst(true, false);
-          break;
-        case OP_TYPE_LT:
-        case OP_TYPE_LE:
-          /* intCol < hugeValue is always TRUE; intCol < tinyValue is always FALSE */
-          ret = (Node *) makeBoolConst(conv.outOfRangeHigh, false);
-          break;
-        case OP_TYPE_GT:
-        case OP_TYPE_GE:
-          /* intCol > tinyValue is always TRUE; intCol > hugeValue is always FALSE */
-          ret = (Node *) makeBoolConst(conv.outOfRangeLow, false);
-          break;
-        default:
-          break;
-      }
+      ret = buildOutOfRangeBound(varNode, intType, opType,
+                                 conv.outOfRangeHigh, func->location);
       PG_RETURN_POINTER(ret);
     }
 
@@ -1081,38 +1205,49 @@ num2int_support(PG_FUNCTION_ARGS) {
       PG_RETURN_POINTER(NULL);
     }
 
-    /* Apply transformation based on operator type and fractional status */
+    /*
+     * Apply transformation based on operator type and fractional status.
+     *
+     * NULL-preservation gate: when the rewrite would collapse a
+     * column-vs-constant predicate to a bare boolean constant, we only
+     * do so for NOT NULL columns. On nullable columns the cross-type op
+     * is left in place (still index-eligible via integer_ops) so NULL
+     * semantics are preserved in non-WHERE contexts (SELECT list, NOT,
+     * CASE, view defs). Declining the rewrite is expressed by leaving
+     * ret == NULL and falling through to the function's tail return.
+     */
     if (opType == OP_TYPE_EQ) {
       if (conv.hasFraction) {
-        /* FR-015: Equality with fractional value is always FALSE */
-        ret = (Node *) makeBoolConst(false, false);
+        /* FR-015: equality with fractional value is always FALSE on non-NULL. */
+        if (isVarNotNull(req->root, varNode))
+          ret = (Node *) makeBoolConst(false, false);
       } else {
-        /* FR-016: Equality with exact integer - transform to native operator */
+        /* FR-016: equality with exact integer - transform to native operator. */
         Oid nativeOpOid = getNativeOpOid(OP_TYPE_EQ, intType);
         ret = (Node *) buildNativeOpExpr(nativeOpOid, varNode, conv.intVal,
                                          intType, func->location, InvalidOid);
       }
     } else if (opType == OP_TYPE_NE) {
       if (conv.hasFraction) {
-        /* Inequality with fractional value is always TRUE */
-        ret = (Node *) makeBoolConst(true, false);
+        /* Inequality with fractional value is always TRUE on non-NULL. */
+        if (isVarNotNull(req->root, varNode))
+          ret = (Node *) makeBoolConst(true, false);
       } else {
-        /* Transform to native inequality operator */
+        /* Transform to native inequality operator. */
         Oid nativeOpOid = getNativeOpOid(OP_TYPE_NE, intType);
         ret = (Node *) buildNativeOpExpr(nativeOpOid, varNode, conv.intVal,
                                          intType, func->location, InvalidOid);
       }
     } else {
-      /* FR-017: Range boundary transformation */
+      /* FR-017: range boundary transformation */
       int64 adjustedVal;
       bool isAlwaysTrue, isAlwaysFalse;
       Oid nativeOpOid = computeRangeTransform(opType, intType, conv.intVal,
                                               conv.hasFraction, &adjustedVal,
                                               &isAlwaysTrue, &isAlwaysFalse);
-      if (isAlwaysTrue) {
-        ret = (Node *) makeBoolConst(true, false);
-      } else if (isAlwaysFalse) {
-        ret = (Node *) makeBoolConst(false, false);
+      if (isAlwaysTrue || isAlwaysFalse) {
+        if (isVarNotNull(req->root, varNode))
+          ret = (Node *) makeBoolConst(isAlwaysTrue, false);
       } else {
         ret = (Node *) buildNativeOpExpr(nativeOpOid, varNode, adjustedVal,
                                          intType, func->location, InvalidOid);
