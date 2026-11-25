@@ -207,13 +207,20 @@ Decimal is a SQL standard alias for numeric.
 
 - **Mantissa**: 24 bits
 - **Exact range**: ±2^24 (±16,777,216)
-- **Beyond range**: Precision loss in comparisons
+- **Beyond range**: not every integer is representable as float4, so the
+  value is rounded *before* any comparison: `2147483647::float4` is
+  2,147,483,648 (2^31). The comparison itself is always exact against the
+  float's actual value, so `2147483647::int4 = 2147483647::float4` is false
+  and `2147483647::int4 < 2147483647::float4` is true.
 
 ### float8 (double precision)
 
 - **Mantissa**: 53 bits
 - **Exact range**: ±2^53 (±9,007,199,254,740,992)
-- **Beyond range**: Precision loss in comparisons
+- **Beyond range**: as for float4, the value is rounded when it becomes a
+  float8 (`9223372036854775807::float8` is 2^63), and the comparison with
+  the integer is then exact: `9223372036854775807::int8 < 9223372036854775807::float8`
+  is true.
 
 ### numeric/decimal
 

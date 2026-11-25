@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Merge join support for int × float**: Int × float operators added to both `integer_ops` and `float_ops` btree families, enabling merge joins across these type pairs (previously only int × numeric supported merge joins). See [Float × Integer Btree Ops research](specs/002-float-btree-ops/research.md).
 - Float-integer merge join regression tests and catalog verification queries.
+- `comparison_exactness` regression test: checks every int × numeric/float comparison against an exact reference, constant on either side, on NOT NULL and nullable columns, plus hash/equality consistency for every hashable operator.
 
 ### Changed
 
@@ -25,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Wrong results with the constant on the left of a range comparison**: the support function rewrote `const OP column` as if it were `column OP const`, so for `<`, `<=`, `>` and `>=` it returned the complement of the right answer (for example `0.5 > col` matched no rows for `col = 0`, and `99999999999 > col` matched none on an int4 column). This affected numeric, float4 and float8 constants against all integer types, on NOT NULL and nullable columns, and has been present since 1.0.0. `=` and `<>` were not affected.
+- **Wrong int × float results at the integer type limits**: comparisons converted out-of-range floats back to integers (undefined behaviour in C) and used `(float) INT_MAX` as a range bound, which float4 rounds up to 2^31 and float8 to 2^63. `2147483647::int4 = 2147483648::float4` and `9223372036854775807::int8 = 2^63::float8` returned true, and so did hash joins on those values with mismatched hashes. Huge float constants against int8 (e.g. `1e30::float4`) were also misclassified. Float × integer comparisons are now exact for every value.
 - **Merge joins for int2 × float4, int2 × float8, and int4 × float8**: the `=` operators for these pairs were missing `MERGES`, so the planner never chose a merge join for them even though their btree family entries were present. The commuted forms (e.g. `float8 = int4`) were already correct. The regression tests had recorded the Nested Loop plans as expected; `merge_joins` now checks that every equality operator the extension owns is `MERGES`.
 - NULL semantics preserved in `num2int_support` rewrites: support-function transformations no longer drop NULL handling when simplifying cross-type comparisons.
 - `DROP EXTENSION` cleanup event trigger: the query match now uses word boundaries, so dropping an extension whose name starts with ours no longer runs our cleanup; cleanup now ignores only `undefined_object` errors instead of all errors, so permission and lock failures surface rather than leaving orphan operator-family entries.

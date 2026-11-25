@@ -21,7 +21,7 @@ MODULES = pg_num2int_direct_comp
 # Long-running tests (not included by default):
 # benchmark: comprehensive benchmark with 1M row tables (~70 seconds)
 #            Run manually with: make installcheck REGRESS=benchmark
-REGRESS = numeric_int_ops float_int_ops index_usage range_boundary transitivity edge_cases null_handling special_values index_nested_loop hash_joins merge_joins performance selectivity doc_examples extension_lifecycle
+REGRESS = numeric_int_ops float_int_ops index_usage range_boundary transitivity edge_cases comparison_exactness null_handling special_values index_nested_loop hash_joins merge_joins performance selectivity doc_examples extension_lifecycle
 
 # Build configuration
 PG_CONFIG = pg_config
