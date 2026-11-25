@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Merge joins for int2 × float4, int2 × float8, and int4 × float8**: the `=` operators for these pairs were missing `MERGES`, so the planner never chose a merge join for them even though their btree family entries were present. The commuted forms (e.g. `float8 = int4`) were already correct. The regression tests had recorded the Nested Loop plans as expected; `merge_joins` now checks that every equality operator the extension owns is `MERGES`.
 - NULL semantics preserved in `num2int_support` rewrites: support-function transformations no longer drop NULL handling when simplifying cross-type comparisons.
 - `DROP EXTENSION` cleanup event trigger: the query match now uses word boundaries, so dropping an extension whose name starts with ours no longer runs our cleanup; cleanup now ignores only `undefined_object` errors instead of all errors, so permission and lock failures surface rather than leaving orphan operator-family entries.
 
