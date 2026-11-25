@@ -58,3 +58,6 @@ vgcore.*
 
 # Miscellaneous
 copilot_analysis/
+
+# PGXS dependency tracking
+.deps/
