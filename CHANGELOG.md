@@ -5,6 +5,29 @@ All notable changes to pg_num2int_direct_comp will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Merge join support for int × float**: Int × float operators added to both `integer_ops` and `float_ops` btree families, enabling merge joins across these type pairs (previously only int × numeric supported merge joins). See [Float × Integer Btree Ops research](specs/002-float-btree-ops/research.md).
+- Float-integer merge join regression tests and catalog verification queries.
+
+### Changed
+
+- Documentation restructured: `doc/api-reference.md` and `doc/user-guide.md` merged into `doc/operator-reference.md`.
+- Expanded examples and explanations across `doc/installation.md`, `doc/operator-reference.md`, `doc/benchmark.md`, and `doc/development.md`.
+
+### Removed
+
+- `SupportRequestIndexCondition` support function callback (superseded by `SupportRequestSimplify`, which handles the same cases more generally).
+- `doc/api-reference.md` (content merged into `doc/operator-reference.md`).
+- `doc/user-guide.md` (content merged into `doc/operator-reference.md`).
+
+### Fixed
+
+- NULL semantics preserved in `num2int_support` rewrites: support-function transformations no longer drop NULL handling when simplifying cross-type comparisons.
+- `DROP EXTENSION` cleanup event trigger: the query match now uses word boundaries, so dropping an extension whose name starts with ours no longer runs our cleanup; cleanup now ignores only `undefined_object` errors instead of all errors, so permission and lock failures surface rather than leaving orphan operator-family entries.
+
 ## [1.0.0] - 2025-01-02
 
 ### Added
@@ -87,4 +110,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Int × float operators are not in btree families (would require both integer_ops and float_ops)
   - Hash joins and indexed nested loop joins provide excellent performance for these cases
 
+[Unreleased]: https://github.com/datastone-inc/pg_num2int_direct_comp/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/datastone-inc/pg_num2int_direct_comp/releases/tag/v1.0.0
