@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - NULL semantics preserved in `num2int_support` rewrites: support-function transformations no longer drop NULL handling when simplifying cross-type comparisons.
 - `DROP EXTENSION` cleanup event trigger: the query match now uses word boundaries, so dropping an extension whose name starts with ours no longer runs our cleanup; cleanup now ignores only `undefined_object` errors instead of all errors, so permission and lock failures surface rather than leaving orphan operator-family entries.
 
-## [1.0.0] - 2025-01-02
+## [1.0.0] - 2026-01-02
 
 ### Added
 
@@ -74,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Compact OID Cache**: Array-based lookup with linear scan vs 108 individual struct fields
 - **OID Stability Tests**: Verify hardcoded OIDs match system catalog at extension load
 
-### Benchmark Results (2025-01-02)
+### Benchmark Results (2026-01-02)
 
 | Operation | Extension | Stock PostgreSQL | Speedup |
 |-----------|-----------|------------------|---------|
