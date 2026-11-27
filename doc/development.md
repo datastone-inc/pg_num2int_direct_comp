@@ -406,8 +406,9 @@ make dist
 
 `make dist` runs `check-version` and writes
 `pg_num2int_direct_comp-<version>.zip` with `git archive`. `.gitattributes`
-leaves the agent, editor and design-process files (`.github/agents`,
-`.specify/`, `specs/`, ...) out of it.
+leaves the agent and editor files (`.github/agents`, `.specify/`,
+`.vscode/`, ...) out of it. `specs/` stays in, because the README and docs
+link to it.
 
 ### PGXN Publishing
 

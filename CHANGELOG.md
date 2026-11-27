@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Merge join support for int × float**: Int × float operators added to both `integer_ops` and `float_ops` btree families, enabling merge joins across these type pairs (previously only int × numeric supported merge joins). See [Float × Integer Btree Ops research](specs/002-float-btree-ops/research.md).
 - Float-integer merge join regression tests and catalog verification queries.
 - `comparison_exactness` regression test: checks every int × numeric/float comparison against an exact reference, constant on either side, on NOT NULL and nullable columns, plus hash/equality consistency for every hashable operator.
-- **PGXN packaging**: `META.json`, a `make dist` target that writes the release zip from the committed tree, and a `make check-version` target that checks `META.json` against the control file. `.gitattributes` keeps the agent, editor and design-process files out of the archive.
+- **PGXN packaging**: `META.json`, a `make dist` target that writes the release zip from the committed tree, and a `make check-version` target that checks `META.json` against the control file. `.gitattributes` keeps the agent and editor files out of the archive.
 - **CI**: GitHub Actions builds with warnings as errors and runs the regression tests on PostgreSQL 16, 17, 18 and 19, on x86_64 and arm64.
 - PostgreSQL 19 support: alternate expected outputs for its `Replaces:` EXPLAIN line, and `hash_joins` turns off its eager aggregation.
 
