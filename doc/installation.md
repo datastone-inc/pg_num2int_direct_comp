@@ -4,7 +4,7 @@
 
 ### Required Software
 
-- **PostgreSQL**: Version 12 or later
+- **PostgreSQL**: Version 16 or later
 - **Build Tools**: GCC or Clang with C99 support
 - **PostgreSQL Development Headers**:
   - Debian/Ubuntu: `postgresql-server-dev-<version>`
@@ -43,8 +43,10 @@ make
 Expected output:
 
 ```
-gcc -Wall -Wextra -Werror -std=gnu99 -fPIC ...
+gcc ... -Wall -Wextra -Wno-unused-parameter ... -c -o pg_num2int_direct_comp.o pg_num2int_direct_comp.c
 ```
+
+`make WERROR=1` treats warnings as errors, as CI does.
 
 ### Run Tests (Optional)
 
@@ -80,7 +82,7 @@ CREATE EXTENSION pg_num2int_direct_comp;
 
 ```sql
 -- Check extension is loaded
-\dx pg_num2int_direct_comp
+SELECT extname, extversion FROM pg_extension WHERE extname = 'pg_num2int_direct_comp';
 
 -- List all extension objects (108 operators, 138 functions, etc.)
 \dx+ pg_num2int_direct_comp

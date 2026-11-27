@@ -1,0 +1,11 @@
+# Left out of the release archive (make dist, git archive): instructions
+# and tooling for coding agents and editors, design-process records, and
+# templates, none of which a user of the extension needs.
+.github/agents/ export-ignore
+.github/prompts/ export-ignore
+.github/skills/ export-ignore
+.github/copilot-instructions.md export-ignore
+.specify/ export-ignore
+.vscode/ export-ignore
+specs/ export-ignore
+project_template.md export-ignore

@@ -43,6 +43,15 @@
 #include "fmgr.h"
 #include <math.h>
 
+/*
+ * isVarNotNull() relies on Var.varnullingrels (PostgreSQL 16) to tell a
+ * column nulled by an outer join from a NOT NULL one; older servers have no
+ * equivalent the support function can use.
+ */
+#if PG_VERSION_NUM < 160000
+#error "pg_num2int_direct_comp requires PostgreSQL 16 or later"
+#endif
+
 PG_MODULE_MAGIC;
 
 /* GUC variables */
@@ -976,8 +985,11 @@ isVarNotNull(PlannerInfo *root, Var *varNode) {
    */
   if (!bms_is_empty(varNode->varnullingrels))
     return false;
+#if PG_VERSION_NUM >= 180000
+  /* RETURNING OLD/NEW references exist from PostgreSQL 18. */
   if (varNode->varreturningtype != VAR_RETURNING_DEFAULT)
     return false;
+#endif
 
   rte = planner_rt_fetch(varNode->varno, root);
   if (rte == NULL || rte->rtekind != RTE_RELATION)

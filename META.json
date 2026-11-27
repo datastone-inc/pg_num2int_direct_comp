@@ -1,0 +1,47 @@
+{
+   "name": "pg_num2int_direct_comp",
+   "abstract": "Exact comparison operators between numeric/float and integer types, with index use",
+   "description": "Stock PostgreSQL compares an integer column with a numeric or float value by casting the column, which defeats its index, or by casting the value, which can give a wrong answer. This extension adds exact cross-type comparison operators for int2/int4/int8 against numeric, float4 and float8, joins them to the btree and hash operator families, and rewrites comparisons with a constant into native integer predicates so indexes, merge joins and hash joins apply.",
+   "version": "1.0.0",
+   "maintainer": "dataStone Inc. <dave.sharpe@datastone.ca>",
+   "license": "mit",
+   "provides": {
+      "pg_num2int_direct_comp": {
+         "abstract": "Exact numeric/float x integer comparison operators",
+         "file": "pg_num2int_direct_comp--1.0.0.sql",
+         "docfile": "README.md",
+         "version": "1.0.0"
+      }
+   },
+   "prereqs": {
+      "runtime": {
+         "requires": {
+            "PostgreSQL": "16.0.0"
+         }
+      }
+   },
+   "resources": {
+      "homepage": "https://github.com/datastone-inc/pg_num2int_direct_comp",
+      "bugtracker": {
+         "web": "https://github.com/datastone-inc/pg_num2int_direct_comp/issues"
+      },
+      "repository": {
+         "url": "https://github.com/datastone-inc/pg_num2int_direct_comp.git",
+         "web": "https://github.com/datastone-inc/pg_num2int_direct_comp",
+         "type": "git"
+      }
+   },
+   "release_status": "stable",
+   "tags": [
+      "numeric",
+      "float",
+      "integer",
+      "comparison",
+      "operator",
+      "index"
+   ],
+   "meta-spec": {
+      "version": "1.0.0",
+      "url": "https://pgxn.org/meta/spec.txt"
+   }
+}

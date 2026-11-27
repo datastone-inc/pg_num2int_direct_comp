@@ -419,7 +419,7 @@ SELECT 9007199254740993::int8 = 9007199254740993::float8 AS beyond_range;
 -- ============================================================================
 
 -- Check extension is loaded
-\dx pg_num2int_direct_comp
+SELECT extname, extversion FROM pg_extension WHERE extname = 'pg_num2int_direct_comp';
 
 -- Test precision loss detection (stock PostgreSQL returns true for both)
 SELECT 16777216::int4 = 16777217::float4;  -- true (float4 rounds to 16777216)

@@ -394,9 +394,15 @@ See the [Installation Guide](doc/installation.md) for more detailed instructions
 
 ### Prerequisites
 
-- PostgreSQL 12 or later
+- PostgreSQL 16 or later
 - Development headers (`postgresql-server-dev` or equivalent)
 - PGXS build environment
+
+### Install from PGXN
+
+```bash
+pgxn install pg_num2int_direct_comp
+```
 
 ### Build and Install
 
@@ -493,8 +499,11 @@ See [Research & Design](specs/001-num-int-direct-comp/research.md) sections 7.6 
 
 ## Compatibility
 
-- PostgreSQL 12, 13, 14, 15, 16
-- Linux, macOS, Windows (via MinGW)
+- PostgreSQL 16, 17, 18 and 19. CI builds and tests each of them on Linux
+  (x86_64 and arm64). Builds on macOS and on Windows (MinGW) are not tested.
+- PostgreSQL 15 and older are not supported: the planner support function
+  relies on `Var.varnullingrels` (PostgreSQL 16) to keep NULL semantics for
+  columns on the nullable side of an outer join.
 
 ## Support
 

@@ -12,9 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Merge join support for int × float**: Int × float operators added to both `integer_ops` and `float_ops` btree families, enabling merge joins across these type pairs (previously only int × numeric supported merge joins). See [Float × Integer Btree Ops research](specs/002-float-btree-ops/research.md).
 - Float-integer merge join regression tests and catalog verification queries.
 - `comparison_exactness` regression test: checks every int × numeric/float comparison against an exact reference, constant on either side, on NOT NULL and nullable columns, plus hash/equality consistency for every hashable operator.
+- **PGXN packaging**: `META.json`, a `make dist` target that writes the release zip from the committed tree, and a `make check-version` target that checks `META.json` against the control file. `.gitattributes` keeps the agent, editor and design-process files out of the archive.
+- **CI**: GitHub Actions builds with warnings as errors and runs the regression tests on PostgreSQL 16, 17, 18 and 19, on x86_64 and arm64.
+- PostgreSQL 19 support: alternate expected outputs for its `Replaces:` EXPLAIN line, and `hash_joins` turns off its eager aggregation.
 
 ### Changed
 
+- **Minimum PostgreSQL version is 16** (was documented as 12). The NULL-semantics fix uses `Var.varnullingrels`, which PostgreSQL 16 added, and the extension has not built on PostgreSQL 15 or older since that fix. Building against an older server now stops with an `#error` naming the requirement.
+- `-Werror` is now opt-in (`make WERROR=1`), so a compiler with warnings this code has not met still builds it. The warning flags previously had no effect, because the Makefile set them after including PGXS; they now apply.
+- The `RETURNING OLD/NEW` cases moved from `null_handling` to a new `returning_old_new` test, which runs only on PostgreSQL 18 and later.
 - Documentation restructured: `doc/api-reference.md` and `doc/user-guide.md` merged into `doc/operator-reference.md`.
 - Expanded examples and explanations across `doc/installation.md`, `doc/operator-reference.md`, `doc/benchmark.md`, and `doc/development.md`.
 
@@ -29,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Wrong results with the constant on the left of a range comparison**: the support function rewrote `const OP column` as if it were `column OP const`, so for `<`, `<=`, `>` and `>=` it returned the complement of the right answer (for example `0.5 > col` matched no rows for `col = 0`, and `99999999999 > col` matched none on an int4 column). This affected numeric, float4 and float8 constants against all integer types, on NOT NULL and nullable columns, and has been present since 1.0.0. `=` and `<>` were not affected.
 - **Wrong int × float results at the integer type limits**: comparisons converted out-of-range floats back to integers (undefined behaviour in C) and used `(float) INT_MAX` as a range bound, which float4 rounds up to 2^31 and float8 to 2^63. `2147483647::int4 = 2147483648::float4` and `9223372036854775807::int8 = 2^63::float8` returned true, and so did hash joins on those values with mismatched hashes. Huge float constants against int8 (e.g. `1e30::float4`) were also misclassified. Float × integer comparisons are now exact for every value.
 - **Merge joins for int2 × float4, int2 × float8, and int4 × float8**: the `=` operators for these pairs were missing `MERGES`, so the planner never chose a merge join for them even though their btree family entries were present. The commuted forms (e.g. `float8 = int4`) were already correct. The regression tests had recorded the Nested Loop plans as expected; `merge_joins` now checks that every equality operator the extension owns is `MERGES`.
+- **Build on PostgreSQL 16 and 17**: `isVarNotNull` read `Var.varreturningtype`, which exists only from PostgreSQL 18; the check is now compiled only there.
 - NULL semantics preserved in `num2int_support` rewrites: support-function transformations no longer drop NULL handling when simplifying cross-type comparisons.
 - `DROP EXTENSION` cleanup event trigger: the query match now uses word boundaries, so dropping an extension whose name starts with ours no longer runs our cleanup; cleanup now ignores only `undefined_object` errors instead of all errors, so permission and lock failures surface rather than leaving orphan operator-family entries.
 

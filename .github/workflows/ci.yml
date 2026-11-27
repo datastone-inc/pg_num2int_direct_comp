@@ -1,0 +1,100 @@
+# Copyright (c) 2026 dataStone Inc.
+# SPDX-License-Identifier: MIT
+#
+# Build the extension and run its regression tests against each supported
+# PostgreSQL version.
+#
+# - version: make check-version (META.json and the control file agree).
+# - packages: PostgreSQL 16-19 from apt.postgresql.org, built with gcc, on
+#   x86_64 and arm64, with warnings as errors (make WERROR=1). The tests run
+#   on a cluster the job starts itself on a fixed port, not the one the
+#   package creates: the runner image has its own PostgreSQL cluster, which
+#   moves a newly installed one to another port.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: Version consistency
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      # check-version reads only the control file and META.json, but the
+      # Makefile includes PGXS, so it needs a pg_config.
+      - name: Install PostgreSQL headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-server-dev-all
+
+      - name: Check
+        run: make check-version
+
+  packages:
+    name: PG ${{ matrix.pg }}, ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: [16, 17, 18, 19]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    env:
+      PGHOST: /tmp
+      PGPORT: 55432
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install PostgreSQL ${{ matrix.pg }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-${{ matrix.pg }} \
+              postgresql-server-dev-${{ matrix.pg }}
+          echo /usr/lib/postgresql/${{ matrix.pg }}/bin >> "$GITHUB_PATH"
+
+      # make install writes into the server's directories.
+      - name: Let the runner install into the PostgreSQL directories
+        run: |
+          sudo chown -R "$USER" "$(pg_config --pkglibdir)" \
+              "$(pg_config --sharedir)/extension"
+
+      - name: Build
+        run: |
+          pg_config --version
+          make WERROR=1
+          make WERROR=1 install
+
+      - name: Start a cluster
+        run: |
+          initdb -D "$RUNNER_TEMP/data" -A trust -U "$USER" >/dev/null
+          pg_ctl -D "$RUNNER_TEMP/data" -l "$RUNNER_TEMP/server.log" \
+              -o "-p $PGPORT -k $PGHOST -c listen_addresses=''" -w start
+          createdb "$USER"
+
+      - name: Test
+        run: make WERROR=1 installcheck
+
+      - name: Keep the test output
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-output-pg${{ matrix.pg }}-${{ matrix.runner }}
+          if-no-files-found: ignore
+          path: |
+            regression.diffs
+            regression.out
+            results/
+            ${{ runner.temp }}/server.log
