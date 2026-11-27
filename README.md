@@ -5,7 +5,9 @@
 
 # pg_num2int_direct_comp
 
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-12%2B-blue.svg)](https://www.postgresql.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%2B-blue.svg)](https://www.postgresql.org/)
+[![PGXN version](https://badge.fury.io/pg/pg_num2int_direct_comp.svg)](https://pgxn.org/dist/pg_num2int_direct_comp/)
+[![CI](https://github.com/datastone-inc/pg_num2int_direct_comp/actions/workflows/ci.yml/badge.svg)](https://github.com/datastone-inc/pg_num2int_direct_comp/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Language](https://img.shields.io/badge/Language-C-orange.svg)](https://en.wikipedia.org/wiki/C_(programming_language))
 [![Extension](https://img.shields.io/badge/Type-PostgreSQL%20Extension-purple.svg)](https://www.postgresql.org/docs/current/extend-extensions.html)

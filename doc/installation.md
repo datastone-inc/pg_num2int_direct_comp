@@ -25,6 +25,24 @@ pg_config --version
 pg_config --includedir-server
 ```
 
+## Installing from PGXN
+
+The extension is published on [PGXN](https://pgxn.org/dist/pg_num2int_direct_comp/).
+The `pgxn` client downloads it and builds it against the `pg_config` it
+finds first on `PATH`, so it needs the same build tools and development
+headers as a build from source.
+
+```bash
+# Debian/Ubuntu: sudo apt-get install pgxnclient; elsewhere: pip install pgxnclient
+pgxn install pg_num2int_direct_comp
+
+# To build against a particular server
+pgxn install --pg_config /usr/lib/postgresql/18/bin/pg_config pg_num2int_direct_comp
+```
+
+Then create the extension in each database that uses it
+([Enabling in Database](#enabling-in-database)).
+
 ## Building from Source
 
 ### Clone Repository

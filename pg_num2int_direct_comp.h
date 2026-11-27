@@ -56,7 +56,7 @@
  *
  * Sources: pg_proc system catalog, defined in PostgreSQL source:
  *   src/include/catalog/pg_proc.dat
- * These OIDs are stable across all supported PostgreSQL versions (12+).
+ * These OIDs are stable across all supported PostgreSQL versions (16+).
  * Built-in OIDs are never changed or reused; doing so would break the
  * PostgreSQL ecosystem.
  */
