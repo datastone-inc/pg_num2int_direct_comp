@@ -4,7 +4,7 @@
 
 ### Required Software
 
-- **PostgreSQL**: Version 12 or later
+- **PostgreSQL**: Version 16 or later
 - **Build Tools**: GCC or Clang with C99 support
 - **PostgreSQL Development Headers**:
   - Debian/Ubuntu: `postgresql-server-dev-<version>`
@@ -25,6 +25,24 @@ pg_config --version
 pg_config --includedir-server
 ```
 
+## Installing from PGXN
+
+The extension is published on [PGXN](https://pgxn.org/dist/pg_num2int_direct_comp/).
+The `pgxn` client downloads it and builds it against the `pg_config` it
+finds first on `PATH`, so it needs the same build tools and development
+headers as a build from source.
+
+```bash
+# Debian/Ubuntu: sudo apt-get install pgxnclient; elsewhere: pip install pgxnclient
+pgxn install pg_num2int_direct_comp
+
+# To build against a particular server
+pgxn install --pg_config /usr/lib/postgresql/18/bin/pg_config pg_num2int_direct_comp
+```
+
+Then create the extension in each database that uses it
+([Enabling in Database](#enabling-in-database)).
+
 ## Building from Source
 
 ### Clone Repository
@@ -43,8 +61,10 @@ make
 Expected output:
 
 ```
-gcc -Wall -Wextra -Werror -std=gnu99 -fPIC ...
+gcc ... -Wall -Wextra -Wno-unused-parameter ... -c -o pg_num2int_direct_comp.o pg_num2int_direct_comp.c
 ```
+
+`make WERROR=1` treats warnings as errors, as CI does.
 
 ### Run Tests (Optional)
 
@@ -80,7 +100,7 @@ CREATE EXTENSION pg_num2int_direct_comp;
 
 ```sql
 -- Check extension is loaded
-\dx pg_num2int_direct_comp
+SELECT extname, extversion FROM pg_extension WHERE extname = 'pg_num2int_direct_comp';
 
 -- List all extension objects (108 operators, 138 functions, etc.)
 \dx+ pg_num2int_direct_comp

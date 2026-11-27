@@ -629,11 +629,10 @@ SELECT 9007199254740993::int8 = 9007199254740993::float8 AS beyond_range;
 -- doc/installation.md: Verify Installation (~line 68)
 -- ============================================================================
 -- Check extension is loaded
-\dx pg_num2int_direct_comp
-                                                 List of installed extensions
-          Name          | Version | Default version | Schema |                          Description                           
-------------------------+---------+-----------------+--------+----------------------------------------------------------------
- pg_num2int_direct_comp | 1.0.0   | 1.0.0           | public | Exact comparison operators for numeric/float and integer types
+SELECT extname, extversion FROM pg_extension WHERE extname = 'pg_num2int_direct_comp';
+        extname         | extversion 
+------------------------+------------
+ pg_num2int_direct_comp | 1.0.0
 (1 row)
 
 -- Test precision loss detection (stock PostgreSQL returns true for both)

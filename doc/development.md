@@ -36,7 +36,7 @@ Contributions are welcome! This guide covers development setup, testing, and con
 
 ### Prerequisites
 
-- PostgreSQL 12+ with development headers
+- PostgreSQL 16+ with development headers
 - GCC or Clang with C99 support
 - Git
 - Make
@@ -359,63 +359,63 @@ elog(ERROR, "Error message");     // Error (rolls back transaction)
 
 ## Continuous Integration
 
-### GitHub Actions
+`.github/workflows/ci.yml` runs on every push and pull request. It checks
+that `META.json` and the control file agree on the version
+(`make check-version`), then builds with warnings as errors
+(`make WERROR=1`) and runs `make installcheck` against PostgreSQL 16, 17,
+18 and 19 from apt.postgresql.org, on x86_64 and arm64. A failed run
+uploads `regression.diffs` and `results/`.
 
-Create `.github/workflows/ci.yml`:
+### Expected output across versions
 
-```yaml
-name: CI
+Most tests produce the same output on every supported version. Where a
+version differs:
 
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        pg_version: [12, 13, 14, 15, 16]
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install PostgreSQL
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-${{ matrix.pg_version }} \
-            postgresql-server-dev-${{ matrix.pg_version }}
-
-      - name: Build
-        run: make PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg_version }}/bin/pg_config
-
-      - name: Test
-        run: make installcheck PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg_version }}/bin/pg_config
-```
+- `returning_old_new` tests `RETURNING OLD/NEW`, which exists from
+  PostgreSQL 18; the Makefile adds it to `REGRESS` only there.
+- `hash_joins` turns off PostgreSQL 19's eager aggregation, which would
+  otherwise change its join plans.
+- PostgreSQL 19's EXPLAIN adds a `Replaces:` line under a `Result` node
+  that stands in for a scan or join. `null_handling`, `selectivity` and
+  `doc_examples` have a second expected file (`expected/<test>_1.out`) for
+  it; pg_regress accepts either. A change to one of these tests must
+  re-record both files, the `_1` one on PostgreSQL 19.
 
 ## Release Process
 
 ### Version Bumping
 
-1. Update version in `pg_num2int_direct_comp.control`
-2. Create new SQL file: `pg_num2int_direct_comp--1.0.0--1.1.0.sql`
+1. Update `default_version` in `pg_num2int_direct_comp.control`, and
+   `version` at the top of `META.json` and in its `provides` entry
+2. Create new SQL files: `pg_num2int_direct_comp--1.1.0.sql` and the upgrade
+   script `pg_num2int_direct_comp--1.0.0--1.1.0.sql`, and update `DATA` in
+   the Makefile
 3. Update `CHANGELOG.md`
-4. Update `README.md` if needed
+4. Run `make check-version`
 
-### Creating Release
+### Creating a Release
 
 ```bash
-# Tag release
+# Tag the release
 git tag -a v1.0.0 -m "Release 1.0.0"
 git push origin v1.0.0
 
-# Create tarball
+# Write the PGXN archive of the committed tree (HEAD)
 make dist
 ```
 
+`make dist` runs `check-version` and writes
+`pg_num2int_direct_comp-<version>.zip` with `git archive`. `.gitattributes`
+leaves the agent and editor files (`.github/agents`, `.specify/`,
+`.vscode/`, ...) out of it. `specs/` stays in, because the README and docs
+link to it.
+
 ### PGXN Publishing
 
-1. Create `META.json` for PGXN
-2. Test with `pgxn load`
-3. Publish: `pgxn publish pg_num2int_direct_comp-1.0.0.zip`
+1. Upload the zip at <https://manager.pgxn.org/> (a PGXN account is needed;
+   PGXN approves new accounts by hand)
+2. PGXN validates `META.json` on upload. A version cannot be uploaded
+   twice, so a fix after release needs a new version
 
 ## Contribution Guidelines
 

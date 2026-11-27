@@ -12,6 +12,13 @@ INSERT INTO hash_int4 SELECT i, i FROM generate_series(1, 100) i;
 -- Force hash join
 SET enable_nestloop = off;
 SET enable_mergejoin = off;
+-- PostgreSQL 19's eager aggregation pushes a partial aggregate below the
+-- join; these tests are about the join, so keep the plan the same on all
+-- versions.
+SELECT current_setting('server_version_num')::int >= 190000 AS has_eager_agg \gset
+\if :has_eager_agg
+SET enable_eager_aggregate = off;
+\endif
 EXPLAIN (COSTS OFF) 
 SELECT COUNT(*) FROM hash_numeric n JOIN hash_int4 i ON n.val = i.val;
                   QUERY PLAN                  

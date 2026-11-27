@@ -58,3 +58,9 @@ vgcore.*
 
 # Miscellaneous
 copilot_analysis/
+
+# PGXS dependency tracking
+.deps/
+
+# Release archive (make dist)
+/*.zip

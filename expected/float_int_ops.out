@@ -647,7 +647,7 @@ WHERE oprname = '='
   AND oprcanmerge = true;
  equality_ops_with_merges 
 --------------------------
-                       28
+                       31
 (1 row)
 
 --

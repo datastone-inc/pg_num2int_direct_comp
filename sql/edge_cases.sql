@@ -133,7 +133,7 @@ SELECT 'float4 at int2 MIN - 0.5'::text AS test,
 SELECT 'float4 at int2 MAX + 0.5'::text AS test,
        (32767.5)::float4 > 32767::int2 AS result;  -- Should be true
 SELECT 'float4 at int4 MIN - 0.5'::text AS test,
-       (-2147483648.5)::float4 < (-2147483648)::int4 AS result;  -- false: float4 rounds -2147483648.5 to > int4 MIN
+       (-2147483648.5)::float4 < (-2147483648)::int4 AS result;  -- false: float4 rounds -2147483648.5 to exactly -2^31 = int4 MIN
 
 -- float8 boundary edge cases with int types
 SELECT 'float8 at int2 MIN - 0.1'::text AS test,
@@ -145,9 +145,9 @@ SELECT 'float8 at int4 MIN - 0.1'::text AS test,
 SELECT 'float8 at int4 MAX + 0.1'::text AS test,
        (2147483647.1)::float8 > 2147483647::int4 AS result;  -- Should be true
 SELECT 'float8 at int8 MIN - 0.1'::text AS test,
-       '-9223372036854775808.1'::float8 < ('-9223372036854775808'::numeric)::int8 AS result;  -- false: float8 rounds to same value as int8 MIN
+       '-9223372036854775808.1'::float8 < ('-9223372036854775808'::numeric)::int8 AS result;  -- false: float8 rounds to exactly -2^63 = int8 MIN
 SELECT 'float8 at int8 MAX + 0.1'::text AS test,
-       '9223372036854775807.1'::float8 > 9223372036854775807::int8 AS result;  -- false: float8 rounds to same value as int8 MAX
+       '9223372036854775807.1'::float8 > 9223372036854775807::int8 AS result;  -- true: float8 rounds to 2^63, one above int8 MAX
 
 -- Edge Case: SupportRequestSimplify (SRS) path (var op const)
 -- These require a table column to trigger the optimizer support function

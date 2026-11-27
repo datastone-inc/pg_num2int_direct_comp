@@ -43,6 +43,15 @@
 #include "fmgr.h"
 #include <math.h>
 
+/*
+ * isVarNotNull() relies on Var.varnullingrels (PostgreSQL 16) to tell a
+ * column nulled by an outer join from a NOT NULL one; older servers have no
+ * equivalent the support function can use.
+ */
+#if PG_VERSION_NUM < 160000
+#error "pg_num2int_direct_comp requires PostgreSQL 16 or later"
+#endif
+
 PG_MODULE_MAGIC;
 
 /* GUC variables */
@@ -66,22 +75,13 @@ static NumericBoundaryCache numericBounds = {
 };
 
 /*
- * Pre-computed float boundaries for integer range checks.
- * These avoid runtime int-to-float conversions in hot paths.
- * Note: float4 can exactly represent all int16 values and most int32 values,
- * but int64 boundaries lose precision (which is fine for our range checks).
+ * Exact float8 bounds of the int64 domain: -2^63 is INT64_MIN, and 2^63 is
+ * one past INT64_MAX. Both are powers of two, so float8 holds them exactly.
+ * (float8) PG_INT64_MAX is NOT a usable bound: it rounds up to 2^63, and
+ * converting 2^63 back to int64 is undefined behaviour in C.
  */
-static const float4 FLOAT4_INT16_MIN = (float4) PG_INT16_MIN;
-static const float4 FLOAT4_INT16_MAX = (float4) PG_INT16_MAX;
-static const float4 FLOAT4_INT32_MIN = (float4) PG_INT32_MIN;
-static const float4 FLOAT4_INT32_MAX = (float4) PG_INT32_MAX;
-
-static const float8 FLOAT8_INT16_MIN = (float8) PG_INT16_MIN;
-static const float8 FLOAT8_INT16_MAX = (float8) PG_INT16_MAX;
-static const float8 FLOAT8_INT32_MIN = (float8) PG_INT32_MIN;
-static const float8 FLOAT8_INT32_MAX = (float8) PG_INT32_MAX;
-static const float8 FLOAT8_INT64_MIN = (float8) PG_INT64_MIN;
-static const float8 FLOAT8_INT64_MAX = (float8) PG_INT64_MAX;
+#define FLOAT8_INT64_LOWER (-9223372036854775808.0)  /* -2^63, inclusive */
+#define FLOAT8_INT64_UPPER  (9223372036854775808.0)  /*  2^63, exclusive */
 
 /**
  * @brief Initialize cached Numeric boundary values
@@ -628,6 +628,22 @@ typedef struct {
 } ConstConversion;
 
 /**
+ * @brief Operator type with its operands swapped
+ * @param opType Operator type of "a OP b"
+ * @return Operator type OP' such that "b OP' a" is equivalent
+ */
+static OpType
+commuteOpType(OpType opType) {
+  switch (opType) {
+    case OP_TYPE_LT: return OP_TYPE_GT;
+    case OP_TYPE_GT: return OP_TYPE_LT;
+    case OP_TYPE_LE: return OP_TYPE_GE;
+    case OP_TYPE_GE: return OP_TYPE_LE;
+    default:         return opType;  /* =, <>, unknown: symmetric */
+  }
+}
+
+/**
  * @brief Find operator OID from function OID by searching cached operators
  * @param funcid Function OID to match
  * @param opType Output: operator type classification
@@ -723,80 +739,51 @@ convertConstToInt(Const *constNode, Oid intType) {
       else
         result.outOfRangeHigh = true;
     }
-  } else if (constType == FLOAT4OID) {
-    float4 fval = DatumGetFloat4(constNode->constvalue);
-    float4 floorVal;
-
-    if (isnan(fval) || isinf(fval)) {
-      return result;
-    }
-
-    /* Use floor for consistent rounding toward negative infinity */
-    floorVal = floorf(fval);
-    result.hasFraction = (fval != floorVal);
-
-    if (intType == INT2OID) {
-      if (floorVal < FLOAT4_INT16_MIN) {
-        result.outOfRangeLow = true;
-      } else if (floorVal > FLOAT4_INT16_MAX) {
-        result.outOfRangeHigh = true;
-      } else {
-        result.intVal = (int16) floorVal;
-        result.valid = true;
-      }
-    } else if (intType == INT4OID) {
-      if (floorVal < FLOAT4_INT32_MIN) {
-        result.outOfRangeLow = true;
-      } else if (floorVal > FLOAT4_INT32_MAX) {
-        result.outOfRangeHigh = true;
-      } else {
-        result.intVal = (int32) floorVal;
-        result.valid = true;
-      }
-    } else if (intType == INT8OID) {
-      /* float4 always fits in int8 range */
-      result.intVal = (int64) floorVal;
-      result.valid = true;
-    }
-  } else if (constType == FLOAT8OID) {
-    float8 dval = DatumGetFloat8(constNode->constvalue);
+  } else if (constType == FLOAT4OID || constType == FLOAT8OID) {
+    /*
+     * float4 widens to float8 exactly, so both share one path.
+     *
+     * The range test compares floor(v) against exact power-of-two bounds:
+     * floor(v) <= typeMax is the same as floor(v) < typeMax + 1, and
+     * typeMax + 1 is 2^15, 2^31 or 2^63, all exact in float8. Testing
+     * against (float) typeMax instead is wrong whenever the float type
+     * cannot hold typeMax (float4 rounds INT32_MAX up to 2^31; float8
+     * rounds INT64_MAX up to 2^63), and converting such an out-of-range
+     * floor to an integer type is undefined behaviour in C. floor(v) is
+     * converted to int64 only after it is proven in range.
+     */
+    float8 dval = (constType == FLOAT4OID)
+      ? (float8) DatumGetFloat4(constNode->constvalue)
+      : DatumGetFloat8(constNode->constvalue);
     float8 floorVal;
+    float8 lower;
+    float8 upper;
 
     if (isnan(dval) || isinf(dval)) {
       return result;
     }
 
-    /* Use floor for consistent rounding toward negative infinity */
     floorVal = floor(dval);
     result.hasFraction = (dval != floorVal);
 
     if (intType == INT2OID) {
-      if (floorVal < FLOAT8_INT16_MIN) {
-        result.outOfRangeLow = true;
-      } else if (floorVal > FLOAT8_INT16_MAX) {
-        result.outOfRangeHigh = true;
-      } else {
-        result.intVal = (int16) floorVal;
-        result.valid = true;
-      }
+      lower = (float8) PG_INT16_MIN;           /* -2^15, inclusive */
+      upper = -(float8) PG_INT16_MIN;          /*  2^15, exclusive */
     } else if (intType == INT4OID) {
-      if (floorVal < FLOAT8_INT32_MIN) {
-        result.outOfRangeLow = true;
-      } else if (floorVal > FLOAT8_INT32_MAX) {
-        result.outOfRangeHigh = true;
-      } else {
-        result.intVal = (int32) floorVal;
-        result.valid = true;
-      }
-    } else if (intType == INT8OID) {
-      if (floorVal < FLOAT8_INT64_MIN) {
-        result.outOfRangeLow = true;
-      } else if (floorVal > FLOAT8_INT64_MAX) {
-        result.outOfRangeHigh = true;
-      } else {
-        result.intVal = (int64) floorVal;
-        result.valid = true;
-      }
+      lower = (float8) PG_INT32_MIN;           /* -2^31, inclusive */
+      upper = -(float8) PG_INT32_MIN;          /*  2^31, exclusive */
+    } else {
+      lower = FLOAT8_INT64_LOWER;
+      upper = FLOAT8_INT64_UPPER;
+    }
+
+    if (floorVal < lower) {
+      result.outOfRangeLow = true;
+    } else if (floorVal >= upper) {
+      result.outOfRangeHigh = true;
+    } else {
+      result.intVal = (int64) floorVal;
+      result.valid = true;
     }
   }
 
@@ -998,8 +985,11 @@ isVarNotNull(PlannerInfo *root, Var *varNode) {
    */
   if (!bms_is_empty(varNode->varnullingrels))
     return false;
+#if PG_VERSION_NUM >= 180000
+  /* RETURNING OLD/NEW references exist from PostgreSQL 18. */
   if (varNode->varreturningtype != VAR_RETURNING_DEFAULT)
     return false;
+#endif
 
   rte = planner_rt_fetch(varNode->varno, root);
   if (rte == NULL || rte->rtekind != RTE_RELATION)
@@ -1172,6 +1162,16 @@ num2int_support(PG_FUNCTION_ARGS) {
     opno = findOperatorByFuncid(func->funcid, &opType);
     if (opno == InvalidOid) {
       PG_RETURN_POINTER(NULL);
+    }
+
+    /*
+     * Everything below reasons about "var OP const". When the constant is
+     * on the left, "const OP var" is "var COMMUTED(OP) const": < and > swap,
+     * <= and >= swap, = and <> are symmetric. Without this, 5.5 < col was
+     * rewritten as if it were col < 5.5.
+     */
+    if ((Node *) constNode == leftop) {
+      opType = commuteOpType(opType);
     }
 
     /* Convert constant to integer */
@@ -1471,162 +1471,94 @@ numeric_cmp_int8_internal(Numeric num, int64 val) {
 }
 
 /**
- * @brief Compare float4 value with int2 value
+ * @brief Exact three-way comparison of a float8 with an int32
+ * @return -1 if fval < ival, 0 if equal, 1 if fval > ival
+ *
+ * Every int32 (and so every int16) converts to float8 exactly, so one
+ * float8 comparison is exact. Infinities compare naturally. NaN sorts above
+ * every number, matching PostgreSQL's float ordering.
  */
+static inline int
+float8CmpInt32Exact(float8 fval, int32 ival) {
+  float8 ivalAsFloat8 = (float8) ival;
+
+  if (isnan(fval)) return 1;
+  if (fval < ivalAsFloat8) return -1;
+  if (fval > ivalAsFloat8) return 1;
+  return 0;
+}
+
+/**
+ * @brief Exact three-way comparison of a float8 with an int64
+ * @return -1 if fval < ival, 0 if equal, 1 if fval > ival
+ *
+ * An int64 does not always convert to float8 exactly (beyond 2^53 it
+ * rounds), so the comparison happens in the integer domain instead:
+ *  1. A value at or beyond the int64 domain, [-2^63, 2^63), is above or
+ *     below every int64. This also settles the infinities.
+ *  2. Otherwise trunc(fval) lies in that domain and converts to int64
+ *     exactly and without undefined behaviour, so the integer parts
+ *     compare exactly.
+ *  3. On equal integer parts, any fraction decides: truncation is toward
+ *     zero, so fval > trunc(fval) exactly when fval is above ival.
+ */
+static inline int
+float8CmpInt64Exact(float8 fval, int64 ival) {
+  float8 truncVal;
+  int64 truncAsInt64;
+
+  if (isnan(fval)) return 1;
+  if (fval >= FLOAT8_INT64_UPPER) return 1;
+  if (fval < FLOAT8_INT64_LOWER) return -1;
+
+  truncVal = trunc(fval);
+  truncAsInt64 = (int64) truncVal;
+  if (truncAsInt64 < ival) return -1;
+  if (truncAsInt64 > ival) return 1;
+  if (fval > truncVal) return 1;
+  if (fval < truncVal) return -1;
+  return 0;
+}
+
+/*
+ * Float-integer comparisons. float4 widens to float8 exactly, so all six
+ * type pairs reduce to the two exact helpers above.
+ */
+
+/** @brief Compare float4 value with int2 value */
 int
 float4_cmp_int2_internal(float4 fval, int16 ival) {
-  float4 ivalAsFloat4;
-
-  /* Handle NaN - NaN never equals anything */
-  if (isnan(fval)) {
-    return 1;  /* Treat NaN as greater for consistent ordering */
-  }
-
-  /* Handle infinity */
-  if (isinf(fval)) {
-    return (fval > 0) ? 1 : -1;
-  }
-
-  /* Convert integer to float4 and compare */
-  ivalAsFloat4 = (float4)ival;
-
-  /* Check if representation lost precision */
-  if ((int16)ivalAsFloat4 != ival) {
-    /* This shouldn't happen for int2 values, but handle it */
-    return (fval < ival) ? -1 : 1;
-  }
-
-  if (fval < ivalAsFloat4) return -1;
-  if (fval > ivalAsFloat4) return 1;
-  return 0;
+  return float8CmpInt32Exact((float8) fval, (int32) ival);
 }
 
-/**
- * @brief Compare float4 value with int4 value
- */
+/** @brief Compare float4 value with int4 value */
 int
 float4_cmp_int4_internal(float4 fval, int32 ival) {
-  float4 ivalAsFloat4;
-
-  if (isnan(fval)) return 1;
-  if (isinf(fval)) return (fval > 0) ? 1 : -1;
-
-  ivalAsFloat4 = (float4)ival;
-
-  /* Check if integer exceeds float4 precision (>2^24) */
-  if (labs((long)ival) > 16777216L) {
-    /* Check if round-trip conversion preserves value */
-    if ((int32)ivalAsFloat4 != ival) {
-      /* Precision lost - can't be equal */
-      /* Compare based on which direction the rounding went */
-      if (fval < ivalAsFloat4) return -1;
-      if (fval > ivalAsFloat4) return 1;
-      /* If fval == ivalAsFloat4, they still can't be truly equal since ivalAsFloat4 != ival */
-      return (ivalAsFloat4 < ival) ? -1 : 1;
-    }
-  }
-
-  if (fval < ivalAsFloat4) return -1;
-  if (fval > ivalAsFloat4) return 1;
-  return 0;
+  return float8CmpInt32Exact((float8) fval, ival);
 }
 
-/**
- * @brief Compare float4 value with int8 value
- */
+/** @brief Compare float4 value with int8 value */
 int
 float4_cmp_int8_internal(float4 fval, int64 ival) {
-  float4 ivalAsFloat4;
-
-  if (isnan(fval)) return 1;
-  if (isinf(fval)) return (fval > 0) ? 1 : -1;
-
-  ivalAsFloat4 = (float4)ival;
-
-  /* Check if integer exceeds float4 precision */
-  if (llabs(ival) > 16777216LL) {
-    if ((int64)ivalAsFloat4 != ival) {
-      if (fval < ivalAsFloat4) return -1;
-      if (fval > ivalAsFloat4) return 1;
-      return (ivalAsFloat4 < ival) ? -1 : 1;
-    }
-  }
-
-  if (fval < ivalAsFloat4) return -1;
-  if (fval > ivalAsFloat4) return 1;
-  return 0;
+  return float8CmpInt64Exact((float8) fval, ival);
 }
 
-/**
- * @brief Compare float8 value with int2 value
- */
+/** @brief Compare float8 value with int2 value */
 int
 float8_cmp_int2_internal(float8 fval, int16 ival) {
-  float8 ivalAsFloat8;
-
-  if (isnan(fval)) return 1;
-  if (isinf(fval)) return (fval > 0) ? 1 : -1;
-
-  ivalAsFloat8 = (float8)ival;
-
-  if (fval < ivalAsFloat8) return -1;
-  if (fval > ivalAsFloat8) return 1;
-  return 0;
+  return float8CmpInt32Exact(fval, (int32) ival);
 }
 
-/**
- * @brief Compare float8 value with int4 value
- */
+/** @brief Compare float8 value with int4 value */
 int
 float8_cmp_int4_internal(float8 fval, int32 ival) {
-  float8 ivalAsFloat8;
-
-  if (isnan(fval)) return 1;
-  if (isinf(fval)) return (fval > 0) ? 1 : -1;
-
-  ivalAsFloat8 = (float8)ival;
-
-  if (fval < ivalAsFloat8) return -1;
-  if (fval > ivalAsFloat8) return 1;
-  return 0;
+  return float8CmpInt32Exact(fval, ival);
 }
 
-/**
- * @brief Compare float8 value with int8 value
- */
+/** @brief Compare float8 value with int8 value */
 int
 float8_cmp_int8_internal(float8 fval, int64 ival) {
-  float8 ivalAsFloat8;
-  float8 fvalRounded;
-
-  if (isnan(fval)) return 1;
-  if (isinf(fval)) return (fval > 0) ? 1 : -1;
-
-  /* Check if float has fractional part - never equals integer */
-  fvalRounded = trunc(fval);
-  if (fval != fvalRounded) {
-    return (fval < ival) ? -1 : 1;
-  }
-
-  ivalAsFloat8 = (float8)ival;
-
-  /* float8 has 53-bit mantissa, check precision beyond 2^53 */
-  if (llabs(ival) > 9007199254740992LL) {
-    /* Integer is beyond exact float8 representation */
-    if ((int64)ivalAsFloat8 != ival) {
-      /* Integer cannot be exactly represented as float8 */
-      /* For equality, this means they can never be equal */
-      if (fval < ivalAsFloat8) return -1;
-      if (fval > ivalAsFloat8) return 1;
-      /* fval == ivalAsFloat8, but ivalAsFloat8 != ival due to rounding */
-      /* Therefore fval != ival (precision loss detected) */
-      return (ivalAsFloat8 < ival) ? -1 : 1;
-    }
-  }
-
-  if (fval < ivalAsFloat8) return -1;
-  if (fval > ivalAsFloat8) return 1;
-  return 0;
+  return float8CmpInt64Exact(fval, ival);
 }
 
 /*

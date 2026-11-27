@@ -1,0 +1,271 @@
+-- Test: Exactness of integer x numeric/float comparisons
+-- Purpose: Every cross-type comparison must return the mathematically exact
+--          answer, on both code paths:
+--            * the operator functions themselves (column vs column), and
+--            * the SupportRequestSimplify rewrite (column vs constant),
+--          with the constant on either side of the operator, on NOT NULL and
+--          nullable columns, at and beyond the edges of each integer type.
+--
+-- Regressions this pins:
+--   1. "const OP col" was rewritten as if it were "col OP const", so
+--      0.5 > col, 99999999999 > col, etc. returned the complement.
+--   2. Float boundary checks used (float) INT_MAX, which float4 rounds up to
+--      2^31 and float8 rounds up to 2^63; converting that back to an integer
+--      is undefined behaviour in C. 2147483647::int4 = 2^31::float4 and
+--      9223372036854775807::int8 = 2^63::float8 both returned true.
+--   3. Hash consistency: values that compare equal must hash equally, or
+--      hash joins silently drop rows. (Regression 2 broke this too.)
+--
+-- Each check prints only the cases that disagree with an independent
+-- reference, so the expected output is an empty set.
+CREATE EXTENSION IF NOT EXISTS pg_num2int_direct_comp;
+NOTICE:  extension "pg_num2int_direct_comp" already exists, skipping
+-- Integer columns: NOT NULL and nullable variants of each width, holding each
+-- type's extremes, values near 2^24 / 2^53 (float4 / float8 precision
+-- limits), and small values.
+CREATE TEMP TABLE ex_int2 (pk int2 NOT NULL);
+INSERT INTO ex_int2 VALUES (-32768), (-1), (0), (1), (32767);
+CREATE TEMP TABLE ex_int4 (pk int4 NOT NULL);
+INSERT INTO ex_int4 VALUES (-2147483648), (-16777217), (0), (16777217),
+                           (2147483520), (2147483647);
+CREATE TEMP TABLE ex_int8 (pk int8 NOT NULL);
+INSERT INTO ex_int8 VALUES (-9223372036854775808), (-9007199254740993), (0),
+                           (9007199254740993), (9223372036854775807);
+CREATE TEMP TABLE ex_int2n (pk int2);
+INSERT INTO ex_int2n SELECT pk FROM ex_int2 UNION ALL SELECT NULL;
+CREATE TEMP TABLE ex_int4n (pk int4);
+INSERT INTO ex_int4n SELECT pk FROM ex_int4 UNION ALL SELECT NULL;
+CREATE TEMP TABLE ex_int8n (pk int8);
+INSERT INTO ex_int8n SELECT pk FROM ex_int8 UNION ALL SELECT NULL;
+-- Float constants, stored as float8 and tagged with the type to test them as.
+CREATE TEMP TABLE ex_float (v float8, ft text);
+INSERT INTO ex_float VALUES
+  (2147483648, 'float4'), (2147483648, 'float8'), (2147483647, 'float8'),
+  (2147483647.5, 'float8'), (-2147483648, 'float4'), (-2147483649, 'float8'),
+  (9223372036854775808, 'float4'), (9223372036854775808, 'float8'),
+  (-9223372036854775808, 'float4'), (-9223372036854775808, 'float8'),
+  (1e30, 'float4'), (-1e30, 'float4'), (1e30, 'float8'), (-1e300, 'float8'),
+  (16777216, 'float4'), (16777218, 'float4'),
+  (9007199254740992, 'float8'), (9007199254740994, 'float8'),
+  (32768, 'float4'), (-32769, 'float8'), (32767.5, 'float4'),
+  (0.5, 'float4'), (-0.5, 'float8'),
+  ('NaN', 'float4'), ('NaN', 'float8'),
+  ('Infinity', 'float4'), ('-Infinity', 'float8');
+-- Exact reference for "int OP float", built only from conversions PostgreSQL
+-- performs exactly. (float8::numeric is NOT usable: it rounds to 15 digits.)
+-- NaN sorts above every number, matching PostgreSQL's float ordering.
+CREATE FUNCTION pg_temp.ref_int_float(i int8, f float8, op text)
+RETURNS boolean LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+  c int;   -- sign of (i - f)
+  t int8;
+BEGIN
+  IF i IS NULL OR f IS NULL THEN RETURN NULL; END IF;
+  IF f = 'NaN' OR f >= 9223372036854775808::float8 THEN
+    c := -1;
+  ELSIF f < -9223372036854775808::float8 THEN
+    c := 1;
+  ELSE
+    t := trunc(f)::int8;  -- exact: integral and inside int8
+    c := sign(i::numeric - t::numeric)::int;  -- numeric: i - t can overflow int8
+    IF c = 0 THEN
+      c := CASE WHEN f > t::float8 THEN -1 WHEN f < t::float8 THEN 1 ELSE 0 END;
+    END IF;
+  END IF;
+  RETURN CASE op WHEN '=' THEN c = 0 WHEN '<>' THEN c <> 0
+                 WHEN '<' THEN c < 0 WHEN '<=' THEN c <= 0
+                 WHEN '>' THEN c > 0 WHEN '>=' THEN c >= 0 END;
+END $$;
+CREATE FUNCTION pg_temp.commute(op text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE op WHEN '<' THEN '>' WHEN '>' THEN '<'
+                 WHEN '<=' THEN '>=' WHEN '>=' THEN '<=' ELSE op END
+$$;
+-- Check 1: int x float constants, constant on the right and on the left.
+-- The constant is spliced into the query text so SupportRequestSimplify sees
+-- a Const and rewrites it.
+CREATE FUNCTION pg_temp.check_float_constants()
+RETURNS TABLE (tbl text, expr text, expected bigint, actual bigint)
+LANGUAGE plpgsql AS $$
+DECLARE
+  t text; r record; op text; lit text; q text; got bigint; want bigint;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['ex_int2','ex_int4','ex_int8',
+                           'ex_int2n','ex_int4n','ex_int8n'] LOOP
+    FOR r IN SELECT * FROM ex_float LOOP
+      lit := format('%L::%s', r.v::text, r.ft);
+      FOREACH op IN ARRAY ARRAY['=','<>','<','<=','>','>='] LOOP
+        EXECUTE format('SELECT count(*) FROM %I WHERE pg_temp.ref_int_float(pk, (%s)::float8, %L)',
+                       t, lit, op) INTO want;
+        -- col OP const
+        q := format('pk %s %s', op, lit);
+        EXECUTE format('SELECT count(*) FROM %I WHERE %s', t, q) INTO got;
+        IF got <> want THEN tbl := t; expr := q; expected := want; actual := got; RETURN NEXT; END IF;
+        -- const COMMUTED(OP) col: the same predicate written the other way round
+        q := format('%s %s pk', lit, pg_temp.commute(op));
+        EXECUTE format('SELECT count(*) FROM %I WHERE %s', t, q) INTO got;
+        IF got <> want THEN tbl := t; expr := q; expected := want; actual := got; RETURN NEXT; END IF;
+      END LOOP;
+    END LOOP;
+  END LOOP;
+END $$;
+\echo '=== Check 1: int x float constants (failures only) ==='
+=== Check 1: int x float constants (failures only) ===
+SELECT * FROM pg_temp.check_float_constants() ORDER BY 1, 2;
+ tbl | expr | expected | actual 
+-----+------+----------+--------
+(0 rows)
+
+-- Check 2: int x numeric constants, both sides. Reference: the same
+-- comparison over pk::numeric, which is a FuncExpr rather than a Var and so
+-- is never rewritten by the support function.
+CREATE FUNCTION pg_temp.check_numeric_constants()
+RETURNS TABLE (tbl text, expr text, expected bigint, actual bigint)
+LANGUAGE plpgsql AS $$
+DECLARE
+  t text; c text; op text; q text; got bigint; want bigint;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['ex_int2','ex_int4','ex_int8',
+                           'ex_int2n','ex_int4n','ex_int8n'] LOOP
+    FOREACH c IN ARRAY ARRAY['0','0.5','-0.5','1','-1.5',
+                             '32767','32767.5','32768','-32768.5',
+                             '2147483647.5','2147483648','-2147483649',
+                             '9223372036854775807','9223372036854775807.5',
+                             '-9223372036854775808.5',
+                             '99999999999999999999','-99999999999999999999.5'] LOOP
+      FOREACH op IN ARRAY ARRAY['=','<>','<','<=','>','>='] LOOP
+        EXECUTE format('SELECT count(*) FROM %I WHERE pk::numeric %s %s::numeric',
+                       t, op, c) INTO want;
+        q := format('pk %s %s::numeric', op, c);
+        EXECUTE format('SELECT count(*) FROM %I WHERE %s', t, q) INTO got;
+        IF got <> want THEN tbl := t; expr := q; expected := want; actual := got; RETURN NEXT; END IF;
+        q := format('%s::numeric %s pk', c, pg_temp.commute(op));
+        EXECUTE format('SELECT count(*) FROM %I WHERE %s', t, q) INTO got;
+        IF got <> want THEN tbl := t; expr := q; expected := want; actual := got; RETURN NEXT; END IF;
+      END LOOP;
+    END LOOP;
+  END LOOP;
+END $$;
+\echo '=== Check 2: int x numeric constants (failures only) ==='
+=== Check 2: int x numeric constants (failures only) ===
+SELECT * FROM pg_temp.check_numeric_constants() ORDER BY 1, 2;
+ tbl | expr | expected | actual 
+-----+------+----------+--------
+(0 rows)
+
+-- Check 3: the operator functions themselves, column vs column (no rewrite).
+\echo '=== Check 3: int x float columns (failures only) ==='
+=== Check 3: int x float columns (failures only) ===
+SELECT i.tbl, f.ft, o.op, f.v, i.pk
+FROM (SELECT 'int2' AS tbl, pk::int8 AS pk FROM ex_int2
+      UNION ALL SELECT 'int4', pk FROM ex_int4
+      UNION ALL SELECT 'int8', pk FROM ex_int8) i
+CROSS JOIN ex_float f
+CROSS JOIN (VALUES ('='), ('<>'), ('<'), ('<='), ('>'), ('>=')) o(op)
+WHERE (CASE i.tbl || f.ft
+         WHEN 'int2float4' THEN CASE o.op WHEN '=' THEN i.pk::int2 = f.v::float4 WHEN '<>' THEN i.pk::int2 <> f.v::float4 WHEN '<' THEN i.pk::int2 < f.v::float4 WHEN '<=' THEN i.pk::int2 <= f.v::float4 WHEN '>' THEN i.pk::int2 > f.v::float4 ELSE i.pk::int2 >= f.v::float4 END
+         WHEN 'int2float8' THEN CASE o.op WHEN '=' THEN i.pk::int2 = f.v WHEN '<>' THEN i.pk::int2 <> f.v WHEN '<' THEN i.pk::int2 < f.v WHEN '<=' THEN i.pk::int2 <= f.v WHEN '>' THEN i.pk::int2 > f.v ELSE i.pk::int2 >= f.v END
+         WHEN 'int4float4' THEN CASE o.op WHEN '=' THEN i.pk::int4 = f.v::float4 WHEN '<>' THEN i.pk::int4 <> f.v::float4 WHEN '<' THEN i.pk::int4 < f.v::float4 WHEN '<=' THEN i.pk::int4 <= f.v::float4 WHEN '>' THEN i.pk::int4 > f.v::float4 ELSE i.pk::int4 >= f.v::float4 END
+         WHEN 'int4float8' THEN CASE o.op WHEN '=' THEN i.pk::int4 = f.v WHEN '<>' THEN i.pk::int4 <> f.v WHEN '<' THEN i.pk::int4 < f.v WHEN '<=' THEN i.pk::int4 <= f.v WHEN '>' THEN i.pk::int4 > f.v ELSE i.pk::int4 >= f.v END
+         WHEN 'int8float4' THEN CASE o.op WHEN '=' THEN i.pk = f.v::float4 WHEN '<>' THEN i.pk <> f.v::float4 WHEN '<' THEN i.pk < f.v::float4 WHEN '<=' THEN i.pk <= f.v::float4 WHEN '>' THEN i.pk > f.v::float4 ELSE i.pk >= f.v::float4 END
+         ELSE CASE o.op WHEN '=' THEN i.pk = f.v WHEN '<>' THEN i.pk <> f.v WHEN '<' THEN i.pk < f.v WHEN '<=' THEN i.pk <= f.v WHEN '>' THEN i.pk > f.v ELSE i.pk >= f.v END
+       END)
+      IS DISTINCT FROM pg_temp.ref_int_float(i.pk,
+                         CASE f.ft WHEN 'float4' THEN f.v::float4::float8 ELSE f.v END, o.op)
+ORDER BY 1, 2, 3, 4, 5;
+ tbl | ft | op | v | pk 
+-----+----+----+---+----
+(0 rows)
+
+-- Check 4: for every hashable equality operator the extension owns, values
+-- that compare equal must hash equally under the hash family's own procs.
+-- The vacuous count guards the check itself: an operator for which no equal
+-- pair was found is not being tested at all.
+CREATE FUNCTION pg_temp.check_hash_consistency()
+RETURNS TABLE (entries int, equal_pairs int, mismatches int, vacuous int)
+LANGUAGE plpgsql AS $$
+DECLARE
+  o record; lv text; rv text; ok boolean; h1 bigint; h2 bigint; before int;
+  vals text[] := ARRAY['0','1','-1','100','-100','255','32767','-32768','32768',
+                       '2147483647','-2147483648','2147483648','16777216','16777217',
+                       '9007199254740992','9223372036854775807','-9223372036854775808',
+                       '9223372036854775808','-0.0','0.5','100.0','1e10','NaN','Infinity'];
+BEGIN
+  entries := 0; equal_pairs := 0; mismatches := 0; vacuous := 0;
+  FOR o IN
+    SELECT opr.oprleft::regtype AS l, opr.oprright::regtype AS r, opr.oprcode,
+           (SELECT p.amproc FROM pg_amproc p
+             WHERE p.amprocfamily = f.oid AND p.amprocnum = 1
+               AND p.amproclefttype = opr.oprleft AND p.amprocrighttype = opr.oprleft) AS hl,
+           (SELECT p.amproc FROM pg_amproc p
+             WHERE p.amprocfamily = f.oid AND p.amprocnum = 1
+               AND p.amproclefttype = opr.oprright AND p.amprocrighttype = opr.oprright) AS hr
+    FROM pg_operator opr
+    JOIN pg_depend d ON d.classid = 'pg_operator'::regclass AND d.objid = opr.oid AND d.deptype = 'e'
+    JOIN pg_extension e ON e.oid = d.refobjid AND e.extname = 'pg_num2int_direct_comp'
+    JOIN pg_amop ao ON ao.amopopr = opr.oid
+    JOIN pg_opfamily f ON f.oid = ao.amopfamily
+    JOIN pg_am a ON a.oid = f.opfmethod AND a.amname = 'hash'
+    WHERE opr.oprname = '='
+  LOOP
+    entries := entries + 1;
+    before := equal_pairs;
+    FOREACH lv IN ARRAY vals LOOP
+      FOREACH rv IN ARRAY vals LOOP
+        BEGIN
+          EXECUTE format('SELECT %s(%L::%s, %L::%s), %s(%L::%s)::bigint, %s(%L::%s)::bigint',
+                         o.oprcode, lv, o.l, rv, o.r,
+                         o.hl::regproc, lv, o.l, o.hr::regproc, rv, o.r)
+            INTO ok, h1, h2;
+        EXCEPTION WHEN numeric_value_out_of_range OR invalid_text_representation THEN
+          CONTINUE;  -- value not representable in this type
+        END;
+        IF ok THEN
+          equal_pairs := equal_pairs + 1;
+          IF h1 <> h2 THEN
+            mismatches := mismatches + 1;
+            RAISE NOTICE 'hash mismatch: %(%::%, %::%)', o.oprcode, lv, o.l, rv, o.r;
+          END IF;
+        END IF;
+      END LOOP;
+    END LOOP;
+    IF equal_pairs = before THEN vacuous := vacuous + 1; END IF;
+  END LOOP;
+  RETURN NEXT;
+END $$;
+\echo '=== Check 4: hash / equality consistency ==='
+=== Check 4: hash / equality consistency ===
+SELECT entries > 0 AS has_entries, equal_pairs > 0 AS has_pairs, mismatches, vacuous
+FROM pg_temp.check_hash_consistency();
+ has_entries | has_pairs | mismatches | vacuous 
+-------------+-----------+------------+---------
+ t           | t         |          0 |       0
+(1 row)
+
+-- Spot checks, readable on their own.
+\echo '=== Spot checks ==='
+=== Spot checks ===
+SELECT 2147483647::int4 = 2147483648::float4 AS int4max_eq_2pow31_f4,           -- f
+       2147483647::int4 < 2147483648::float4 AS int4max_lt_2pow31_f4,           -- t
+       9223372036854775807::int8 = 9223372036854775808::float8 AS int8max_eq_2pow63_f8,  -- f
+       9223372036854775807::int8 < 9223372036854775808::float8 AS int8max_lt_2pow63_f8;  -- t
+ int4max_eq_2pow31_f4 | int4max_lt_2pow31_f4 | int8max_eq_2pow63_f8 | int8max_lt_2pow63_f8 
+----------------------+----------------------+----------------------+----------------------
+ f                    | t                    | f                    | t
+(1 row)
+
+-- The rewrite of a left-hand constant keeps the direction:
+-- 10.5 < pk means pk > 10.5, i.e. pk >= 11.
+EXPLAIN (COSTS OFF) SELECT * FROM ex_int4 WHERE 10.5::numeric < pk;
+      QUERY PLAN      
+----------------------
+ Seq Scan on ex_int4
+   Filter: (pk >= 11)
+(2 rows)
+
+EXPLAIN (COSTS OFF) SELECT * FROM ex_int4 WHERE 10.5::float8 >= pk;
+      QUERY PLAN      
+----------------------
+ Seq Scan on ex_int4
+   Filter: (pk <= 10)
+(2 rows)
+

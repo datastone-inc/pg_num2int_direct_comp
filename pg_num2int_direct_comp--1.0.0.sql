@@ -490,7 +490,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -501,7 +502,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -536,7 +538,8 @@ CREATE OPERATOR = (
   NEGATOR = <>,
   RESTRICT = eqsel,
   JOIN = eqjoinsel,
-  HASHES
+  HASHES,
+  MERGES
 );
 
 CREATE OPERATOR = (
@@ -2554,29 +2557,53 @@ ALTER OPERATOR FAMILY float_ops USING hash ADD
 -- Extension Cleanup (Event Trigger for DROP EXTENSION)
 -- ============================================================================
 --
--- When we add built-in operators and functions to PostgreSQL's built-in
--- operator families (numeric_ops, integer_ops, float_ops), these entries are
--- not tracked as extension-owned objects. This means DROP EXTENSION does not
--- remove them.
+-- When we add operators and functions to PostgreSQL's built-in operator
+-- families (numeric_ops, integer_ops, float_ops) via ALTER OPERATOR FAMILY
+-- ADD, the resulting pg_amop / pg_amproc entries are NOT tracked as
+-- extension-owned. PG does not create a pg_depend row from the entry to
+-- the extension, even when issued inside CREATE EXTENSION (empirically
+-- verified on PG 18). So DROP EXTENSION leaves these entries behind unless
+-- this event trigger removes them.
 --
--- This event trigger runs BEFORE DROP EXTENSION executes, removing the
--- operator family entries we added so the extension can be cleanly reinstalled.
+-- This event trigger runs on ddl_command_start (BEFORE the actual drop)
+-- so the trigger function still exists when it runs. The sql_drop event
+-- fires AFTER the cascade has dropped the extension-owned event trigger
+-- itself, so an extension cannot self-clean from sql_drop — by that point
+-- pg_event_trigger no longer has our trigger row and PG does not invoke it.
+-- (Verified empirically: an externally-owned sql_drop trigger fires
+-- during DROP EXTENSION, but an extension-owned one does not.)
 --
--- DESIGN NOTE: Why a hardcoded list instead of dynamic tracking?
--- -------------------------------------------------------------
--- An alternative approach would be to use ddl_command_end triggers to track
--- ALTER OPERATOR FAMILY ... ADD statements dynamically (storing in a table or
--- GUC). However, the hardcoded approach is preferred here because:
+-- Hardcoded list: the entries this extension adds fall into two categories
+-- and the cleanup must handle both:
+--   (a) cross-type entries referencing extension-owned operators (e.g.
+--       numeric < int4 in numeric_ops).
+--   (b) same-type entries referencing core operators (e.g. int2 < int2 in
+--       numeric_ops, added for merge-join sort compatibility).
+-- Neither category is tracked via pg_depend, and PG offers no other
+-- catalog signal distinguishing core-installed entries from extension-
+-- added ones in the same family. So every ADD here must have a matching
+-- DROP in the list below.
 --
---   1. The operator family entries are stable (designed once, rarely changed)
---   2. Explicit list is auditable - you can read exactly what gets cleaned up
---   3. Single source of truth - ADD statements and DROP list are in same file
---   4. Simpler failure modes - no risk of tracking state becoming inconsistent
+-- Targeting guard: current_query() is matched against a regex with word-
+-- boundary (\m...\M) anchors so that DROP EXTENSION of an unrelated
+-- extension whose name starts with ours (e.g. pg_num2int_direct_comp_x)
+-- does not trigger our cleanup. Known limitations: a DROP issued inside
+-- a DO block, SECURITY DEFINER function, or stored procedure returns the
+-- outer wrapper from current_query() and will NOT match — the cleanup
+-- will be skipped and the user must clean orphan rows manually before
+-- reinstalling. This is a limitation of ddl_command_start (which has no
+-- catalog-level dropped-objects info) combined with the requirement that
+-- our trigger function still exist when it runs.
 --
--- VALIDATION: The extension_lifecycle.sql regression test catches any omissions.
--- If an operator family entry is added without updating this cleanup list, the
--- DROP/CREATE cycle test will fail with "operator already exists", forcing the
--- developer to fix the list before the change can be merged.
+-- Exception narrowing: BEGIN..EXCEPTION WHEN undefined_object catches the
+-- intended case (the operator/function may not have been added on partial
+-- installs) while letting permission, lock-conflict, and internal errors
+-- propagate. WHEN OTHERS would silently mask catalog-corruption bugs.
+--
+-- VALIDATION: extension_lifecycle.sql verifies DROP/CREATE cycles succeed
+-- and that targeted families have zero orphan rows post-drop. Adding an
+-- ALTER OPERATOR FAMILY ADD without a matching DROP here will fail the
+-- second CREATE EXTENSION with "operator already exists".
 -- ============================================================================
 
 CREATE FUNCTION pg_num2int_direct_comp_cleanup()
@@ -2847,17 +2874,21 @@ DECLARE
     ];
     stmt text;
 BEGIN
-    -- Only process DROP EXTENSION for this specific extension
-    IF NOT (current_query() ~* 'DROP\s+EXTENSION.*pg_num2int_direct_comp') THEN
+    -- Only process DROP EXTENSION for this specific extension.
+    -- Word boundaries (\m and \M) prevent prefix matches against extensions
+    -- whose name starts with ours (e.g. pg_num2int_direct_comp_foo).
+    IF NOT (current_query() ~* '\mDROP\s+EXTENSION\M.*\mpg_num2int_direct_comp\M') THEN
         RETURN;
     END IF;
 
-    -- Execute each cleanup statement, ignoring errors (operator may not exist)
+    -- Execute each cleanup statement, swallowing only "doesn't exist" errors
+    -- (the entry may not have been added on a partial install). Permission,
+    -- lock-conflict, and internal errors are allowed to propagate so they
+    -- surface instead of silently leaving orphan catalog rows.
     FOREACH stmt IN ARRAY ops LOOP
         BEGIN
             EXECUTE stmt;
-        EXCEPTION WHEN OTHERS THEN
-            -- Silently ignore - operator/function may not have been added
+        EXCEPTION WHEN undefined_object THEN
             NULL;
         END;
     END LOOP;

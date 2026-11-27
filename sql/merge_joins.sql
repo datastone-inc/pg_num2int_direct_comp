@@ -137,6 +137,18 @@ SET enable_hashjoin = false;
 SET enable_nestloop = false;
 SET enable_mergejoin = true;
 
+-- Test int2 x float4 merge join
+EXPLAIN (COSTS OFF, BUFFERS OFF)
+SELECT i.val_int2, f.val_float4
+FROM merge_int_float i
+JOIN merge_float_test f ON i.val_int2 = f.val_float4;
+
+-- Test int2 x float8 merge join
+EXPLAIN (COSTS OFF, BUFFERS OFF)
+SELECT i.val_int2, f.val_float8
+FROM merge_int_float i
+JOIN merge_float_test f ON i.val_int2 = f.val_float8;
+
 -- Test int4 x float4 merge join
 EXPLAIN (COSTS OFF, BUFFERS OFF)
 SELECT i.val_int4, f.val_float4
@@ -161,18 +173,19 @@ WHERE amopfamily = (SELECT oid FROM pg_opfamily WHERE opfname = 'integer_ops' AN
 
 -- Test MERGES property on equality operators (required for merge joins)
 \echo '=== Test 7: MERGES Property Verification ==='
-SELECT COUNT(*) as merges_equality_operators
-FROM pg_operator
-WHERE oprname = '='
-  AND oprcanmerge = true
-  AND ((oprleft = 'int4'::regtype AND oprright = 'float4'::regtype) OR
-       (oprleft = 'float4'::regtype AND oprright = 'int4'::regtype) OR
-       (oprleft = 'int4'::regtype AND oprright = 'float8'::regtype) OR
-       (oprleft = 'float8'::regtype AND oprright = 'int4'::regtype) OR
-       (oprleft = 'int8'::regtype AND oprright = 'float4'::regtype) OR
-       (oprleft = 'float4'::regtype AND oprright = 'int8'::regtype) OR
-       (oprleft = 'int8'::regtype AND oprright = 'float8'::regtype) OR
-       (oprleft = 'float8'::regtype AND oprright = 'int8'::regtype));
+-- Every equality operator this extension owns must be MERGES: all of them
+-- are registered in btree families, so a missing MERGES silently disables
+-- merge joins for that type pair.
+SELECT o.oid::regoperator AS equality_operator_missing_merges
+FROM pg_operator o
+JOIN pg_depend d ON d.classid = 'pg_operator'::regclass
+                AND d.objid = o.oid
+                AND d.deptype = 'e'
+JOIN pg_extension e ON e.oid = d.refobjid
+                   AND e.extname = 'pg_num2int_direct_comp'
+WHERE o.oprname = '='
+  AND NOT o.oprcanmerge
+ORDER BY 1;
 
 -- Reset join settings
 RESET enable_hashjoin;

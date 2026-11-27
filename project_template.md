@@ -20,7 +20,8 @@ myextension/
 ├── README.md
 ├── CHANGELOG.md
 ├── doc/
-│   └── user-guide.md
+│   ├── installation.md
+│   └── operator-reference.md
 ├── sql/                       # pg_regress sql tests
 │   └── doc_examples.sql       # documentation examples tests
 ├── expected/
@@ -53,14 +54,14 @@ Requires PostgreSQL 12+ with development headers.
 
 ## Documentation
 
-See [doc/user-guide.md](doc/user-guide.md) for detailed usage and API reference.
+See [doc/operator-reference.md](doc/operator-reference.md) for detailed usage and operator reference.
 
 ---
 
 [MIT License](LICENSE) | [Changelog](CHANGELOG.md)
 ```
 
-For extensions with extensive APIs, add a link to `doc/operator-reference.md`.
+For simpler extensions without many operators, a single `doc/user-guide.md` may be sufficient instead.
 
 ## CHANGELOG.md
 
@@ -85,18 +86,21 @@ Start minimal, expand as needed:
 
 | File | When to create |
 |------|----------------|
-| `user-guide.md` | Always - primary documentation |
-| `operator-reference.md` | Many operators/functions requiring detailed reference |
+| `installation.md` | Always - setup and quick-start instructions |
+| `operator-reference.md` | Primary documentation for extensions exposing operators/functions |
+| `user-guide.md` | Alternative to `operator-reference.md` for simpler extensions |
+| `benchmark.md` | Extensions with performance characteristics worth documenting |
+| `development.md` | Contributor / build / test guidance |
 | `migration.md` | Breaking changes between major versions |
 
-### user-guide.md
+### operator-reference.md
 
 ```markdown
-# User Guide
+# Operator Reference
 
-## Common Operations
+## Operators
 
-### Operation Name
+### `operator_name(type, type) → returntype`
 
 Explanation with example:
 
