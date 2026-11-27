@@ -33,11 +33,17 @@ jobs:
       - uses: actions/checkout@v7
 
       # check-version reads only the control file and META.json, but the
-      # Makefile includes PGXS, so it needs a pg_config.
+      # Makefile includes PGXS, so it needs a pg_config. The runner image
+      # already has apt.postgresql.org's postgresql-common, which Ubuntu's
+      # postgresql-server-dev-all cannot install next to, so the headers
+      # come from apt.postgresql.org as in the packages job.
       - name: Install PostgreSQL headers
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-server-dev-all
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-server-dev-18
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
 
       - name: Check
         run: make check-version
