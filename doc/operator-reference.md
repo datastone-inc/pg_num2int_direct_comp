@@ -154,7 +154,7 @@ Enables: Merge joins for equality-based JOIN operations on pre-sorted data.
 
 **Hash Families** (enables hash joins):
 
-- Cross-type operators added to `integer_ops`, `numeric_ops`, and `float_ops` hash families
+- Cross-type operators added to the `numeric_ops` and `float_ops` hash families
 - Builtin same-type hash functions also added for consistent hashing within each family
 - Integer hash wrapper functions cast to higher-precision type before hashing
 - Ensures equal values hash identically: `hash(10::int4) = hash(10.0::numeric)`
